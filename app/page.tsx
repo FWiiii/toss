@@ -10,9 +10,9 @@ import { ArrowLeftRight, Smartphone, Laptop, Tablet } from "lucide-react"
 export default function Home() {
   return (
     <TransferProvider>
-      <div className="min-h-screen bg-background flex flex-col">
+      <div className="h-screen bg-background flex flex-col overflow-hidden">
         {/* Header */}
-        <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-10">
+        <header className="border-b border-border bg-card/50 backdrop-blur-sm shrink-0">
           <div className="container mx-auto px-4 h-16 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="w-12 h-12 rounded-xl flex items-center justify-center">
@@ -37,20 +37,20 @@ export default function Home() {
         </header>
 
         {/* Main Content */}
-        <main className="flex-1 container mx-auto px-4 py-6 flex flex-col lg:flex-row gap-6 min-h-0">
+        <main className="flex-1 container mx-auto px-4 py-6 flex flex-col lg:flex-row gap-6 min-h-0 overflow-hidden">
           {/* Left Panel - Room */}
-          <div className="lg:w-[360px] shrink-0">
+          <div className="lg:w-[360px] shrink-0 overflow-y-auto">
             <RoomPanel />
           </div>
 
           {/* Right Panel - Transfer */}
-          <div className="flex-1 min-h-[500px] lg:min-h-0">
+          <div className="flex-1 min-h-0 overflow-hidden">
             <TransferPanel />
           </div>
         </main>
 
         {/* Footer */}
-        <footer className="border-t border-border py-4 mt-auto">
+        <footer className="border-t border-border py-4 shrink-0">
           <div className="container mx-auto px-4 flex flex-col items-center gap-2">
             <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
               <span className="flex items-center gap-1">🔒 端对端加密</span>

@@ -2,7 +2,7 @@
 
 import React from "react"
 
-import { useState, useRef, useCallback } from "react"
+import { useState, useRef, useCallback, useEffect } from "react"
 import { useTransfer } from "@/lib/transfer-context"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
@@ -34,8 +34,16 @@ export function TransferPanel() {
   const [text, setText] = useState("")
   const [isDragging, setIsDragging] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const listRef = useRef<HTMLDivElement>(null)
 
   const isConnected = connectionStatus === "connected" && peerCount > 0
+
+  // Auto scroll to bottom when new items arrive
+  useEffect(() => {
+    if (listRef.current && items.length > 0) {
+      listRef.current.scrollTop = listRef.current.scrollHeight
+    }
+  }, [items.length])
 
   const handleSendText = () => {
     if (text.trim() && isConnected) {
@@ -122,7 +130,7 @@ export function TransferPanel() {
       )}
 
       {/* Items List */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
+      <div ref={listRef} className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
         {items.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-muted-foreground py-12">
             <div className="w-16 h-16 rounded-full bg-secondary flex items-center justify-center mb-4">
