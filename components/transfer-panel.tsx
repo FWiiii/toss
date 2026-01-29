@@ -40,8 +40,20 @@ export function TransferPanel() {
 
   // Auto scroll to bottom when new items arrive
   useEffect(() => {
-    if (listRef.current && items.length > 0) {
-      listRef.current.scrollTop = listRef.current.scrollHeight
+    if (items.length > 0) {
+      // Check if mobile (< 1024px)
+      const isMobile = window.innerWidth < 1024
+      
+      if (isMobile) {
+        // On mobile, scroll the entire page to bottom
+        window.scrollTo({
+          top: document.body.scrollHeight,
+          behavior: 'smooth'
+        })
+      } else if (listRef.current) {
+        // On desktop, scroll the list container
+        listRef.current.scrollTop = listRef.current.scrollHeight
+      }
     }
   }, [items.length])
 
@@ -96,7 +108,7 @@ export function TransferPanel() {
   return (
     <div 
       className={cn(
-        "rounded-xl border bg-card flex flex-col h-full min-h-0 transition-colors relative",
+        "rounded-xl border bg-card flex flex-col lg:h-full lg:min-h-0 transition-colors relative",
         isDragging ? "border-accent border-2 bg-accent/5" : "border-border"
       )}
       onDragOver={handleDragOver}
@@ -129,8 +141,8 @@ export function TransferPanel() {
         </div>
       )}
 
-      {/* Items List */}
-      <div ref={listRef} className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
+      {/* Items List - 移动端自然高度，桌面端固定高度可滚动 */}
+      <div ref={listRef} className="flex-1 lg:overflow-y-auto p-4 space-y-3 lg:min-h-0">
         {items.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-muted-foreground py-12">
             <div className="w-16 h-16 rounded-full bg-secondary flex items-center justify-center mb-4">

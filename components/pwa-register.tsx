@@ -52,7 +52,7 @@ export function PWARegister() {
         <div className="flex-1 min-w-0">
           <h3 className="text-sm font-medium text-foreground">安装应用</h3>
           <p className="text-xs text-muted-foreground mt-1">
-            安装 SnapDrop 到您的设备，享受更好的体验
+            安装 Toss 到您的设备，享受更好的体验
           </p>
           <div className="flex gap-2 mt-3">
             <Button size="sm" onClick={handleInstall} className="bg-accent text-accent-foreground hover:bg-accent/90">
