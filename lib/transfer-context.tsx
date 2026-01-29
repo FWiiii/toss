@@ -220,14 +220,22 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     const code = generateRoomCode()
     const peerId = PEER_PREFIX + code
     
+    // Clean up any existing connections and peer
+    connectionsRef.current.forEach((conn) => {
+      try { conn.close() } catch {}
+    })
+    connectionsRef.current.clear()
+    fileBuffersRef.current.clear()
+    
+    if (peerRef.current) {
+      try { peerRef.current.destroy() } catch {}
+      peerRef.current = null
+    }
+    
     setRoomCode(code)
     setConnectionStatus("connecting")
     setErrorMessage(null)
     isHostRef.current = true
-
-    if (peerRef.current) {
-      peerRef.current.destroy()
-    }
 
     const peer = new Peer(peerId, {
       debug: 0,
@@ -279,14 +287,25 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     
     const hostPeerId = PEER_PREFIX + normalizedCode
     
+    // Clean up any existing connections and peer before joining
+    connectionsRef.current.forEach((conn) => {
+      try { conn.close() } catch {}
+    })
+    connectionsRef.current.clear()
+    fileBuffersRef.current.clear()
+    
+    if (peerRef.current) {
+      try { peerRef.current.destroy() } catch {}
+      peerRef.current = null
+    }
+    
+    // Small delay to ensure cleanup is complete
+    await new Promise(resolve => setTimeout(resolve, 100))
+    
     setRoomCode(normalizedCode)
     setConnectionStatus("connecting")
     setErrorMessage(null)
     isHostRef.current = false
-
-    if (peerRef.current) {
-      peerRef.current.destroy()
-    }
 
     const peer = new Peer({
       debug: 0,
@@ -333,12 +352,19 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
   }, [setupConnection])
 
   const leaveRoom = useCallback(() => {
-    connectionsRef.current.forEach((conn) => conn.close())
+    // Close all connections gracefully
+    connectionsRef.current.forEach((conn) => {
+      try { conn.close() } catch {}
+    })
     connectionsRef.current.clear()
     fileBuffersRef.current.clear()
     
+    // Destroy peer connection
     if (peerRef.current) {
-      peerRef.current.destroy()
+      try { 
+        peerRef.current.disconnect()
+        peerRef.current.destroy() 
+      } catch {}
       peerRef.current = null
     }
     
