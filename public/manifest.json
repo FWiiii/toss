@@ -1,0 +1,24 @@
+{
+  "name": "Toss - 跨设备传输",
+  "short_name": "Toss",
+  "description": "简单快速的跨设备文件和文本传输工具",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#171717",
+  "theme_color": "#171717",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/logo.svg ",
+      "sizes": "512x512",
+      "type": "image/svg",
+      "purpose": "any maskable"
+    }
+  ]
+}
