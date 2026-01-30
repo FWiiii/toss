@@ -1,6 +1,7 @@
 "use client"
 
 import { Button } from "@/components/ui/button"
+import { ImageThumbnail } from "@/components/image-thumbnail"
 import { Download, FileText, File as FileIcon, ImageIcon, ZoomIn } from "lucide-react"
 import { cn, formatFileSize, isImageFile } from "@/lib/utils"
 import type { TransferItem } from "@/lib/types"
@@ -47,15 +48,16 @@ function ImageItem({
   return (
     <div className="space-y-2">
       <div 
-        className="relative group cursor-pointer"
+        className="relative group"
         onClick={() => onPreviewImage(item.content, item.name || "image")}
       >
-        <img 
-          src={item.content} 
+        <ImageThumbnail
+          src={item.content}
           alt={item.name || "image"}
-          className="max-w-full max-h-48 rounded-lg object-contain bg-background"
+          className="bg-background"
+          thumbnailSize={300}
         />
-        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors rounded-lg flex items-center justify-center">
+        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors rounded-lg flex items-center justify-center cursor-pointer">
           <ZoomIn className="w-8 h-8 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
         </div>
       </div>
