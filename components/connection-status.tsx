@@ -137,17 +137,37 @@ export function ConnectionStatusDisplay({
     }
   }, [status, peerCount, connectionStartTime])
 
+  // Generate dynamic description based on connection quality
+  const getConnectionDescription = () => {
+    if (peerCount === 0) return "等待其他设备..."
+    if (isHost) return `${peerCount} 台设备已连接`
+    
+    // For guests, show dynamic quality description
+    if (connectionQuality && connectionQuality.quality !== "unknown") {
+      const qualityDescriptions = {
+        excellent: "连接优秀，传输极快",
+        good: "连接良好，传输顺畅",
+        fair: "连接一般，可正常传输",
+        poor: "连接较慢，传输受限"
+      }
+      return qualityDescriptions[connectionQuality.quality]
+    }
+    
+    // Fallback based on connection type
+    if (connectionInfo?.type === "direct") return "局域网直连，传输极快"
+    if (connectionInfo?.type === "stun") return "P2P 连接，传输顺畅"
+    if (connectionInfo?.type === "relay") return "服务器中转，传输较慢"
+    
+    return "连接稳定，可以传输"
+  }
+
   const getStatusConfig = () => {
     switch (status) {
       case "connected":
         return {
           icon: Wifi,
           label: "已连接",
-          description: peerCount > 0 
-            ? isHost 
-              ? `${peerCount} 台设备已连接` 
-              : "连接稳定，可以传输"
-            : "等待其他设备...",
+          description: getConnectionDescription(),
           bgColor: "bg-emerald-500/10",
           borderColor: "border-emerald-500/20",
           iconColor: "text-emerald-500",
