@@ -17,7 +17,7 @@ export type TransferItem = {
   speed?: number // bytes per second
 }
 
-export type ConnectionStatus = "disconnected" | "connecting" | "connected" | "error" | "dissolved"
+export type ConnectionStatus = "disconnected" | "connecting" | "connected" | "error" | "dissolved" | "reconnecting"
 
 // Connection type based on ICE candidate type
 export type ConnectionType = 

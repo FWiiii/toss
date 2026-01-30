@@ -169,6 +169,16 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
   const [isJoiningRoom, setIsJoiningRoom] = useState(false)
   const [sendingCount, setSendingCount] = useState(0)
   
+  // Reconnection state
+  const reconnectAttemptsRef = useRef(0)
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const maxReconnectAttempts = 5
+  const shouldReconnectRef = useRef(true)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const setupConnectionRef = useRef<((conn: any, isOutgoing?: boolean) => void) | null>(null)
+  const attemptReconnectRef = useRef<(() => void) | null>(null)
+  const joinRoomRef = useRef<((code: string) => Promise<void>) | null>(null)
+  
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const peerRef = useRef<any>(null)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -302,10 +312,68 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     if (count > 0) {
       setConnectionStatus("connected")
       setErrorMessage(null)
-    } else if (roomCode) {
+      // Reset reconnect attempts on successful connection
+      reconnectAttemptsRef.current = 0
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current)
+        reconnectTimeoutRef.current = null
+      }
+    } else if (roomCode && connectionStatus !== "reconnecting") {
       setConnectionStatus("connecting")
     }
-  }, [roomCode])
+  }, [roomCode, connectionStatus])
+
+  // Reconnection logic
+  const attemptReconnect = useCallback(() => {
+    if (!roomCode || !shouldReconnectRef.current || connectionStatus === "dissolved") {
+      return
+    }
+
+    if (reconnectAttemptsRef.current >= maxReconnectAttempts) {
+      setConnectionStatus("error")
+      setErrorMessage("重连失败，请手动重新加入房间")
+      addSystemMessage("自动重连失败，连接已断开")
+      return
+    }
+
+    reconnectAttemptsRef.current += 1
+    const delay = Math.min(1000 * Math.pow(2, reconnectAttemptsRef.current - 1), 10000) // Exponential backoff, max 10s
+    
+    setConnectionStatus("reconnecting")
+    setErrorMessage(`正在尝试重新连接... (${reconnectAttemptsRef.current}/${maxReconnectAttempts})`)
+    
+    reconnectTimeoutRef.current = setTimeout(() => {
+      if (!shouldReconnectRef.current) return
+      
+      addSystemMessage(`正在尝试重新连接 (第 ${reconnectAttemptsRef.current} 次)...`)
+      
+      // Try to reconnect to the host
+      if (isHost) {
+        // Host: wait for peers to reconnect
+        setConnectionStatus("connecting")
+      } else {
+        // Guest: try to reconnect to host
+        const hostPeerId = PEER_PREFIX + roomCode
+        if (peerRef.current && !peerRef.current.destroyed) {
+          try {
+            const conn = peerRef.current.connect(hostPeerId, { reliable: true })
+            if (conn && setupConnectionRef.current) {
+              setupConnectionRef.current(conn, true)
+            } else {
+              attemptReconnect()
+            }
+          } catch {
+            attemptReconnect()
+          }
+        } else {
+          // Peer is destroyed, need to rejoin
+          if (joinRoomRef.current) {
+            joinRoomRef.current(roomCode)
+          }
+        }
+      }
+    }, delay)
+  }, [roomCode, connectionStatus, isHost, addSystemMessage])
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const setupConnection = useCallback((conn: any, isOutgoing = false) => {
@@ -391,15 +459,26 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       }
       
       updatePeerCount()
+      
+      // Attempt to reconnect if no peers left and room is still active
+      if (connectionsRef.current.size === 0 && roomCode && shouldReconnectRef.current && attemptReconnectRef.current) {
+        attemptReconnectRef.current()
+      }
     })
 
-    conn.on("error", () => {
+    conn.on("error", (err) => {
+      console.error("Connection error:", err)
       if (connectionTimeout) clearTimeout(connectionTimeout)
       connectionsRef.current.delete(conn.peer)
-      if (isOutgoing && connectionsRef.current.size === 0) {
-        setError("连接失败，请重试")
-      }
+      
       updatePeerCount()
+      
+      // Attempt to reconnect if this was our only connection
+      if (isOutgoing && connectionsRef.current.size === 0 && shouldReconnectRef.current && attemptReconnectRef.current) {
+        attemptReconnectRef.current()
+      } else if (connectionsRef.current.size === 0) {
+        setError("连接失败，正在尝试重连...")
+      }
     })
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -490,6 +569,12 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     })
   }, [addItem, addItemWithId, updateItemProgress, addSystemMessage, updatePeerCount, createTrackedBlobUrl, broadcastToConnections, cleanupAll, setError])
 
+  // Store functions in refs to avoid circular dependencies
+  useEffect(() => {
+    setupConnectionRef.current = setupConnection
+    attemptReconnectRef.current = attemptReconnect
+  }, [setupConnection, attemptReconnect])
+
   const createRoom = useCallback(async () => {
     setIsCreatingRoom(true)
     
@@ -501,6 +586,14 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       
       // Clean up any existing connections and peer
       cleanupAll()
+      
+      // Reset reconnection state
+      shouldReconnectRef.current = true
+      reconnectAttemptsRef.current = 0
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current)
+        reconnectTimeoutRef.current = null
+      }
       
       setRoomCode(code)
       setConnectionStatus("connecting")
@@ -567,6 +660,14 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       // Clean up any existing connections and peer before joining
       cleanupAll()
       
+      // Reset reconnection state
+      shouldReconnectRef.current = true
+      reconnectAttemptsRef.current = 0
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current)
+        reconnectTimeoutRef.current = null
+      }
+      
       // Small delay to ensure cleanup is complete
       await new Promise(resolve => setTimeout(resolve, 100))
       
@@ -621,7 +722,20 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     }
   }, [setupConnection, cleanupAll, setError])
 
+  // Store joinRoom in ref after it's defined
+  useEffect(() => {
+    joinRoomRef.current = joinRoom
+  }, [joinRoom])
+
   const leaveRoom = useCallback(() => {
+    // Stop any reconnection attempts
+    shouldReconnectRef.current = false
+    reconnectAttemptsRef.current = 0
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current)
+      reconnectTimeoutRef.current = null
+    }
+    
     // If host, notify all guests that room is being dissolved
     if (isHost) {
       broadcastToConnections({ type: "room-dissolved" })
@@ -637,6 +751,9 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       setErrorMessage(null)
       setPeerCount(0)
       setIsHost(false)
+      
+      // Allow reconnection for future rooms
+      shouldReconnectRef.current = true
     }, 100)
   }, [isHost, broadcastToConnections, cleanupAll])
 
@@ -754,6 +871,13 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
   // Cleanup on unmount
   useEffect(() => {
     return () => {
+      // Stop reconnection attempts
+      shouldReconnectRef.current = false
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current)
+        reconnectTimeoutRef.current = null
+      }
+      
       // Close all connections and destroy peer
       connectionsRef.current.forEach(safeClose)
       connectionsRef.current.clear()

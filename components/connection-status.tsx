@@ -147,6 +147,18 @@ export function ConnectionStatusDisplay({
           showPulse: true,
           animate: true
         }
+      case "reconnecting":
+        return {
+          icon: Loader2,
+          label: "正在重连",
+          description: errorMessage || "连接已断开，正在尝试重新连接...",
+          bgColor: "bg-blue-500/10",
+          borderColor: "border-blue-500/20",
+          iconColor: "text-blue-500",
+          dotColor: "bg-blue-500",
+          showPulse: true,
+          animate: true
+        }
       case "error":
         return {
           icon: AlertCircle,
@@ -309,6 +321,13 @@ export function ConnectionStatusDisplay({
         <div className="flex items-start gap-2 text-xs text-muted-foreground bg-muted/30 rounded-lg p-3">
           <Signal className="w-4 h-4 shrink-0 mt-0.5" />
           <p>提示：在其他设备上输入房间代码或扫描二维码即可加入</p>
+        </div>
+      )}
+      
+      {status === "reconnecting" && (
+        <div className="flex items-start gap-2 text-xs text-blue-600 dark:text-blue-400 bg-blue-500/10 rounded-lg p-3">
+          <Loader2 className="w-4 h-4 shrink-0 mt-0.5 animate-spin" />
+          <p>连接意外断开，正在自动尝试重新连接，请稍候...</p>
         </div>
       )}
       
