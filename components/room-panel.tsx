@@ -8,7 +8,8 @@ import { Input } from "@/components/ui/input"
 import { EmptyState } from "@/components/ui/empty-state"
 import { QRCodeDisplay } from "@/components/qr-code-display"
 import { QRCodeScanner } from "@/components/qr-code-scanner"
-import { Copy, Check, LogOut, Users, Wifi, WifiOff, Loader2, AlertCircle, Crown, User, QrCode, ScanLine } from "lucide-react"
+import { ConnectionStatusDisplay } from "@/components/connection-status"
+import { Copy, Check, LogOut, Loader2, AlertCircle, QrCode, ScanLine } from "lucide-react"
 
 // Common card style to reduce duplication
 const CARD_CLASS = "rounded-xl border border-border bg-card p-6"
@@ -16,7 +17,8 @@ const CARD_CLASS = "rounded-xl border border-border bg-card p-6"
 export function RoomPanel() {
   const { 
     roomCode, 
-    connectionStatus, 
+    connectionStatus,
+    connectionInfo,
     errorMessage, 
     createRoom, 
     joinRoom, 
@@ -105,58 +107,8 @@ export function RoomPanel() {
   if (roomCode) {
     return (
       <div className={CARD_CLASS}>
-        {/* Header with connection status and role */}
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            {connectionStatus === "connected" ? (
-              <Wifi className="w-4 h-4 text-accent" />
-            ) : connectionStatus === "connecting" ? (
-              <Loader2 className="w-4 h-4 text-muted-foreground animate-spin" />
-            ) : connectionStatus === "error" ? (
-              <AlertCircle className="w-4 h-4 text-destructive" />
-            ) : (
-              <WifiOff className="w-4 h-4 text-muted-foreground" />
-            )}
-            <span className="text-sm text-muted-foreground">
-              {connectionStatus === "connected" 
-                ? "已连接" 
-                : connectionStatus === "connecting" 
-                  ? "等待连接..." 
-                  : connectionStatus === "error"
-                    ? "连接失败"
-                    : "未连接"}
-            </span>
-          </div>
-          <div className="flex items-center gap-3">
-            {/* Role badge */}
-            <div className={`flex items-center gap-1 text-xs px-2 py-1 rounded-full ${
-              isHost 
-                ? "bg-amber-500/10 text-amber-600 dark:text-amber-400" 
-                : "bg-blue-500/10 text-blue-600 dark:text-blue-400"
-            }`}>
-              {isHost ? (
-                <>
-                  <Crown className="w-3 h-3" />
-                  <span>房主</span>
-                </>
-              ) : (
-                <>
-                  <User className="w-3 h-3" />
-                  <span>访客</span>
-                </>
-              )}
-            </div>
-            {/* Peer count */}
-            {peerCount > 0 && (
-              <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                <Users className="w-4 h-4" />
-                <span>{peerCount}</span>
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="text-center mb-6">
+        {/* Room Code Display */}
+        <div className="text-center mb-5">
           <p className="text-xs text-muted-foreground mb-2 uppercase tracking-wider">房间代码</p>
           <div className="flex items-center justify-center gap-2">
             <span className="text-4xl font-mono font-bold tracking-[0.3em] text-foreground">
@@ -171,24 +123,19 @@ export function RoomPanel() {
               {copied ? <Check className="w-5 h-5 text-accent" /> : <Copy className="w-5 h-5" />}
             </Button>
           </div>
-          <p className="text-xs text-muted-foreground mt-3">
-            {connectionStatus === "connecting" 
-              ? isHost 
-                ? "等待其他设备加入..." 
-                : "正在连接到房间..."
-              : connectionStatus === "connected"
-                ? isHost
-                  ? `已有 ${peerCount} 台设备连接`
-                  : "已连接到房间，可以开始传输"
-                : connectionStatus === "error"
-                  ? errorMessage || "连接失败"
-                  : "在其他设备上输入此代码即可连接"}
-          </p>
-          {connectionStatus === "error" && (
-            <p className="text-xs text-destructive mt-2">{errorMessage}</p>
-          )}
         </div>
 
+        {/* Connection Status Display */}
+        <ConnectionStatusDisplay
+          status={connectionStatus}
+          isHost={isHost}
+          peerCount={peerCount}
+          errorMessage={errorMessage}
+          connectionInfo={connectionInfo}
+          className="mb-5"
+        />
+
+        {/* Action Buttons */}
         <div className="flex gap-2">
           {isHost && (
             <Button

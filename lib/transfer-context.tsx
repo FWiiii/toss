@@ -2,13 +2,14 @@
 
 import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from "react"
 import { generateUUID, uint8ToBase64, base64ToUint8 } from "./utils"
-import type { TransferItem, ConnectionStatus } from "./types"
+import type { TransferItem, ConnectionStatus, ConnectionType, ConnectionInfo } from "./types"
 
-export type { TransferItem, ConnectionStatus }
+export type { TransferItem, ConnectionStatus, ConnectionType, ConnectionInfo }
 
 type TransferContextType = {
   roomCode: string | null
   connectionStatus: ConnectionStatus
+  connectionInfo: ConnectionInfo
   errorMessage: string | null
   items: TransferItem[]
   createRoom: () => void
@@ -84,9 +85,80 @@ const ICE_SERVERS = {
   iceCandidatePoolSize: 10,
 }
 
+// Detect connection type from RTCPeerConnection stats
+async function detectConnectionType(pc: RTCPeerConnection): Promise<ConnectionInfo> {
+  try {
+    const stats = await pc.getStats()
+    let selectedCandidatePairId: string | null = null
+    
+    // Find the selected candidate pair
+    stats.forEach((report) => {
+      if (report.type === "transport" && report.selectedCandidatePairId) {
+        selectedCandidatePairId = report.selectedCandidatePairId
+      }
+    })
+    
+    if (!selectedCandidatePairId) {
+      // Fallback: look for nominated candidate pair
+      stats.forEach((report) => {
+        if (report.type === "candidate-pair" && report.nominated && report.state === "succeeded") {
+          selectedCandidatePairId = report.id
+        }
+      })
+    }
+    
+    if (!selectedCandidatePairId) {
+      return { type: "unknown" }
+    }
+    
+    // Get the candidate pair
+    const candidatePair = stats.get(selectedCandidatePairId)
+    if (!candidatePair) {
+      return { type: "unknown" }
+    }
+    
+    // Get local and remote candidates
+    const localCandidate = stats.get(candidatePair.localCandidateId)
+    const remoteCandidate = stats.get(candidatePair.remoteCandidateId)
+    
+    if (!localCandidate || !remoteCandidate) {
+      return { type: "unknown" }
+    }
+    
+    // Determine connection type based on candidate types
+    // Priority: if either is relay, it's relay; otherwise check for direct
+    const localType = localCandidate.candidateType
+    const remoteType = remoteCandidate.candidateType
+    
+    let connectionType: ConnectionType = "unknown"
+    
+    if (localType === "relay" || remoteType === "relay") {
+      connectionType = "relay"
+    } else if (localType === "host" && remoteType === "host") {
+      connectionType = "direct"
+    } else if (localType === "srflx" || localType === "prflx" || 
+               remoteType === "srflx" || remoteType === "prflx") {
+      connectionType = "stun"
+    } else if (localType === "host" || remoteType === "host") {
+      connectionType = "direct"
+    }
+    
+    return {
+      type: connectionType,
+      localAddress: localCandidate.address || localCandidate.ip,
+      remoteAddress: remoteCandidate.address || remoteCandidate.ip,
+      protocol: localCandidate.protocol as "udp" | "tcp" | undefined,
+    }
+  } catch (error) {
+    console.error("Failed to detect connection type:", error)
+    return { type: "unknown" }
+  }
+}
+
 export function TransferProvider({ children }: { children: React.ReactNode }) {
   const [roomCode, setRoomCode] = useState<string | null>(null)
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>("disconnected")
+  const [connectionInfo, setConnectionInfo] = useState<ConnectionInfo>({ type: "unknown" })
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [items, setItems] = useState<TransferItem[]>([])
   const [peerCount, setPeerCount] = useState(0)
@@ -260,6 +332,20 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
         // Notify all existing connections about the new peer
         broadcastToConnections({ type: "peer-joined" }, conn.peer)
       }
+      
+      // Detect connection type after ICE stabilizes
+      const detectType = async () => {
+        const pc = conn.peerConnection as RTCPeerConnection | undefined
+        if (pc && pc.connectionState === "connected") {
+          const info = await detectConnectionType(pc)
+          setConnectionInfo(info)
+        } else if (pc) {
+          // Wait for connection to stabilize
+          setTimeout(detectType, 1000)
+        }
+      }
+      // Start detection after a short delay
+      setTimeout(detectType, 500)
     })
 
     conn.on("close", () => {
@@ -480,6 +566,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       
       setRoomCode(null)
       setConnectionStatus("disconnected")
+      setConnectionInfo({ type: "unknown" })
       setErrorMessage(null)
       setPeerCount(0)
       setIsHost(false)
@@ -585,6 +672,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       value={{
         roomCode,
         connectionStatus,
+        connectionInfo,
         errorMessage,
         items,
         createRoom,
