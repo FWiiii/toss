@@ -4,9 +4,10 @@ import React from "react"
 
 import { useState, useRef, useCallback, useEffect } from "react"
 import { useTransfer } from "@/lib/transfer-context"
+import { useShareTarget } from "@/hooks/use-share-target"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
-import { Send, Upload, FileText, File as FileIcon, Download, Trash2, ImageIcon } from "lucide-react"
+import { Send, Upload, FileText, File as FileIcon, Download, Trash2, ImageIcon, Share2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 function formatFileSize(bytes: number) {
@@ -31,12 +32,51 @@ function getFileIcon(name?: string) {
 
 export function TransferPanel() {
   const { connectionStatus, items, sendText, sendFile, clearHistory, peerCount } = useTransfer()
+  const { sharedFiles, sharedText, hasSharedContent, clearSharedData } = useShareTarget()
   const [text, setText] = useState("")
   const [isDragging, setIsDragging] = useState(false)
+  const [pendingShare, setPendingShare] = useState<{ files: File[], text: string } | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
 
   const isConnected = connectionStatus === "connected" && peerCount > 0
+
+  // Handle shared content from Web Share Target
+  useEffect(() => {
+    if (hasSharedContent) {
+      if (isConnected) {
+        // Send immediately if connected
+        if (sharedText) {
+          sendText(sharedText)
+        }
+        sharedFiles.forEach((file) => {
+          sendFile(file)
+        })
+        clearSharedData()
+      } else {
+        // Store pending share data
+        setPendingShare({ files: sharedFiles, text: sharedText })
+        // Pre-fill text input
+        if (sharedText) {
+          setText(sharedText)
+        }
+      }
+    }
+  }, [hasSharedContent, isConnected, sharedFiles, sharedText, sendText, sendFile, clearSharedData])
+
+  // Send pending share when connected
+  useEffect(() => {
+    if (isConnected && pendingShare) {
+      if (pendingShare.text && text === pendingShare.text) {
+        // Text is still in input, user can choose to send
+      }
+      pendingShare.files.forEach((file) => {
+        sendFile(file)
+      })
+      setPendingShare(null)
+      clearSharedData()
+    }
+  }, [isConnected, pendingShare, text, sendFile, clearSharedData])
 
   // Auto scroll to bottom when new items arrive
   useEffect(() => {
@@ -141,9 +181,24 @@ export function TransferPanel() {
         </div>
       )}
 
+      {/* Pending Share Notice */}
+      {pendingShare && !isConnected && (
+        <div className="mx-4 mt-4 p-3 rounded-lg bg-accent/10 border border-accent/20">
+          <div className="flex items-center gap-2 text-sm text-accent">
+            <Share2 className="w-4 h-4" />
+            <span>有待发送的分享内容，请先连接设备</span>
+          </div>
+          {pendingShare.files.length > 0 && (
+            <p className="text-xs text-muted-foreground mt-1">
+              {pendingShare.files.length} 个文件待发送
+            </p>
+          )}
+        </div>
+      )}
+
       {/* Items List - 移动端自然高度，桌面端固定高度可滚动 */}
       <div ref={listRef} className="flex-1 lg:overflow-y-auto p-4 space-y-3 lg:min-h-0">
-        {items.length === 0 ? (
+        {items.length === 0 && !pendingShare ? (
           <div className="flex flex-col items-center justify-center h-full text-muted-foreground py-12">
             <div className="w-16 h-16 rounded-full bg-secondary flex items-center justify-center mb-4">
               <Send className="w-7 h-7" />
