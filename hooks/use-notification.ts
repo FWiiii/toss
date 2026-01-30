@@ -102,22 +102,30 @@ export function useNotification() {
   }, [])
 
   // Show browser notification
-  const showNotification = useCallback(async (title: string, options?: NotificationOptions) => {
-    if (!settings.browserNotificationEnabled) return
+  const showNotification = useCallback(async (title: string, options?: NotificationOptions, force = false) => {
+    // Only check settings if not forced (allow test notification to bypass settings)
+    if (!force && !settings.browserNotificationEnabled) return
 
-    // Don't show notification if page is focused
-    if (typeof document !== "undefined" && !document.hidden) return
+    // Don't show notification if page is focused (unless forced for testing)
+    if (!force && typeof document !== "undefined" && !document.hidden) return
 
-    if (typeof window === "undefined" || !("Notification" in window)) return
+    if (typeof window === "undefined" || !("Notification" in window)) {
+      console.log("Notification API not supported")
+      return
+    }
 
     let permission = Notification.permission
+    console.log("Current notification permission:", permission)
 
     if (permission === "default") {
+      console.log("Requesting notification permission...")
       permission = await requestNotificationPermission()
+      console.log("Permission after request:", permission)
     }
 
     if (permission === "granted") {
       try {
+        console.log("Creating notification:", title)
         const notification = new Notification(title, {
           icon: "/logo-rounded.svg",
           badge: "/logo-rounded.svg",
@@ -132,9 +140,12 @@ export function useNotification() {
           window.focus()
           notification.close()
         }
+        console.log("Notification created successfully")
       } catch (error) {
         console.error("Failed to show notification:", error)
       }
+    } else {
+      console.log("Notification permission denied or not granted:", permission)
     }
   }, [settings.browserNotificationEnabled, requestNotificationPermission])
 
@@ -173,6 +184,22 @@ export function useNotification() {
     })
   }, [playSound, vibrate, showNotification])
 
+  // Test notification (force show even if page is visible)
+  const testNotification = useCallback(() => {
+    // Play sound
+    playSound()
+
+    // Vibrate on mobile
+    vibrate([100, 50, 100, 50, 100])
+
+    // Force show browser notification even if page is focused
+    showNotification("Toss - 测试通知", {
+      body: "通知功能正常工作 ✓",
+      tag: "toss-test",
+      renotify: true,
+    }, true) // force = true
+  }, [playSound, vibrate, showNotification])
+
   // Update settings
   const updateSettings = useCallback((newSettings: Partial<NotificationSettings>) => {
     setSettings(prev => ({ ...prev, ...newSettings }))
@@ -187,5 +214,6 @@ export function useNotification() {
     showNotification,
     vibrate,
     notifyReceived,
+    testNotification,
   }
 }

@@ -49,7 +49,7 @@ export function TransferInput({
           value={text}
           onChange={(e) => onTextChange(e.target.value)}
           disabled={!isConnected}
-          className="min-h-[80px] resize-none bg-input border-border"
+          className="min-h-[80px] resize-none bg-input border-border focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:border-border"
           onKeyDown={handleKeyDown}
         />
       </div>

@@ -191,8 +191,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     notificationPermission,
     requestNotificationPermission,
     notifyReceived,
-    playSound,
-    vibrate,
+    testNotification,
   } = useNotification()
   
   // Reconnection state
@@ -899,13 +898,6 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     revokeAllBlobUrls()
     setItems([])
   }, [revokeAllBlobUrls])
-
-  // Test notification
-  const testNotification = useCallback(() => {
-    playSound()
-    vibrate([100, 50, 100, 50, 100])
-    notifyReceived("text")
-  }, [playSound, vibrate, notifyReceived])
 
   // Cleanup on unmount
   useEffect(() => {
