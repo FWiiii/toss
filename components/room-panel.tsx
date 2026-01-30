@@ -4,7 +4,11 @@ import { useState } from "react"
 import { useTransfer } from "@/lib/transfer-context"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { EmptyState } from "@/components/ui/empty-state"
 import { Copy, Check, LogOut, Users, Wifi, WifiOff, Loader2, AlertCircle, Crown, User } from "lucide-react"
+
+// Common card style to reduce duplication
+const CARD_CLASS = "rounded-xl border border-border bg-card p-6"
 
 export function RoomPanel() {
   const { 
@@ -61,19 +65,15 @@ export function RoomPanel() {
   // Room dissolved state - show return button
   if (connectionStatus === "dissolved") {
     return (
-      <div className="rounded-xl border border-border bg-card p-6">
-        <div className="text-center mb-6">
-          <div className="w-16 h-16 rounded-full bg-destructive/10 flex items-center justify-center mx-auto mb-4">
-            <AlertCircle className="w-8 h-8 text-destructive" />
-          </div>
-          <h3 className="text-lg font-medium text-foreground mb-2">房间已解散</h3>
-          <p className="text-sm text-muted-foreground">
-            房主已关闭房间，连接已断开
-          </p>
-        </div>
-
+      <div className={CARD_CLASS}>
+        <EmptyState
+          icon={AlertCircle}
+          title="房间已解散"
+          description="房主已关闭房间，连接已断开"
+          iconClassName="bg-destructive/10 text-destructive"
+        />
         <Button
-          className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
+          className="w-full bg-primary text-primary-foreground hover:bg-primary/90 mt-2"
           onClick={leaveRoom}
         >
           返回首页
@@ -84,7 +84,7 @@ export function RoomPanel() {
 
   if (roomCode) {
     return (
-      <div className="rounded-xl border border-border bg-card p-6">
+      <div className={CARD_CLASS}>
         {/* Header with connection status and role */}
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
@@ -182,7 +182,7 @@ export function RoomPanel() {
   }
 
   return (
-    <div className="rounded-xl border border-border bg-card p-6">
+    <div className={CARD_CLASS}>
       <div className="space-y-6">
         <div>
           <Button

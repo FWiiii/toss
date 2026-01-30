@@ -104,13 +104,59 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
   const fileBuffersRef = useRef<Map<string, { name: string; size: number; chunks: Uint8Array[]; received: number }>>(new Map())
   // Track Blob URLs for cleanup to prevent memory leaks
   const blobUrlsRef = useRef<Set<string>>(new Set())
+
+  // ============ Utility functions to reduce code duplication ============
+  
+  // Set error state with message
+  const setError = useCallback((message: string) => {
+    setConnectionStatus("error")
+    setErrorMessage(message)
+  }, [])
+
+  // Safely close a connection
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const safeClose = (conn: any) => {
+    try { conn.close() } catch {}
+  }
+
+  // Safely destroy peer
+  const destroyPeer = useCallback(() => {
+    if (peerRef.current) {
+      try {
+        peerRef.current.disconnect()
+        peerRef.current.destroy()
+      } catch {}
+      peerRef.current = null
+    }
+  }, [])
+
+  // Close all connections and clear buffers
+  const cleanupConnections = useCallback(() => {
+    connectionsRef.current.forEach(safeClose)
+    connectionsRef.current.clear()
+    fileBuffersRef.current.clear()
+  }, [])
+
+  // Full cleanup: connections + peer
+  const cleanupAll = useCallback(() => {
+    cleanupConnections()
+    destroyPeer()
+  }, [cleanupConnections, destroyPeer])
+
+  // Broadcast data to all open connections
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const broadcastToConnections = useCallback((data: any, excludePeer?: string) => {
+    connectionsRef.current.forEach((conn) => {
+      if (conn.open && conn.peer !== excludePeer) {
+        try { conn.send(data) } catch {}
+      }
+    })
+  }, [])
   
   // Revoke all tracked Blob URLs to free memory
   const revokeAllBlobUrls = useCallback(() => {
     blobUrlsRef.current.forEach(url => {
-      try {
-        URL.revokeObjectURL(url)
-      } catch {}
+      try { URL.revokeObjectURL(url) } catch {}
     })
     blobUrlsRef.current.clear()
   }, [])
@@ -166,8 +212,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       connectionTimeout = setTimeout(() => {
         if (!conn.open) {
           conn.close()
-          setConnectionStatus("error")
-          setErrorMessage("连接超时，请确保两个设备能够互相访问（同一网络或允许 P2P 连接）")
+          setError("连接超时，请确保两个设备能够互相访问（同一网络或允许 P2P 连接）")
         }
       }, 20000)
     }
@@ -191,8 +236,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
               pc.restartIce()
             } catch {
               if (!conn.open && isOutgoing) {
-                setConnectionStatus("error")
-                setErrorMessage("连接失败，请确保两设备在同一网络或允许 P2P 连接")
+                setError("连接失败，请确保两设备在同一网络或允许 P2P 连接")
               }
             }
           }
@@ -214,13 +258,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
         // This is an incoming connection (we are host)
         addSystemMessage("有新设备加入了房间")
         // Notify all existing connections about the new peer
-        connectionsRef.current.forEach((c) => {
-          if (c.peer !== conn.peer && c.open) {
-            try {
-              c.send({ type: "peer-joined" })
-            } catch {}
-          }
-        })
+        broadcastToConnections({ type: "peer-joined" }, conn.peer)
       }
     })
 
@@ -242,8 +280,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       if (connectionTimeout) clearTimeout(connectionTimeout)
       connectionsRef.current.delete(conn.peer)
       if (isOutgoing && connectionsRef.current.size === 0) {
-        setConnectionStatus("error")
-        setErrorMessage("连接失败，请重试")
+        setError("连接失败，请重试")
       }
       updatePeerCount()
     })
@@ -292,20 +329,13 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
         setConnectionStatus("dissolved")
         setErrorMessage("房间已解散")
         // Clean up
-        connectionsRef.current.forEach((c) => {
-          try { c.close() } catch {}
-        })
-        connectionsRef.current.clear()
-        if (peerRef.current) {
-          try { peerRef.current.destroy() } catch {}
-          peerRef.current = null
-        }
+        cleanupAll()
         setPeerCount(0)
       } else if (data.type === "peer-joined") {
         addSystemMessage("有新设备加入了房间")
       }
     })
-  }, [addItem, addSystemMessage, updatePeerCount, createTrackedBlobUrl])
+  }, [addItem, addSystemMessage, updatePeerCount, createTrackedBlobUrl, broadcastToConnections, cleanupAll, setError])
 
   const createRoom = useCallback(async () => {
     setIsCreatingRoom(true)
@@ -317,16 +347,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       const peerId = PEER_PREFIX + code
       
       // Clean up any existing connections and peer
-      connectionsRef.current.forEach((conn) => {
-        try { conn.close() } catch {}
-      })
-      connectionsRef.current.clear()
-      fileBuffersRef.current.clear()
-      
-      if (peerRef.current) {
-        try { peerRef.current.destroy() } catch {}
-        peerRef.current = null
-      }
+      cleanupAll()
       
       setRoomCode(code)
       setConnectionStatus("connecting")
@@ -357,11 +378,9 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
           peer.destroy()
           setTimeout(() => createRoom(), 500)
         } else if (err.type === "network" || err.type === "server-error") {
-          setConnectionStatus("error")
-          setErrorMessage("网络错误，请检查网络连接")
+          setError("网络错误，请检查网络连接")
         } else {
-          setConnectionStatus("error")
-          setErrorMessage(`连接错误: ${err.type}`)
+          setError(`连接错误: ${err.type}`)
         }
       })
 
@@ -374,10 +393,9 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       peerRef.current = peer
     } catch {
       setIsCreatingRoom(false)
-      setConnectionStatus("error")
-      setErrorMessage("创建房间失败，请重试")
+      setError("创建房间失败，请重试")
     }
-  }, [setupConnection])
+  }, [setupConnection, cleanupAll, setError])
 
   const joinRoom = useCallback(async (code: string) => {
     const normalizedCode = code.toUpperCase().replace(/[^A-Z0-9]/g, "")
@@ -394,16 +412,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       const hostPeerId = PEER_PREFIX + normalizedCode
       
       // Clean up any existing connections and peer before joining
-      connectionsRef.current.forEach((conn) => {
-        try { conn.close() } catch {}
-      })
-      connectionsRef.current.clear()
-      fileBuffersRef.current.clear()
-      
-      if (peerRef.current) {
-        try { peerRef.current.destroy() } catch {}
-        peerRef.current = null
-      }
+      cleanupAll()
       
       // Small delay to ensure cleanup is complete
       await new Promise(resolve => setTimeout(resolve, 100))
@@ -427,8 +436,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
         if (conn) {
           setupConnection(conn, true)
         } else {
-          setConnectionStatus("error")
-          setErrorMessage("无法创建连接")
+          setError("无法创建连接")
         }
       })
 
@@ -439,14 +447,11 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       peer.on("error", (err) => {
         setIsJoiningRoom(false)
         if (err.type === "peer-unavailable") {
-          setConnectionStatus("error")
-          setErrorMessage("找不到房间，请检查代码是否正确，或房间可能已关闭")
+          setError("找不到房间，请检查代码是否正确，或房间可能已关闭")
         } else if (err.type === "network" || err.type === "server-error") {
-          setConnectionStatus("error")
-          setErrorMessage("无法连接到信令服务器，请检查网络")
+          setError("无法连接到信令服务器，请检查网络")
         } else {
-          setConnectionStatus("error")
-          setErrorMessage(`连接错误: ${err.type}`)
+          setError(`连接错误: ${err.type}`)
         }
       })
 
@@ -459,40 +464,19 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       peerRef.current = peer
     } catch {
       setIsJoiningRoom(false)
-      setConnectionStatus("error")
-      setErrorMessage("加入房间失败，请重试")
+      setError("加入房间失败，请重试")
     }
-  }, [setupConnection])
+  }, [setupConnection, cleanupAll, setError])
 
   const leaveRoom = useCallback(() => {
     // If host, notify all guests that room is being dissolved
     if (isHost) {
-      connectionsRef.current.forEach((conn) => {
-        try {
-          if (conn.open) {
-            conn.send({ type: "room-dissolved" })
-          }
-        } catch {}
-      })
+      broadcastToConnections({ type: "room-dissolved" })
     }
     
     // Small delay to ensure messages are sent before closing
     setTimeout(() => {
-      // Close all connections gracefully
-      connectionsRef.current.forEach((conn) => {
-        try { conn.close() } catch {}
-      })
-      connectionsRef.current.clear()
-      fileBuffersRef.current.clear()
-      
-      // Destroy peer connection
-      if (peerRef.current) {
-        try { 
-          peerRef.current.disconnect()
-          peerRef.current.destroy() 
-        } catch {}
-        peerRef.current = null
-      }
+      cleanupAll()
       
       setRoomCode(null)
       setConnectionStatus("disconnected")
@@ -500,23 +484,19 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       setPeerCount(0)
       setIsHost(false)
     }, 100)
-  }, [isHost])
+  }, [isHost, broadcastToConnections, cleanupAll])
 
   const sendText = useCallback((text: string) => {
     if (!text.trim()) return
     
-    connectionsRef.current.forEach((conn) => {
-      if (conn.open) {
-        conn.send({ type: "text", content: text })
-      }
-    })
+    broadcastToConnections({ type: "text", content: text })
     
     addItem({
       type: "text",
       content: text,
       direction: "sent",
     })
-  }, [addItem])
+  }, [addItem, broadcastToConnections])
 
   const sendFile = useCallback(async (file: File): Promise<void> => {
     const CHUNK_SIZE = 16384
@@ -582,28 +562,19 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      // Destroy peer connection
+      // Close all connections and destroy peer
+      connectionsRef.current.forEach(safeClose)
+      connectionsRef.current.clear()
+      fileBuffersRef.current.clear()
+      
       if (peerRef.current) {
-        try {
-          peerRef.current.destroy()
-        } catch {}
+        try { peerRef.current.destroy() } catch {}
         peerRef.current = null
       }
       
-      // Close all connections
-      connectionsRef.current.forEach((conn) => {
-        try { conn.close() } catch {}
-      })
-      connectionsRef.current.clear()
-      
-      // Clear file buffers
-      fileBuffersRef.current.clear()
-      
       // Revoke all Blob URLs to free memory
       blobUrlsRef.current.forEach(url => {
-        try {
-          URL.revokeObjectURL(url)
-        } catch {}
+        try { URL.revokeObjectURL(url) } catch {}
       })
       blobUrlsRef.current.clear()
     }

@@ -4,10 +4,11 @@ import { useState, useRef, useCallback, useEffect } from "react"
 import { useTransfer } from "@/lib/transfer-context"
 import { useShareTarget } from "@/hooks/use-share-target"
 import { Button } from "@/components/ui/button"
+import { EmptyState } from "@/components/ui/empty-state"
 import { TransferItemComponent } from "@/components/transfer-item"
 import { ImagePreviewDialog } from "@/components/image-preview-dialog"
 import { TransferInput } from "@/components/transfer-input"
-import { Send, Upload, Trash2, Share2 } from "lucide-react"
+import { Send, Trash2, Share2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 export function TransferPanel() {
@@ -179,14 +180,11 @@ export function TransferPanel() {
       {/* Items List */}
       <div ref={listRef} className="flex-1 lg:overflow-y-auto p-4 space-y-3 lg:min-h-0">
         {items.length === 0 && !pendingShare ? (
-          <div className="flex flex-col items-center justify-center h-full text-muted-foreground py-12">
-            <div className="w-16 h-16 rounded-full bg-secondary flex items-center justify-center mb-4">
-              <Send className="w-7 h-7" />
-            </div>
-            <p className="text-sm">
-              {isConnected ? "发送文本或文件开始传输" : "连接设备后开始传输"}
-            </p>
-          </div>
+          <EmptyState
+            icon={Send}
+            description={isConnected ? "发送文本或文件开始传输" : "连接设备后开始传输"}
+            containerClassName="h-full"
+          />
         ) : (
           items.map((item) => (
             <TransferItemComponent

@@ -10,6 +10,15 @@ import {
 
 export type { SharedData }
 
+// Helper to convert file data array to File objects
+type FileData = { name: string; type: string; data: string }
+const convertFilesFromData = (files: FileData[]): File[] =>
+  files.filter(f => f.data).map(f => base64ToFile(f.data, f.name, f.type))
+
+// Helper to combine text parts
+const combineTextParts = (...parts: (string | undefined | null)[]): string =>
+  parts.filter(Boolean).join("\n")
+
 export function useShareTarget() {
   const [sharedData, setSharedData] = useState<SharedData | null>(null)
   const [sharedFiles, setSharedFiles] = useState<File[]>([])
@@ -36,15 +45,8 @@ export function useShareTarget() {
       const dbData = await getShareDataFromDB()
       if (dbData) {
         setSharedData(dbData)
-        
-        const files = dbData.files
-          .filter(f => f.data) // Only files with data
-          .map((f) => base64ToFile(f.data, f.name, f.type))
-        setSharedFiles(files)
-        
-        const textParts = [dbData.title, dbData.text, dbData.url].filter(Boolean)
-        setSharedText(textParts.join("\n"))
-        
+        setSharedFiles(convertFilesFromData(dbData.files))
+        setSharedText(combineTextParts(dbData.title, dbData.text, dbData.url))
         await clearShareDataFromDB()
         foundData = true
       }
@@ -58,23 +60,18 @@ export function useShareTarget() {
               title: string
               text: string
               url: string
-              files: Array<{ name: string; type: string; size: number; data: string }>
+              files: FileData[]
             }
             
-            // Convert files
-            const files = data.files
-              .filter(f => f.data)
-              .map(f => base64ToFile(f.data, f.name, f.type))
-            
+            const files = convertFilesFromData(data.files)
             if (files.length > 0) {
               setSharedFiles(files)
               foundData = true
             }
             
-            // Combine text parts
-            const textParts = [data.title, data.text, data.url].filter(Boolean)
-            if (textParts.length > 0) {
-              setSharedText(textParts.join("\n"))
+            const text = combineTextParts(data.title, data.text, data.url)
+            if (text) {
+              setSharedText(text)
               foundData = true
             }
           }
