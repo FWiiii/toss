@@ -4,15 +4,15 @@ import React, { createContext, useContext, useState, useCallback, useRef, useEff
 
 export type TransferItem = {
   id: string
-  type: "text" | "file"
+  type: "text" | "file" | "system"
   name?: string
   content: string
   size?: number
   timestamp: Date
-  direction: "sent" | "received"
+  direction: "sent" | "received" | "system"
 }
 
-type ConnectionStatus = "disconnected" | "connecting" | "connected" | "error"
+type ConnectionStatus = "disconnected" | "connecting" | "connected" | "error" | "dissolved"
 
 type TransferContextType = {
   roomCode: string | null
@@ -26,6 +26,7 @@ type TransferContextType = {
   sendFile: (file: File) => void
   clearHistory: () => void
   peerCount: number
+  isHost: boolean
 }
 
 const TransferContext = createContext<TransferContextType | null>(null)
@@ -85,13 +86,35 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [items, setItems] = useState<TransferItem[]>([])
   const [peerCount, setPeerCount] = useState(0)
+  const [isHost, setIsHost] = useState(false)
   
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const peerRef = useRef<any>(null)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const connectionsRef = useRef<Map<string, any>>(new Map())
-  const isHostRef = useRef(false)
   const fileBuffersRef = useRef<Map<string, { name: string; size: number; chunks: Uint8Array[]; received: number }>>(new Map())
+  
+  // Add system message
+  const addSystemMessage = useCallback((content: string) => {
+    const id = (typeof crypto !== 'undefined' && crypto.randomUUID)
+      ? crypto.randomUUID()
+      : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+          const r = Math.random() * 16 | 0
+          const v = c === 'x' ? r : (r & 0x3 | 0x8)
+          return v.toString(16)
+        })
+    
+    setItems((prev) => [
+      ...prev,
+      {
+        id,
+        type: "system",
+        content,
+        timestamp: new Date(),
+        direction: "system",
+      },
+    ])
+  }, [])
 
   const addItem = useCallback((item: Omit<TransferItem, "id" | "timestamp">) => {
     // Generate UUID with fallback for older browsers
@@ -165,12 +188,33 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       if (connectionTimeout) clearTimeout(connectionTimeout)
       connectionsRef.current.set(conn.peer, conn)
       updatePeerCount()
+      
+      // Send join notification to all other peers (host does this)
+      if (!isOutgoing) {
+        // This is an incoming connection (we are host)
+        addSystemMessage("有新设备加入了房间")
+        // Notify all existing connections about the new peer
+        connectionsRef.current.forEach((c) => {
+          if (c.peer !== conn.peer && c.open) {
+            try {
+              c.send({ type: "peer-joined" })
+            } catch {}
+          }
+        })
+      }
     })
 
     conn.on("close", () => {
       if (connectionTimeout) clearTimeout(connectionTimeout)
+      const wasConnected = connectionsRef.current.has(conn.peer)
       connectionsRef.current.delete(conn.peer)
       fileBuffersRef.current.delete(conn.peer)
+      
+      // Show message when peer disconnects
+      if (wasConnected) {
+        addSystemMessage("有设备断开了连接")
+      }
+      
       updatePeerCount()
     })
 
@@ -225,9 +269,26 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
           })
           fileBuffersRef.current.delete(conn.peer)
         }
+      } else if (data.type === "room-dissolved") {
+        // Host has closed the room
+        addSystemMessage("房主已解散房间")
+        setConnectionStatus("dissolved")
+        setErrorMessage("房间已解散")
+        // Clean up
+        connectionsRef.current.forEach((c) => {
+          try { c.close() } catch {}
+        })
+        connectionsRef.current.clear()
+        if (peerRef.current) {
+          try { peerRef.current.destroy() } catch {}
+          peerRef.current = null
+        }
+        setPeerCount(0)
+      } else if (data.type === "peer-joined") {
+        addSystemMessage("有新设备加入了房间")
       }
     })
-  }, [addItem, updatePeerCount])
+  }, [addItem, addSystemMessage, updatePeerCount])
 
   const createRoom = useCallback(async () => {
     const { default: Peer } = await import("peerjs")
@@ -250,7 +311,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     setRoomCode(code)
     setConnectionStatus("connecting")
     setErrorMessage(null)
-    isHostRef.current = true
+    setIsHost(true)
 
     const peer = new Peer(peerId, {
       debug: 0,
@@ -320,7 +381,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     setRoomCode(normalizedCode)
     setConnectionStatus("connecting")
     setErrorMessage(null)
-    isHostRef.current = false
+    setIsHost(false)
 
     const peer = new Peer({
       debug: 0,
@@ -367,28 +428,42 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
   }, [setupConnection])
 
   const leaveRoom = useCallback(() => {
-    // Close all connections gracefully
-    connectionsRef.current.forEach((conn) => {
-      try { conn.close() } catch {}
-    })
-    connectionsRef.current.clear()
-    fileBuffersRef.current.clear()
-    
-    // Destroy peer connection
-    if (peerRef.current) {
-      try { 
-        peerRef.current.disconnect()
-        peerRef.current.destroy() 
-      } catch {}
-      peerRef.current = null
+    // If host, notify all guests that room is being dissolved
+    if (isHost) {
+      connectionsRef.current.forEach((conn) => {
+        try {
+          if (conn.open) {
+            conn.send({ type: "room-dissolved" })
+          }
+        } catch {}
+      })
     }
     
-    setRoomCode(null)
-    setConnectionStatus("disconnected")
-    setErrorMessage(null)
-    setPeerCount(0)
-    isHostRef.current = false
-  }, [])
+    // Small delay to ensure messages are sent before closing
+    setTimeout(() => {
+      // Close all connections gracefully
+      connectionsRef.current.forEach((conn) => {
+        try { conn.close() } catch {}
+      })
+      connectionsRef.current.clear()
+      fileBuffersRef.current.clear()
+      
+      // Destroy peer connection
+      if (peerRef.current) {
+        try { 
+          peerRef.current.disconnect()
+          peerRef.current.destroy() 
+        } catch {}
+        peerRef.current = null
+      }
+      
+      setRoomCode(null)
+      setConnectionStatus("disconnected")
+      setErrorMessage(null)
+      setPeerCount(0)
+      setIsHost(false)
+    }, 100)
+  }, [isHost])
 
   const sendText = useCallback((text: string) => {
     if (!text.trim()) return
@@ -490,6 +565,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
         sendFile,
         clearHistory,
         peerCount,
+        isHost,
       }}
     >
       {children}

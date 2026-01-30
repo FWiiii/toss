@@ -4,10 +4,10 @@ import { useState } from "react"
 import { useTransfer } from "@/lib/transfer-context"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Copy, Check, LogOut, Users, Wifi, WifiOff, Loader2, AlertCircle } from "lucide-react"
+import { Copy, Check, LogOut, Users, Wifi, WifiOff, Loader2, AlertCircle, Crown, User } from "lucide-react"
 
 export function RoomPanel() {
-  const { roomCode, connectionStatus, errorMessage, createRoom, joinRoom, leaveRoom, peerCount } = useTransfer()
+  const { roomCode, connectionStatus, errorMessage, createRoom, joinRoom, leaveRoom, peerCount, isHost } = useTransfer()
   const [inputCode, setInputCode] = useState("")
   const [copied, setCopied] = useState(false)
 
@@ -47,9 +47,34 @@ export function RoomPanel() {
     return code.slice(0, 3) + " " + code.slice(3)
   }
 
+  // Room dissolved state - show return button
+  if (connectionStatus === "dissolved") {
+    return (
+      <div className="rounded-xl border border-border bg-card p-6">
+        <div className="text-center mb-6">
+          <div className="w-16 h-16 rounded-full bg-destructive/10 flex items-center justify-center mx-auto mb-4">
+            <AlertCircle className="w-8 h-8 text-destructive" />
+          </div>
+          <h3 className="text-lg font-medium text-foreground mb-2">房间已解散</h3>
+          <p className="text-sm text-muted-foreground">
+            房主已关闭房间，连接已断开
+          </p>
+        </div>
+
+        <Button
+          className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
+          onClick={leaveRoom}
+        >
+          返回首页
+        </Button>
+      </div>
+    )
+  }
+
   if (roomCode) {
     return (
       <div className="rounded-xl border border-border bg-card p-6">
+        {/* Header with connection status and role */}
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             {connectionStatus === "connected" ? (
@@ -71,12 +96,33 @@ export function RoomPanel() {
                     : "未连接"}
             </span>
           </div>
-          {peerCount > 0 && (
-            <div className="flex items-center gap-1 text-sm text-muted-foreground">
-              <Users className="w-4 h-4" />
-              <span>{peerCount}</span>
+          <div className="flex items-center gap-3">
+            {/* Role badge */}
+            <div className={`flex items-center gap-1 text-xs px-2 py-1 rounded-full ${
+              isHost 
+                ? "bg-amber-500/10 text-amber-600 dark:text-amber-400" 
+                : "bg-blue-500/10 text-blue-600 dark:text-blue-400"
+            }`}>
+              {isHost ? (
+                <>
+                  <Crown className="w-3 h-3" />
+                  <span>房主</span>
+                </>
+              ) : (
+                <>
+                  <User className="w-3 h-3" />
+                  <span>访客</span>
+                </>
+              )}
             </div>
-          )}
+            {/* Peer count */}
+            {peerCount > 0 && (
+              <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                <Users className="w-4 h-4" />
+                <span>{peerCount}</span>
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="text-center mb-6">
@@ -96,9 +142,13 @@ export function RoomPanel() {
           </div>
           <p className="text-xs text-muted-foreground mt-3">
             {connectionStatus === "connecting" 
-              ? "等待其他设备加入..." 
+              ? isHost 
+                ? "等待其他设备加入..." 
+                : "正在连接到房间..."
               : connectionStatus === "connected"
-                ? "已有设备连接，可以开始传输"
+                ? isHost
+                  ? `已有 ${peerCount} 台设备连接`
+                  : "已连接到房间，可以开始传输"
                 : connectionStatus === "error"
                   ? errorMessage || "连接失败"
                   : "在其他设备上输入此代码即可连接"}
@@ -114,7 +164,7 @@ export function RoomPanel() {
           onClick={leaveRoom}
         >
           <LogOut className="w-4 h-4 mr-2" />
-          离开房间
+          {isHost ? "解散房间" : "离开房间"}
         </Button>
       </div>
     )

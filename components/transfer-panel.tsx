@@ -224,6 +224,17 @@ export function TransferPanel() {
           </div>
         ) : (
           items.map((item) => {
+            // System messages
+            if (item.type === "system") {
+              return (
+                <div key={item.id} className="flex justify-center">
+                  <div className="px-3 py-1 rounded-full bg-muted text-xs text-muted-foreground">
+                    {item.content}
+                  </div>
+                </div>
+              )
+            }
+            
             const IconComponent = getFileIcon(item.name)
             return (
               <div
