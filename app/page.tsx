@@ -5,6 +5,7 @@ import { RoomPanel } from "@/components/room-panel"
 import { TransferPanel } from "@/components/transfer-panel"
 import { PWARegister } from "@/components/pwa-register"
 import { ThemeToggle } from "@/components/theme-toggle"
+import { RoomErrorBoundary, TransferErrorBoundary } from "@/components/error-boundary"
 import { ArrowLeftRight, Smartphone, Laptop, Tablet } from "lucide-react"
 
 export default function Home() {
@@ -42,12 +43,16 @@ export default function Home() {
         <main className="flex-1 container mx-auto px-4 py-6 flex flex-col lg:flex-row gap-6 lg:min-h-0 lg:overflow-hidden">
           {/* Left Panel - Room */}
           <div className="lg:w-[360px] shrink-0 overflow-y-auto">
-            <RoomPanel />
+            <RoomErrorBoundary>
+              <RoomPanel />
+            </RoomErrorBoundary>
           </div>
 
           {/* Right Panel - Transfer */}
           <div className="flex-1 lg:min-h-0 lg:overflow-hidden">
-            <TransferPanel />
+            <TransferErrorBoundary>
+              <TransferPanel />
+            </TransferErrorBoundary>
           </div>
         </main>
 
