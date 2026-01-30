@@ -33,6 +33,13 @@ export type ConnectionInfo = {
   protocol?: "udp" | "tcp"
 }
 
+export type ConnectionQuality = {
+  latency: number | null // ms (ping time)
+  bandwidth: number | null // bytes per second (estimated from recent transfers)
+  quality: "excellent" | "good" | "fair" | "poor" | "unknown"
+  packetLoss?: number // percentage (0-100)
+}
+
 export type SharedDataFile = {
   name: string
   type: string

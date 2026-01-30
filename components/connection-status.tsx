@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { ConnectionStatus, ConnectionInfo, ConnectionType } from "@/lib/types"
+import { ConnectionStatus, ConnectionInfo, ConnectionType, ConnectionQuality } from "@/lib/types"
 import { 
   Wifi, 
   WifiOff, 
@@ -14,9 +14,12 @@ import {
   Signal,
   Zap,
   Radio,
-  Server
+  Server,
+  Activity,
+  Gauge
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { formatFileSize } from "@/lib/utils"
 
 interface ConnectionStatusDisplayProps {
   status: ConnectionStatus
@@ -24,6 +27,7 @@ interface ConnectionStatusDisplayProps {
   peerCount: number
   errorMessage?: string | null
   connectionInfo?: ConnectionInfo
+  connectionQuality?: ConnectionQuality
   className?: string
 }
 
@@ -75,12 +79,29 @@ function formatDuration(seconds: number): string {
   }
 }
 
+// Get quality indicator color
+function getQualityColor(quality: string) {
+  switch (quality) {
+    case "excellent":
+      return "text-emerald-500"
+    case "good":
+      return "text-green-500"
+    case "fair":
+      return "text-amber-500"
+    case "poor":
+      return "text-red-500"
+    default:
+      return "text-muted-foreground"
+  }
+}
+
 export function ConnectionStatusDisplay({ 
   status, 
   isHost, 
   peerCount, 
   errorMessage,
   connectionInfo,
+  connectionQuality,
   className 
 }: ConnectionStatusDisplayProps) {
   const connectionTypeDisplay = getConnectionTypeDisplay(connectionInfo?.type || "unknown")
@@ -266,7 +287,7 @@ export function ConnectionStatusDisplay({
 
         {/* Connection details when connected */}
         {status === "connected" && peerCount > 0 && (
-          <div className="mt-4 pt-3 border-t border-border/50">
+          <div className="mt-4 pt-3 border-t border-border/50 space-y-3">
             <div className="grid grid-cols-3 gap-3">
               {/* Peer count */}
               <div className="flex items-center gap-2">
@@ -299,10 +320,41 @@ export function ConnectionStatusDisplay({
                 </div>
               </div>
             </div>
+
+            {/* Connection quality */}
+            {connectionQuality && (connectionQuality.latency !== null || connectionQuality.bandwidth !== null) && (
+              <div className="grid grid-cols-2 gap-3">
+                {/* Latency */}
+                {connectionQuality.latency !== null && (
+                  <div className="flex items-center gap-2">
+                    <Activity className={cn("w-4 h-4", getQualityColor(connectionQuality.quality))} />
+                    <div>
+                      <p className="text-xs text-muted-foreground">延迟</p>
+                      <p className={cn("text-sm font-medium", getQualityColor(connectionQuality.quality))}>
+                        {connectionQuality.latency} ms
+                      </p>
+                    </div>
+                  </div>
+                )}
+                
+                {/* Bandwidth */}
+                {connectionQuality.bandwidth !== null && (
+                  <div className="flex items-center gap-2">
+                    <Gauge className="w-4 h-4 text-muted-foreground" />
+                    <div>
+                      <p className="text-xs text-muted-foreground">速度</p>
+                      <p className="text-sm font-medium">
+                        {formatFileSize(connectionQuality.bandwidth)}/s
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
             
             {/* Connection type description */}
             {connectionInfo?.type && connectionInfo.type !== "unknown" && (
-              <p className="text-xs text-muted-foreground mt-2 flex items-center gap-1">
+              <p className="text-xs text-muted-foreground flex items-center gap-1">
                 <Signal className="w-3 h-3" />
                 {connectionTypeDisplay.description}
                 {connectionInfo.protocol && (

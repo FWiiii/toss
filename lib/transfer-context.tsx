@@ -2,15 +2,16 @@
 
 import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from "react"
 import { generateUUID, uint8ToBase64, base64ToUint8 } from "./utils"
-import type { TransferItem, ConnectionStatus, ConnectionType, ConnectionInfo } from "./types"
+import type { TransferItem, ConnectionStatus, ConnectionType, ConnectionInfo, ConnectionQuality } from "./types"
 import { useNotification } from "@/hooks/use-notification"
 
-export type { TransferItem, ConnectionStatus, ConnectionType, ConnectionInfo }
+export type { TransferItem, ConnectionStatus, ConnectionType, ConnectionInfo, ConnectionQuality }
 
 type TransferContextType = {
   roomCode: string | null
   connectionStatus: ConnectionStatus
   connectionInfo: ConnectionInfo
+  connectionQuality: ConnectionQuality
   errorMessage: string | null
   items: TransferItem[]
   createRoom: () => void
@@ -174,6 +175,11 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
   const [roomCode, setRoomCode] = useState<string | null>(null)
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>("disconnected")
   const [connectionInfo, setConnectionInfo] = useState<ConnectionInfo>({ type: "unknown" })
+  const [connectionQuality, setConnectionQuality] = useState<ConnectionQuality>({
+    latency: null,
+    bandwidth: null,
+    quality: "unknown",
+  })
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [items, setItems] = useState<TransferItem[]>([])
   const [peerCount, setPeerCount] = useState(0)
@@ -219,6 +225,15 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
   }>>(new Map())
   // Track Blob URLs for cleanup to prevent memory leaks
   const blobUrlsRef = useRef<Set<string>>(new Set())
+  
+  // Connection quality monitoring
+  const pingIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  const pendingPingsRef = useRef<Map<string, number>>(new Map()) // pingId -> timestamp
+  const latencyHistoryRef = useRef<number[]>([]) // Keep last 10 measurements
+  const bandwidthHistoryRef = useRef<number[]>([]) // Keep last 10 measurements
+  const qualityIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  const startQualityMonitoringRef = useRef<(() => void) | null>(null)
+  const stopQualityMonitoringRef = useRef<(() => void) | null>(null)
 
   // ============ Utility functions to reduce code duplication ============
   
@@ -343,10 +358,121 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
         clearTimeout(reconnectTimeoutRef.current)
         reconnectTimeoutRef.current = null
       }
-    } else if (roomCode && connectionStatus !== "reconnecting") {
-      setConnectionStatus("connecting")
+      // Start quality monitoring when connected
+      if (startQualityMonitoringRef.current) {
+        startQualityMonitoringRef.current()
+      }
+    } else {
+      if (roomCode && connectionStatus !== "reconnecting") {
+        setConnectionStatus("connecting")
+      }
+      // Stop quality monitoring when disconnected
+      if (stopQualityMonitoringRef.current) {
+        stopQualityMonitoringRef.current()
+      }
     }
   }, [roomCode, connectionStatus])
+
+  // Update connection quality based on collected metrics
+  const updateConnectionQuality = useCallback(() => {
+    // Calculate average latency
+    const latency = latencyHistoryRef.current.length > 0
+      ? latencyHistoryRef.current.reduce((a, b) => a + b, 0) / latencyHistoryRef.current.length
+      : null
+
+    // Calculate average bandwidth
+    const bandwidth = bandwidthHistoryRef.current.length > 0
+      ? bandwidthHistoryRef.current.reduce((a, b) => a + b, 0) / bandwidthHistoryRef.current.length
+      : null
+
+    // Determine quality level based on latency
+    let quality: "excellent" | "good" | "fair" | "poor" | "unknown" = "unknown"
+    if (latency !== null) {
+      if (latency < 50) quality = "excellent"
+      else if (latency < 100) quality = "good"
+      else if (latency < 200) quality = "fair"
+      else quality = "poor"
+    }
+
+    setConnectionQuality({
+      latency: latency !== null ? Math.round(latency) : null,
+      bandwidth: bandwidth !== null ? Math.round(bandwidth) : null,
+      quality,
+    })
+  }, [])
+
+  // Send ping to all connected peers
+  const sendPing = useCallback(() => {
+    if (connectionsRef.current.size === 0) return
+
+    const pingId = generateUUID()
+    const timestamp = Date.now()
+    pendingPingsRef.current.set(pingId, timestamp)
+
+    // Clean up old pending pings (older than 5 seconds)
+    for (const [id, time] of pendingPingsRef.current.entries()) {
+      if (timestamp - time > 5000) {
+        pendingPingsRef.current.delete(id)
+      }
+    }
+
+    // Send ping to all connections
+    connectionsRef.current.forEach((conn) => {
+      try {
+        conn.send({ type: "ping", id: pingId })
+      } catch (err) {
+        console.error("Failed to send ping:", err)
+      }
+    })
+  }, [])
+
+  // Start monitoring connection quality
+  const startQualityMonitoring = useCallback(() => {
+    // Clear existing intervals
+    if (pingIntervalRef.current) {
+      clearInterval(pingIntervalRef.current)
+    }
+    if (qualityIntervalRef.current) {
+      clearInterval(qualityIntervalRef.current)
+    }
+
+    // Send ping every 3 seconds
+    pingIntervalRef.current = setInterval(sendPing, 3000)
+    
+    // Update quality display every 5 seconds
+    qualityIntervalRef.current = setInterval(updateConnectionQuality, 5000)
+    
+    // Send initial ping
+    sendPing()
+  }, [sendPing, updateConnectionQuality])
+
+  // Stop monitoring connection quality
+  const stopQualityMonitoring = useCallback(() => {
+    if (pingIntervalRef.current) {
+      clearInterval(pingIntervalRef.current)
+      pingIntervalRef.current = null
+    }
+    if (qualityIntervalRef.current) {
+      clearInterval(qualityIntervalRef.current)
+      qualityIntervalRef.current = null
+    }
+    
+    // Reset quality state
+    pendingPingsRef.current.clear()
+    latencyHistoryRef.current = []
+    bandwidthHistoryRef.current = []
+    setConnectionQuality({
+      latency: null,
+      bandwidth: null,
+      quality: "unknown",
+    })
+  }, [])
+
+  // Store quality monitoring functions in refs to avoid circular dependencies
+  useEffect(() => {
+    startQualityMonitoringRef.current = startQualityMonitoring
+    stopQualityMonitoringRef.current = stopQualityMonitoring
+  }, [startQualityMonitoring, stopQualityMonitoring])
 
   // Reconnection logic
   const attemptReconnect = useCallback(() => {
@@ -559,6 +685,14 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
               speed,
             })
             
+            // Track bandwidth for quality monitoring
+            if (speed > 0) {
+              bandwidthHistoryRef.current.push(speed)
+              if (bandwidthHistoryRef.current.length > 10) {
+                bandwidthHistoryRef.current.shift()
+              }
+            }
+            
             buffer.lastTime = now
             buffer.lastBytes = buffer.received
           }
@@ -596,9 +730,32 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
         setPeerCount(0)
       } else if (data.type === "peer-joined") {
         addSystemMessage("有新设备加入了房间")
+      } else if (data.type === "ping") {
+        // Respond to ping with pong
+        try {
+          conn.send({ type: "pong", id: data.id })
+        } catch (err) {
+          console.error("Failed to send pong:", err)
+        }
+      } else if (data.type === "pong") {
+        // Calculate latency from ping-pong
+        const sendTime = pendingPingsRef.current.get(data.id)
+        if (sendTime) {
+          const latency = Date.now() - sendTime
+          pendingPingsRef.current.delete(data.id)
+          
+          // Update latency history (keep last 10)
+          latencyHistoryRef.current.push(latency)
+          if (latencyHistoryRef.current.length > 10) {
+            latencyHistoryRef.current.shift()
+          }
+          
+          // Update connection quality
+          updateConnectionQuality()
+        }
       }
     })
-  }, [addItem, addItemWithId, updateItemProgress, addSystemMessage, updatePeerCount, createTrackedBlobUrl, broadcastToConnections, cleanupAll, setError])
+  }, [addItem, addItemWithId, updateItemProgress, addSystemMessage, updatePeerCount, createTrackedBlobUrl, broadcastToConnections, cleanupAll, setError, updateConnectionQuality])
 
   // Store functions in refs to avoid circular dependencies
   useEffect(() => {
@@ -767,6 +924,11 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       reconnectTimeoutRef.current = null
     }
     
+    // Stop quality monitoring
+    if (stopQualityMonitoringRef.current) {
+      stopQualityMonitoringRef.current()
+    }
+    
     // If host, notify all guests that room is being dissolved
     if (isHost) {
       broadcastToConnections({ type: "room-dissolved" })
@@ -909,6 +1071,16 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
         reconnectTimeoutRef.current = null
       }
       
+      // Stop quality monitoring
+      if (pingIntervalRef.current) {
+        clearInterval(pingIntervalRef.current)
+        pingIntervalRef.current = null
+      }
+      if (qualityIntervalRef.current) {
+        clearInterval(qualityIntervalRef.current)
+        qualityIntervalRef.current = null
+      }
+      
       // Close all connections and destroy peer
       connectionsRef.current.forEach(safeClose)
       connectionsRef.current.clear()
@@ -933,6 +1105,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
         roomCode,
         connectionStatus,
         connectionInfo,
+        connectionQuality,
         errorMessage,
         items,
         createRoom,

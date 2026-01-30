@@ -19,6 +19,7 @@ export function RoomPanel() {
     roomCode, 
     connectionStatus,
     connectionInfo,
+    connectionQuality,
     errorMessage, 
     createRoom, 
     joinRoom, 
@@ -132,6 +133,7 @@ export function RoomPanel() {
           peerCount={peerCount}
           errorMessage={errorMessage}
           connectionInfo={connectionInfo}
+          connectionQuality={connectionQuality}
           className="mb-5"
         />
 
