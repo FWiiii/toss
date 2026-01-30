@@ -11,7 +11,7 @@ type TransferInputProps = {
   onSendText: () => void
   onSendFile: (file: File) => void
   isConnected: boolean
-  isSending?: boolean
+  sendingCount?: number
 }
 
 export function TransferInput({ 
@@ -20,13 +20,13 @@ export function TransferInput({
   onSendText, 
   onSendFile, 
   isConnected,
-  isSending = false
+  sendingCount = 0
 }: TransferInputProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
-    if (file && isConnected && !isSending) {
+    if (file && isConnected) {
       onSendFile(file)
     }
     if (fileInputRef.current) {
@@ -35,7 +35,7 @@ export function TransferInput({
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !isSending) {
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
       e.preventDefault()
       onSendText()
     }
@@ -48,7 +48,7 @@ export function TransferInput({
           placeholder={isConnected ? "输入要发送的文本..." : "连接设备后可发送内容"}
           value={text}
           onChange={(e) => onTextChange(e.target.value)}
-          disabled={!isConnected || isSending}
+          disabled={!isConnected}
           className="min-h-[80px] resize-none bg-input border-border"
           onKeyDown={handleKeyDown}
         />
@@ -59,36 +59,29 @@ export function TransferInput({
           ref={fileInputRef}
           onChange={handleFileSelect}
           className="hidden"
-          disabled={isSending}
         />
         <Button
           variant="outline"
           className="flex-1 bg-transparent"
           onClick={() => fileInputRef.current?.click()}
-          disabled={!isConnected || isSending}
+          disabled={!isConnected}
         >
-          {isSending ? (
-            <>
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              发送中...
-            </>
-          ) : (
-            <>
-              <Upload className="w-4 h-4 mr-2" />
-              选择文件
-            </>
-          )}
+          <Upload className="w-4 h-4 mr-2" />
+          选择文件
         </Button>
         <Button
           className="flex-1 bg-accent text-accent-foreground hover:bg-accent/90"
           onClick={onSendText}
-          disabled={!isConnected || !text.trim() || isSending}
+          disabled={!isConnected || !text.trim()}
         >
           <Send className="w-4 h-4 mr-2" />
           发送文本
         </Button>
       </div>
       <p className="text-xs text-muted-foreground text-center mt-2">
+        {sendingCount > 0 ? (
+          <>正在发送 {sendingCount} 个文件 · </>
+        ) : null}
         按 Ctrl/Cmd + Enter 快速发送
       </p>
     </div>

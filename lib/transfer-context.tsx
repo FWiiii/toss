@@ -23,7 +23,7 @@ type TransferContextType = {
   // Loading states
   isCreatingRoom: boolean
   isJoiningRoom: boolean
-  isSending: boolean
+  sendingCount: number // Number of files currently being sent
 }
 
 const TransferContext = createContext<TransferContextType | null>(null)
@@ -167,7 +167,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
   // Loading states
   const [isCreatingRoom, setIsCreatingRoom] = useState(false)
   const [isJoiningRoom, setIsJoiningRoom] = useState(false)
-  const [isSending, setIsSending] = useState(false)
+  const [sendingCount, setSendingCount] = useState(0)
   
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const peerRef = useRef<any>(null)
@@ -655,7 +655,8 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
   const sendFile = useCallback(async (file: File): Promise<void> => {
     const CHUNK_SIZE = 16384
     
-    setIsSending(true)
+    // Increment sending count (for UI feedback, but don't block)
+    setSendingCount(prev => prev + 1)
     
     try {
       const url = createTrackedBlobUrl(file)
@@ -735,8 +736,12 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
         transferredBytes: totalSize,
         speed: undefined,
       })
+    } catch (error) {
+      console.error("File send error:", error)
+      // You might want to update the item status to "error" here
     } finally {
-      setIsSending(false)
+      // Always decrement sending count
+      setSendingCount(prev => Math.max(0, prev - 1))
     }
   }, [addItemWithId, updateItemProgress, createTrackedBlobUrl])
 
@@ -785,7 +790,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
         isHost,
         isCreatingRoom,
         isJoiningRoom,
-        isSending,
+        sendingCount,
       }}
     >
       {children}
