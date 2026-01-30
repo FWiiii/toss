@@ -1,8 +1,35 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { cookies } from 'next/headers'
+
+// Temporary in-memory storage for shared data (with auto-cleanup)
+// Key: share_id, Value: { data, timestamp }
+const shareStorage = new Map<string, { 
+  title: string
+  text: string
+  url: string
+  files: Array<{ name: string; type: string; size: number; data: string }>
+  timestamp: number 
+}>()
+
+// Clean up old entries (older than 2 minutes)
+function cleanupStorage() {
+  const now = Date.now()
+  for (const [key, value] of shareStorage.entries()) {
+    if (now - value.timestamp > 2 * 60 * 1000) {
+      shareStorage.delete(key)
+    }
+  }
+}
+
+// Generate a random ID
+function generateId(): string {
+  return Math.random().toString(36).substring(2, 15)
+}
 
 export async function POST(request: NextRequest) {
   try {
+    // Clean up old entries periodically
+    cleanupStorage()
+    
     const formData = await request.formData()
     
     const title = formData.get('title')?.toString() || ''
@@ -10,64 +37,67 @@ export async function POST(request: NextRequest) {
     const url = formData.get('url')?.toString() || ''
     const files = formData.getAll('files') as File[]
     
-    // Build share data for URL params (for text content only)
-    const params = new URLSearchParams()
+    // Process files (limit to 50MB total)
+    const fileInfos: Array<{ name: string; type: string; size: number; data: string }> = []
+    let totalSize = 0
+    const maxTotalSize = 50 * 1024 * 1024 // 50MB limit
     
-    if (title) params.set('share_title', title)
-    if (text) params.set('share_text', text)
-    if (url) params.set('share_url', url)
-    
-    // For files, we need to store them temporarily
-    // Since we can't easily pass files through URL, we'll use a different approach
-    if (files.length > 0 && files[0].size > 0) {
-      // Store file info in a cookie (just metadata, not the actual file)
-      const fileInfos = await Promise.all(
-        files.filter(f => f.size > 0).map(async (file) => {
-          // Convert file to base64 for small files (< 1MB)
-          if (file.size < 1024 * 1024) {
-            const arrayBuffer = await file.arrayBuffer()
-            const base64 = Buffer.from(arrayBuffer).toString('base64')
-            return {
-              name: file.name,
-              type: file.type,
-              size: file.size,
-              data: base64
-            }
-          }
-          return {
-            name: file.name,
-            type: file.type,
-            size: file.size,
-            data: null // Too large to store in cookie
-          }
+    for (const file of files) {
+      if (file && file.size > 0 && totalSize + file.size <= maxTotalSize) {
+        const arrayBuffer = await file.arrayBuffer()
+        const base64 = Buffer.from(arrayBuffer).toString('base64')
+        fileInfos.push({
+          name: file.name,
+          type: file.type,
+          size: file.size,
+          data: base64
         })
-      )
-      
-      // Store in cookie (with size limit check)
-      const fileData = JSON.stringify(fileInfos)
-      if (fileData.length < 4000) { // Cookie size limit
-        const cookieStore = await cookies()
-        cookieStore.set('share_files', fileData, {
-          maxAge: 60, // 1 minute expiry
-          path: '/',
-          httpOnly: false, // Allow client-side access
-          sameSite: 'lax'
-        })
+        totalSize += file.size
       }
-      params.set('has_files', 'true')
     }
     
-    params.set('shared', 'true')
+    // Generate share ID and store data
+    const shareId = generateId()
+    shareStorage.set(shareId, {
+      title,
+      text,
+      url,
+      files: fileInfos,
+      timestamp: Date.now()
+    })
     
-    // Redirect to home page with share params
-    return NextResponse.redirect(new URL(`/?${params.toString()}`, request.url), 303)
+    // Redirect to home page with share ID
+    return NextResponse.redirect(
+      new URL(`/?shared=true&share_id=${shareId}`, request.url), 
+      303
+    )
   } catch (error) {
     console.error('Share target error:', error)
     return NextResponse.redirect(new URL('/?share_error=true', request.url), 303)
   }
 }
 
-// Handle GET requests (in case someone navigates directly)
+// Handle GET requests to retrieve shared data
 export async function GET(request: NextRequest) {
-  return NextResponse.redirect(new URL('/', request.url), 302)
+  const { searchParams } = new URL(request.url)
+  const shareId = searchParams.get('id')
+  
+  if (!shareId) {
+    return NextResponse.redirect(new URL('/', request.url), 302)
+  }
+  
+  const data = shareStorage.get(shareId)
+  if (!data) {
+    return NextResponse.json({ error: 'Share data not found or expired' }, { status: 404 })
+  }
+  
+  // Delete after retrieval (one-time use)
+  shareStorage.delete(shareId)
+  
+  return NextResponse.json({
+    title: data.title,
+    text: data.text,
+    url: data.url,
+    files: data.files
+  })
 }
