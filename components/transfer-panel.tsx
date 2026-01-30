@@ -9,15 +9,7 @@ import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { Send, Upload, FileText, File as FileIcon, Download, Trash2, ImageIcon, Share2, X, ZoomIn } from "lucide-react"
-import { cn } from "@/lib/utils"
-
-function formatFileSize(bytes: number) {
-  if (bytes === 0) return "0 B"
-  const k = 1024
-  const sizes = ["B", "KB", "MB", "GB"]
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i]
-}
+import { cn, formatFileSize, isImageFile } from "@/lib/utils"
 
 function formatTime(date: Date) {
   return date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })
@@ -25,16 +17,10 @@ function formatTime(date: Date) {
 
 function getFileIcon(name?: string) {
   if (!name) return FileIcon
+  if (isImageFile(name)) return ImageIcon
   const ext = name.split(".").pop()?.toLowerCase()
-  if (["jpg", "jpeg", "png", "gif", "webp", "svg", "bmp", "ico"].includes(ext || "")) return ImageIcon
   if (["txt", "md", "json", "js", "ts", "html", "css"].includes(ext || "")) return FileText
   return FileIcon
-}
-
-function isImageFile(name?: string) {
-  if (!name) return false
-  const ext = name.split(".").pop()?.toLowerCase()
-  return ["jpg", "jpeg", "png", "gif", "webp", "svg", "bmp", "ico"].includes(ext || "")
 }
 
 export function TransferPanel() {

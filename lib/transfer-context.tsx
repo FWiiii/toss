@@ -1,6 +1,7 @@
 "use client"
 
 import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from "react"
+import { generateUUID, uint8ToBase64, base64ToUint8 } from "./utils"
 
 export type TransferItem = {
   id: string
@@ -52,31 +53,39 @@ function generateRoomCode() {
 const PEER_PREFIX = "snapdrop-room-"
 
 // ICE servers configuration with TURN servers for VPN/NAT compatibility
-const ICE_SERVERS = {
-  iceServers: [
+// TURN credentials are loaded from environment variables for security
+const buildIceServers = (): RTCIceServer[] => {
+  const servers: RTCIceServer[] = [
     { urls: "stun:stun.l.google.com:19302" },
     { urls: "stun:stun1.l.google.com:19302" },
-    {
-      urls: "turn:standard.relay.metered.ca:80",
-      username: "b87f50a8d31a88b30e143099",
-      credential: "KiLY8EKRZ+OKhMN1",
-    },
-    {
-      urls: "turn:standard.relay.metered.ca:80?transport=tcp",
-      username: "b87f50a8d31a88b30e143099",
-      credential: "KiLY8EKRZ+OKhMN1",
-    },
-    {
-      urls: "turn:standard.relay.metered.ca:443",
-      username: "b87f50a8d31a88b30e143099",
-      credential: "KiLY8EKRZ+OKhMN1",
-    },
-    {
-      urls: "turns:standard.relay.metered.ca:443?transport=tcp",
-      username: "b87f50a8d31a88b30e143099",
-      credential: "KiLY8EKRZ+OKhMN1",
-    },
-  ],
+  ]
+  
+  // Add TURN servers if credentials are configured
+  const turnUsername = process.env.NEXT_PUBLIC_TURN_USERNAME
+  const turnCredential = process.env.NEXT_PUBLIC_TURN_CREDENTIAL
+  
+  if (turnUsername && turnCredential) {
+    const turnUrls = [
+      process.env.NEXT_PUBLIC_TURN_URL,
+      process.env.NEXT_PUBLIC_TURN_URL_TCP,
+      process.env.NEXT_PUBLIC_TURN_URL_443,
+      process.env.NEXT_PUBLIC_TURNS_URL,
+    ].filter(Boolean) as string[]
+    
+    turnUrls.forEach(url => {
+      servers.push({
+        urls: url,
+        username: turnUsername,
+        credential: turnCredential,
+      })
+    })
+  }
+  
+  return servers
+}
+
+const ICE_SERVERS = {
+  iceServers: buildIceServers(),
   iceCandidatePoolSize: 10,
 }
 
@@ -93,21 +102,32 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const connectionsRef = useRef<Map<string, any>>(new Map())
   const fileBuffersRef = useRef<Map<string, { name: string; size: number; chunks: Uint8Array[]; received: number }>>(new Map())
+  // Track Blob URLs for cleanup to prevent memory leaks
+  const blobUrlsRef = useRef<Set<string>>(new Set())
   
+  // Revoke all tracked Blob URLs to free memory
+  const revokeAllBlobUrls = useCallback(() => {
+    blobUrlsRef.current.forEach(url => {
+      try {
+        URL.revokeObjectURL(url)
+      } catch {}
+    })
+    blobUrlsRef.current.clear()
+  }, [])
+
+  // Create and track a Blob URL
+  const createTrackedBlobUrl = useCallback((blob: Blob | File): string => {
+    const url = URL.createObjectURL(blob)
+    blobUrlsRef.current.add(url)
+    return url
+  }, [])
+
   // Add system message
   const addSystemMessage = useCallback((content: string) => {
-    const id = (typeof crypto !== 'undefined' && crypto.randomUUID)
-      ? crypto.randomUUID()
-      : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-          const r = Math.random() * 16 | 0
-          const v = c === 'x' ? r : (r & 0x3 | 0x8)
-          return v.toString(16)
-        })
-    
     setItems((prev) => [
       ...prev,
       {
-        id,
+        id: generateUUID(),
         type: "system",
         content,
         timestamp: new Date(),
@@ -117,20 +137,11 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   const addItem = useCallback((item: Omit<TransferItem, "id" | "timestamp">) => {
-    // Generate UUID with fallback for older browsers
-    const id = (typeof crypto !== 'undefined' && crypto.randomUUID)
-      ? crypto.randomUUID()
-      : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-          const r = Math.random() * 16 | 0
-          const v = c === 'x' ? r : (r & 0x3 | 0x8)
-          return v.toString(16)
-        })
-    
     setItems((prev) => [
       ...prev,
       {
         ...item,
-        id,
+        id: generateUUID(),
         timestamp: new Date(),
       },
     ])
@@ -162,7 +173,15 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     }
 
     // Monitor ICE state for connection recovery
+    let monitorAttempts = 0
+    const maxMonitorAttempts = 25 // 5 seconds max (25 * 200ms)
+    
     const monitorIceState = () => {
+      // Stop monitoring if connection is already closed or max attempts reached
+      if (!conn || conn.destroyed || monitorAttempts >= maxMonitorAttempts) {
+        return
+      }
+      
       const pc = conn.peerConnection as RTCPeerConnection | undefined
       if (pc) {
         pc.oniceconnectionstatechange = () => {
@@ -179,6 +198,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
           }
         }
       } else {
+        monitorAttempts++
         setTimeout(monitorIceState, 200)
       }
     }
@@ -246,12 +266,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       } else if (data.type === "file-chunk") {
         const buffer = fileBuffersRef.current.get(conn.peer)
         if (buffer) {
-          // Decode base64 to Uint8Array
-          const binary = atob(data.data)
-          const bytes = new Uint8Array(binary.length)
-          for (let i = 0; i < binary.length; i++) {
-            bytes[i] = binary.charCodeAt(i)
-          }
+          const bytes = base64ToUint8(data.data)
           buffer.chunks.push(bytes)
           buffer.received += bytes.length
         }
@@ -259,7 +274,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
         const buffer = fileBuffersRef.current.get(conn.peer)
         if (buffer) {
           const blob = new Blob(buffer.chunks as unknown as BlobPart[])
-          const url = URL.createObjectURL(blob)
+          const url = createTrackedBlobUrl(blob)
           addItem({
             type: "file",
             name: buffer.name,
@@ -267,6 +282,8 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
             size: buffer.size,
             direction: "received",
           })
+          // Clear chunks to free memory immediately
+          buffer.chunks = []
           fileBuffersRef.current.delete(conn.peer)
         }
       } else if (data.type === "room-dissolved") {
@@ -288,7 +305,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
         addSystemMessage("有新设备加入了房间")
       }
     })
-  }, [addItem, addSystemMessage, updatePeerCount])
+  }, [addItem, addSystemMessage, updatePeerCount, createTrackedBlobUrl])
 
   const createRoom = useCallback(async () => {
     const { default: Peer } = await import("peerjs")
@@ -484,7 +501,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
   const sendFile = useCallback(async (file: File) => {
     const CHUNK_SIZE = 16384
 
-    const url = URL.createObjectURL(file)
+    const url = createTrackedBlobUrl(file)
     addItem({
       type: "file",
       name: file.name,
@@ -495,15 +512,6 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
 
     const arrayBuffer = await file.arrayBuffer()
     const uint8Array = new Uint8Array(arrayBuffer)
-    
-    // Helper to convert Uint8Array to base64 without stack overflow
-    const uint8ToBase64 = (bytes: Uint8Array): string => {
-      let binary = ''
-      for (let i = 0; i < bytes.length; i++) {
-        binary += String.fromCharCode(bytes[i])
-      }
-      return btoa(binary)
-    }
 
     // Send file to each connection
     for (const conn of connectionsRef.current.values()) {
@@ -537,17 +545,41 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
 
       conn.send({ type: "file-end" })
     }
-  }, [addItem])
+  }, [addItem, createTrackedBlobUrl])
 
   const clearHistory = useCallback(() => {
+    // Revoke all Blob URLs before clearing items to prevent memory leaks
+    revokeAllBlobUrls()
     setItems([])
-  }, [])
+  }, [revokeAllBlobUrls])
 
+  // Cleanup on unmount
   useEffect(() => {
     return () => {
+      // Destroy peer connection
       if (peerRef.current) {
-        peerRef.current.destroy()
+        try {
+          peerRef.current.destroy()
+        } catch {}
+        peerRef.current = null
       }
+      
+      // Close all connections
+      connectionsRef.current.forEach((conn) => {
+        try { conn.close() } catch {}
+      })
+      connectionsRef.current.clear()
+      
+      // Clear file buffers
+      fileBuffersRef.current.clear()
+      
+      // Revoke all Blob URLs to free memory
+      blobUrlsRef.current.forEach(url => {
+        try {
+          URL.revokeObjectURL(url)
+        } catch {}
+      })
+      blobUrlsRef.current.clear()
     }
   }, [])
 

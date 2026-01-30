@@ -1,83 +1,14 @@
 "use client"
 
 import { useEffect, useState, useCallback } from "react"
+import { 
+  base64ToFile, 
+  getShareDataFromDB, 
+  clearShareDataFromDB,
+  type SharedData 
+} from "@/lib/utils"
 
-export type SharedData = {
-  title: string
-  text: string
-  url: string
-  files: Array<{
-    name: string
-    type: string
-    size: number
-    data: string // base64
-  }>
-  timestamp: number
-}
-
-const DB_NAME = "toss-share-db"
-const STORE_NAME = "shared-data"
-
-function openDB(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, 1)
-    request.onerror = () => reject(request.error)
-    request.onsuccess = () => resolve(request.result)
-    request.onupgradeneeded = (event) => {
-      const db = (event.target as IDBOpenDBRequest).result
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        db.createObjectStore(STORE_NAME, { keyPath: "id", autoIncrement: true })
-      }
-    }
-  })
-}
-
-async function getShareDataFromDB(): Promise<SharedData | null> {
-  try {
-    const db = await openDB()
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, "readonly")
-      const store = tx.objectStore(STORE_NAME)
-      const request = store.getAll()
-      request.onsuccess = () => {
-        const results = request.result
-        if (results && results.length > 0) {
-          resolve(results[0] as SharedData)
-        } else {
-          resolve(null)
-        }
-      }
-      request.onerror = () => reject(request.error)
-    })
-  } catch {
-    return null
-  }
-}
-
-async function clearShareDataFromDB(): Promise<void> {
-  try {
-    const db = await openDB()
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, "readwrite")
-      const store = tx.objectStore(STORE_NAME)
-      const request = store.clear()
-      request.onsuccess = () => resolve()
-      request.onerror = () => reject(request.error)
-    })
-  } catch {
-    // Ignore errors
-  }
-}
-
-// Convert base64 to File
-function base64ToFile(base64: string, name: string, type: string): File {
-  const binaryString = atob(base64)
-  const bytes = new Uint8Array(binaryString.length)
-  for (let i = 0; i < binaryString.length; i++) {
-    bytes[i] = binaryString.charCodeAt(i)
-  }
-  return new File([bytes], name, { type })
-}
+export type { SharedData }
 
 export function useShareTarget() {
   const [sharedData, setSharedData] = useState<SharedData | null>(null)
