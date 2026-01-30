@@ -173,7 +173,15 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
   const peerRef = useRef<any>(null)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const connectionsRef = useRef<Map<string, any>>(new Map())
-  const fileBuffersRef = useRef<Map<string, { name: string; size: number; chunks: Uint8Array[]; received: number }>>(new Map())
+  const fileBuffersRef = useRef<Map<string, { 
+    name: string
+    size: number
+    chunks: Uint8Array[]
+    received: number
+    itemId: string
+    lastTime: number
+    lastBytes: number 
+  }>>(new Map())
   // Track Blob URLs for cleanup to prevent memory leaks
   const blobUrlsRef = useRef<Set<string>>(new Set())
 
@@ -263,6 +271,29 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
         timestamp: new Date(),
       },
     ])
+  }, [])
+
+  // Add item and return the ID for progress updates
+  const addItemWithId = useCallback((item: Omit<TransferItem, "id" | "timestamp">): string => {
+    const id = generateUUID()
+    setItems((prev) => [
+      ...prev,
+      {
+        ...item,
+        id,
+        timestamp: new Date(),
+      },
+    ])
+    return id
+  }, [])
+
+  // Update item progress by ID
+  const updateItemProgress = useCallback((id: string, updates: Partial<Pick<TransferItem, "status" | "progress" | "transferredBytes" | "speed" | "content">>) => {
+    setItems((prev) => 
+      prev.map((item) => 
+        item.id === id ? { ...item, ...updates } : item
+      )
+    )
   }, [])
 
   const updatePeerCount = useCallback(() => {
@@ -380,11 +411,26 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
           direction: "received",
         })
       } else if (data.type === "file-start") {
+        // Create item with progress tracking
+        const itemId = addItemWithId({
+          type: "file",
+          name: data.name,
+          content: "", // Will be set when complete
+          size: data.size,
+          direction: "received",
+          status: "transferring",
+          progress: 0,
+          transferredBytes: 0,
+        })
+        
         fileBuffersRef.current.set(conn.peer, {
           name: data.name,
           size: data.size,
           chunks: [],
           received: 0,
+          itemId, // Track the item ID for progress updates
+          lastTime: Date.now(),
+          lastBytes: 0,
         })
       } else if (data.type === "file-chunk") {
         const buffer = fileBuffersRef.current.get(conn.peer)
@@ -392,19 +438,40 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
           const bytes = base64ToUint8(data.data)
           buffer.chunks.push(bytes)
           buffer.received += bytes.length
+          
+          // Update progress periodically
+          const chunkCount = buffer.chunks.length
+          if (chunkCount % 10 === 0 || buffer.received >= buffer.size) {
+            const now = Date.now()
+            const timeDiff = (now - (buffer.lastTime || now)) / 1000
+            const bytesDiff = buffer.received - (buffer.lastBytes || 0)
+            const speed = timeDiff > 0 ? Math.round(bytesDiff / timeDiff) : 0
+            
+            updateItemProgress(buffer.itemId, {
+              progress: Math.round((buffer.received / buffer.size) * 100),
+              transferredBytes: buffer.received,
+              speed,
+            })
+            
+            buffer.lastTime = now
+            buffer.lastBytes = buffer.received
+          }
         }
       } else if (data.type === "file-end") {
         const buffer = fileBuffersRef.current.get(conn.peer)
         if (buffer) {
           const blob = new Blob(buffer.chunks as unknown as BlobPart[])
           const url = createTrackedBlobUrl(blob)
-          addItem({
-            type: "file",
-            name: buffer.name,
+          
+          // Update item with final content and completed status
+          updateItemProgress(buffer.itemId, {
             content: url,
-            size: buffer.size,
-            direction: "received",
+            status: "completed",
+            progress: 100,
+            transferredBytes: buffer.size,
+            speed: undefined,
           })
+          
           // Clear chunks to free memory immediately
           buffer.chunks = []
           fileBuffersRef.current.delete(conn.peer)
@@ -421,7 +488,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
         addSystemMessage("有新设备加入了房间")
       }
     })
-  }, [addItem, addSystemMessage, updatePeerCount, createTrackedBlobUrl, broadcastToConnections, cleanupAll, setError])
+  }, [addItem, addItemWithId, updateItemProgress, addSystemMessage, updatePeerCount, createTrackedBlobUrl, broadcastToConnections, cleanupAll, setError])
 
   const createRoom = useCallback(async () => {
     setIsCreatingRoom(true)
@@ -592,16 +659,26 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     
     try {
       const url = createTrackedBlobUrl(file)
-      addItem({
+      
+      // Add item with initial progress state
+      const itemId = addItemWithId({
         type: "file",
         name: file.name,
         content: url,
         size: file.size,
         direction: "sent",
+        status: "transferring",
+        progress: 0,
+        transferredBytes: 0,
       })
 
       const arrayBuffer = await file.arrayBuffer()
       const uint8Array = new Uint8Array(arrayBuffer)
+      const totalSize = uint8Array.length
+      
+      // Track speed calculation
+      let lastTime = Date.now()
+      let lastBytes = 0
 
       // Send file to each connection
       for (const conn of connectionsRef.current.values()) {
@@ -627,18 +704,41 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
           
           offset = end
           
-          // Small delay every few chunks to let the buffer drain
-          if ((offset / CHUNK_SIZE) % 10 === 0) {
+          // Update progress every 10 chunks
+          if ((offset / CHUNK_SIZE) % 10 === 0 || offset >= totalSize) {
+            const now = Date.now()
+            const timeDiff = (now - lastTime) / 1000 // seconds
+            const bytesDiff = offset - lastBytes
+            const speed = timeDiff > 0 ? Math.round(bytesDiff / timeDiff) : 0
+            
+            updateItemProgress(itemId, {
+              progress: Math.round((offset / totalSize) * 100),
+              transferredBytes: offset,
+              speed,
+            })
+            
+            lastTime = now
+            lastBytes = offset
+            
+            // Small delay to let the buffer drain
             await new Promise(resolve => setTimeout(resolve, 5))
           }
         }
 
         conn.send({ type: "file-end" })
       }
+      
+      // Mark as completed
+      updateItemProgress(itemId, {
+        status: "completed",
+        progress: 100,
+        transferredBytes: totalSize,
+        speed: undefined,
+      })
     } finally {
       setIsSending(false)
     }
-  }, [addItem, createTrackedBlobUrl])
+  }, [addItemWithId, updateItemProgress, createTrackedBlobUrl])
 
   const clearHistory = useCallback(() => {
     // Revoke all Blob URLs before clearing items to prevent memory leaks

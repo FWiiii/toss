@@ -1,13 +1,24 @@
 "use client"
 
+import { useState, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { ImageThumbnail } from "@/components/image-thumbnail"
-import { Download, FileText, File as FileIcon, ImageIcon, ZoomIn } from "lucide-react"
+import { Download, FileText, File as FileIcon, ImageIcon, ZoomIn, Copy, Check, Loader2 } from "lucide-react"
 import { cn, formatFileSize, isImageFile } from "@/lib/utils"
 import type { TransferItem } from "@/lib/types"
 
 function formatTime(date: Date) {
   return date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })
+}
+
+function formatSpeed(bytesPerSecond: number): string {
+  if (bytesPerSecond < 1024) {
+    return `${bytesPerSecond} B/s`
+  } else if (bytesPerSecond < 1024 * 1024) {
+    return `${(bytesPerSecond / 1024).toFixed(1)} KB/s`
+  } else {
+    return `${(bytesPerSecond / (1024 * 1024)).toFixed(1)} MB/s`
+  }
 }
 
 function getFileIcon(name?: string) {
@@ -16,6 +27,18 @@ function getFileIcon(name?: string) {
   const ext = name.split(".").pop()?.toLowerCase()
   if (["txt", "md", "json", "js", "ts", "html", "css"].includes(ext || "")) return FileText
   return FileIcon
+}
+
+// Progress bar component
+function ProgressBar({ progress, className }: { progress: number; className?: string }) {
+  return (
+    <div className={cn("w-full h-1.5 bg-muted rounded-full overflow-hidden", className)}>
+      <div 
+        className="h-full bg-accent transition-all duration-300 ease-out rounded-full"
+        style={{ width: `${Math.min(100, Math.max(0, progress))}%` }}
+      />
+    </div>
+  )
 }
 
 type TransferItemProps = {
@@ -45,6 +68,42 @@ function ImageItem({
   onPreviewImage: (url: string, name: string) => void
   onDownload: (url: string, name?: string) => void
 }) {
+  const isTransferring = item.status === "transferring"
+  const progress = item.progress ?? 100
+  const transferredBytes = item.transferredBytes ?? item.size ?? 0
+  const totalSize = item.size ?? 0
+
+  // Show file-style view when transferring (no preview available yet)
+  if (isTransferring || !item.content) {
+    return (
+      <div className="flex items-start gap-3">
+        <div className="w-10 h-10 rounded-lg bg-background flex items-center justify-center shrink-0">
+          <Loader2 className="w-5 h-5 text-accent animate-spin" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium text-foreground truncate">{item.name}</p>
+          
+          {/* Progress bar */}
+          <ProgressBar progress={progress} className="mt-2" />
+          
+          {/* Progress info */}
+          <div className="flex items-center justify-between mt-1.5">
+            <p className="text-xs text-muted-foreground">
+              {formatFileSize(transferredBytes)} / {formatFileSize(totalSize)}
+              <span className="mx-1">·</span>
+              {progress}%
+            </p>
+            {item.speed && item.speed > 0 && (
+              <p className="text-xs text-accent font-medium">
+                {formatSpeed(item.speed)}
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-2">
       <div 
@@ -95,20 +154,52 @@ function FileItem({
   onDownload: (url: string, name?: string) => void
 }) {
   const IconComponent = getFileIcon(item.name)
+  const isTransferring = item.status === "transferring"
+  const progress = item.progress ?? 100
+  const transferredBytes = item.transferredBytes ?? item.size ?? 0
+  const totalSize = item.size ?? 0
   
   return (
     <div className="flex items-start gap-3">
-      <div className="w-10 h-10 rounded-lg bg-background flex items-center justify-center shrink-0">
-        <IconComponent className="w-5 h-5 text-muted-foreground" />
+      <div className="w-10 h-10 rounded-lg bg-background flex items-center justify-center shrink-0 relative">
+        {isTransferring ? (
+          <Loader2 className="w-5 h-5 text-accent animate-spin" />
+        ) : (
+          <IconComponent className="w-5 h-5 text-muted-foreground" />
+        )}
       </div>
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium text-foreground truncate">{item.name}</p>
-        <p className="text-xs text-muted-foreground">{formatFileSize(item.size || 0)}</p>
-        <p className="text-xs text-muted-foreground mt-1">
-          {formatTime(item.timestamp)} · {item.direction === "sent" ? "已发送" : "已接收"}
-        </p>
+        
+        {isTransferring ? (
+          <>
+            {/* Progress bar */}
+            <ProgressBar progress={progress} className="mt-2" />
+            
+            {/* Progress info */}
+            <div className="flex items-center justify-between mt-1.5">
+              <p className="text-xs text-muted-foreground">
+                {formatFileSize(transferredBytes)} / {formatFileSize(totalSize)}
+                <span className="mx-1">·</span>
+                {progress}%
+              </p>
+              {item.speed && item.speed > 0 && (
+                <p className="text-xs text-accent font-medium">
+                  {formatSpeed(item.speed)}
+                </p>
+              )}
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="text-xs text-muted-foreground">{formatFileSize(totalSize)}</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              {formatTime(item.timestamp)} · {item.direction === "sent" ? "已发送" : "已接收"}
+            </p>
+          </>
+        )}
       </div>
-      {item.direction === "received" && (
+      {item.direction === "received" && !isTransferring && item.content && (
         <Button
           variant="ghost"
           size="icon"
@@ -124,8 +215,32 @@ function FileItem({
 
 // Text item component
 function TextItem({ item }: { item: TransferItem }) {
+  const [copied, setCopied] = useState(false)
+
+  const handleCopy = useCallback(async () => {
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(item.content)
+      } else {
+        // Fallback for older browsers
+        const textArea = document.createElement('textarea')
+        textArea.value = item.content
+        textArea.style.position = 'fixed'
+        textArea.style.left = '-9999px'
+        document.body.appendChild(textArea)
+        textArea.select()
+        document.execCommand('copy')
+        document.body.removeChild(textArea)
+      }
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch (err) {
+      console.error('Failed to copy:', err)
+    }
+  }, [item.content])
+
   return (
-    <div className="flex items-start gap-3">
+    <div className="flex items-start gap-2">
       <div className="flex-1 min-w-0">
         <p className="text-sm text-foreground whitespace-pre-wrap break-words">
           {item.content}
@@ -134,6 +249,19 @@ function TextItem({ item }: { item: TransferItem }) {
           {formatTime(item.timestamp)} · {item.direction === "sent" ? "已发送" : "已接收"}
         </p>
       </div>
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={handleCopy}
+        className="shrink-0 h-8 w-8 text-muted-foreground hover:text-foreground"
+        title={copied ? "已复制" : "复制文本"}
+      >
+        {copied ? (
+          <Check className="w-4 h-4 text-emerald-500" />
+        ) : (
+          <Copy className="w-4 h-4" />
+        )}
+      </Button>
     </div>
   )
 }

@@ -1,5 +1,7 @@
 // Shared type definitions
 
+export type TransferStatus = "pending" | "transferring" | "completed" | "error"
+
 export type TransferItem = {
   id: string
   type: "text" | "file" | "system"
@@ -8,6 +10,11 @@ export type TransferItem = {
   size?: number
   timestamp: Date
   direction: "sent" | "received" | "system"
+  // Progress tracking for file transfers
+  status?: TransferStatus
+  progress?: number // 0-100
+  transferredBytes?: number
+  speed?: number // bytes per second
 }
 
 export type ConnectionStatus = "disconnected" | "connecting" | "connected" | "error" | "dissolved"
