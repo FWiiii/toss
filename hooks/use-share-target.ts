@@ -32,7 +32,7 @@ function openDB(): Promise<IDBDatabase> {
   })
 }
 
-async function getShareData(): Promise<SharedData | null> {
+async function getShareDataFromDB(): Promise<SharedData | null> {
   try {
     const db = await openDB()
     return new Promise((resolve, reject) => {
@@ -54,7 +54,7 @@ async function getShareData(): Promise<SharedData | null> {
   }
 }
 
-async function clearShareData(): Promise<void> {
+async function clearShareDataFromDB(): Promise<void> {
   try {
     const db = await openDB()
     return new Promise((resolve, reject) => {
@@ -67,6 +67,17 @@ async function clearShareData(): Promise<void> {
   } catch {
     // Ignore errors
   }
+}
+
+// Get cookie value by name
+function getCookie(name: string): string | null {
+  const match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'))
+  return match ? decodeURIComponent(match[2]) : null
+}
+
+// Delete cookie
+function deleteCookie(name: string) {
+  document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`
 }
 
 // Convert base64 to File
@@ -87,31 +98,77 @@ export function useShareTarget() {
 
   useEffect(() => {
     async function checkForSharedData() {
-      // Check URL for share flag
       const urlParams = new URLSearchParams(window.location.search)
       const hasShared = urlParams.get("shared") === "true"
       
-      if (hasShared) {
-        // Remove the query parameter from URL
-        window.history.replaceState({}, "", "/")
+      if (!hasShared) {
+        setIsLoading(false)
+        return
+      }
+
+      // Remove the query parameters from URL
+      window.history.replaceState({}, "", "/")
+      
+      let foundData = false
+      
+      // Method 1: Try to get data from IndexedDB (Service Worker method)
+      const dbData = await getShareDataFromDB()
+      if (dbData) {
+        setSharedData(dbData)
         
-        // Get shared data from IndexedDB
-        const data = await getShareData()
-        if (data) {
-          setSharedData(data)
-          
-          // Convert base64 files back to File objects
-          const files = data.files.map((f) => 
-            base64ToFile(f.data, f.name, f.type)
-          )
-          setSharedFiles(files)
-          
-          // Combine text, title, and URL
-          const textParts = [data.title, data.text, data.url].filter(Boolean)
+        const files = dbData.files
+          .filter(f => f.data) // Only files with data
+          .map((f) => base64ToFile(f.data, f.name, f.type))
+        setSharedFiles(files)
+        
+        const textParts = [dbData.title, dbData.text, dbData.url].filter(Boolean)
+        setSharedText(textParts.join("\n"))
+        
+        await clearShareDataFromDB()
+        foundData = true
+      }
+      
+      // Method 2: Try to get data from URL params and cookies (Server method)
+      if (!foundData) {
+        const shareTitle = urlParams.get("share_title") || ""
+        const shareText = urlParams.get("share_text") || ""
+        const shareUrl = urlParams.get("share_url") || ""
+        const hasFiles = urlParams.get("has_files") === "true"
+        
+        // Combine text parts
+        const textParts = [shareTitle, shareText, shareUrl].filter(Boolean)
+        if (textParts.length > 0) {
           setSharedText(textParts.join("\n"))
-          
-          // Clear the stored data
-          await clearShareData()
+          foundData = true
+        }
+        
+        // Get files from cookie
+        if (hasFiles) {
+          try {
+            const filesCookie = getCookie("share_files")
+            if (filesCookie) {
+              const filesData = JSON.parse(filesCookie) as Array<{
+                name: string
+                type: string
+                size: number
+                data: string | null
+              }>
+              
+              const files = filesData
+                .filter(f => f.data) // Only files with base64 data
+                .map(f => base64ToFile(f.data!, f.name, f.type))
+              
+              if (files.length > 0) {
+                setSharedFiles(files)
+                foundData = true
+              }
+              
+              // Clear the cookie
+              deleteCookie("share_files")
+            }
+          } catch (e) {
+            console.error("Error parsing share files cookie:", e)
+          }
         }
       }
       
