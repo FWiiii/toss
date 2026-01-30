@@ -144,7 +144,7 @@ export function TransferItemComponent({ item, onPreviewImage, onDownload }: Tran
     return <SystemMessage content={item.content} />
   }
   
-  const isImage = item.type === "file" && isImageFile(item.name)
+  const isImage = item.type === "file" && isImageFile(item.name || "")
   
   return (
     <div

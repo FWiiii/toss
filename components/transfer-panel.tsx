@@ -8,7 +8,7 @@ import { EmptyState } from "@/components/ui/empty-state"
 import { TransferItemComponent } from "@/components/transfer-item"
 import { ImagePreviewDialog } from "@/components/image-preview-dialog"
 import { TransferInput } from "@/components/transfer-input"
-import { Send, Trash2, Share2 } from "lucide-react"
+import { Send, Trash2, Share2, Upload } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 export function TransferPanel() {

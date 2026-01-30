@@ -47,7 +47,7 @@ export function base64ToUint8(base64: string): Uint8Array {
  */
 export function base64ToFile(base64: string, name: string, type: string): File {
   const bytes = base64ToUint8(base64)
-  return new File([bytes], name, { type })
+  return new File([bytes as unknown as BlobPart], name, { type })
 }
 
 // Re-export types from types.ts for backward compatibility
