@@ -50,22 +50,13 @@ export function base64ToFile(base64: string, name: string, type: string): File {
   return new File([bytes], name, { type })
 }
 
-/**
- * Convert File/Blob to base64 string
- */
-export async function fileToBase64(file: File | Blob): Promise<string> {
-  const arrayBuffer = await file.arrayBuffer()
-  const bytes = new Uint8Array(arrayBuffer)
-  return uint8ToBase64(bytes)
-}
-
 // Re-export types from types.ts for backward compatibility
 export type { SharedData, SharedDataFile } from "./types"
 import type { SharedData } from "./types"
 
-// IndexedDB constants
-export const DB_NAME = "toss-share-db"
-export const STORE_NAME = "shared-data"
+// IndexedDB constants (internal use only)
+const DB_NAME = "toss-share-db"
+const STORE_NAME = "shared-data"
 
 /**
  * Open IndexedDB database
