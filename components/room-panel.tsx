@@ -1,11 +1,14 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useTransfer } from "@/lib/transfer-context"
+import { useJoinCode } from "@/hooks/use-join-code"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { EmptyState } from "@/components/ui/empty-state"
-import { Copy, Check, LogOut, Users, Wifi, WifiOff, Loader2, AlertCircle, Crown, User } from "lucide-react"
+import { QRCodeDisplay } from "@/components/qr-code-display"
+import { QRCodeScanner } from "@/components/qr-code-scanner"
+import { Copy, Check, LogOut, Users, Wifi, WifiOff, Loader2, AlertCircle, Crown, User, QrCode, ScanLine } from "lucide-react"
 
 // Common card style to reduce duplication
 const CARD_CLASS = "rounded-xl border border-border bg-card p-6"
@@ -23,8 +26,25 @@ export function RoomPanel() {
     isCreatingRoom,
     isJoiningRoom
   } = useTransfer()
+  const { joinCode, clearJoinCode } = useJoinCode()
   const [inputCode, setInputCode] = useState("")
   const [copied, setCopied] = useState(false)
+  const [showQRCode, setShowQRCode] = useState(false)
+  const [showScanner, setShowScanner] = useState(false)
+
+  // Auto-join when code is provided via URL
+  useEffect(() => {
+    if (joinCode && !roomCode && !isJoiningRoom) {
+      joinRoom(joinCode)
+      clearJoinCode()
+    }
+  }, [joinCode, roomCode, isJoiningRoom, joinRoom, clearJoinCode])
+
+  // Handle scanned QR code
+  const handleScan = (code: string) => {
+    setInputCode(code)
+    joinRoom(code)
+  }
 
   const handleCopyCode = async () => {
     if (roomCode) {
@@ -169,14 +189,33 @@ export function RoomPanel() {
           )}
         </div>
 
-        <Button
-          variant="outline"
-          className="w-full bg-transparent"
-          onClick={leaveRoom}
-        >
-          <LogOut className="w-4 h-4 mr-2" />
-          {isHost ? "解散房间" : "离开房间"}
-        </Button>
+        <div className="flex gap-2">
+          {isHost && (
+            <Button
+              variant="outline"
+              className="flex-1 bg-transparent"
+              onClick={() => setShowQRCode(true)}
+            >
+              <QrCode className="w-4 h-4 mr-2" />
+              显示二维码
+            </Button>
+          )}
+          <Button
+            variant="outline"
+            className={isHost ? "flex-1 bg-transparent" : "w-full bg-transparent"}
+            onClick={leaveRoom}
+          >
+            <LogOut className="w-4 h-4 mr-2" />
+            {isHost ? "解散房间" : "离开房间"}
+          </Button>
+        </div>
+
+        {/* QR Code Display Dialog */}
+        <QRCodeDisplay
+          roomCode={roomCode}
+          open={showQRCode}
+          onOpenChange={setShowQRCode}
+        />
       </div>
     )
   }
@@ -239,14 +278,33 @@ export function RoomPanel() {
               )}
             </Button>
           </div>
+          
+          {/* Scan QR Code Button */}
+          <Button
+            variant="outline"
+            className="w-full mt-3 h-12 bg-transparent"
+            onClick={() => setShowScanner(true)}
+            disabled={isCreatingRoom || isJoiningRoom}
+          >
+            <ScanLine className="w-4 h-4 mr-2" />
+            扫描二维码加入
+          </Button>
+          
           <p className="text-xs text-muted-foreground text-center mt-2">
-            输入其他设备上显示的6位代码
+            输入房间代码或扫描二维码加入
           </p>
           {errorMessage && connectionStatus === "error" && (
             <p className="text-xs text-destructive text-center mt-2">{errorMessage}</p>
           )}
         </div>
       </div>
+
+      {/* QR Code Scanner Dialog */}
+      <QRCodeScanner
+        open={showScanner}
+        onOpenChange={setShowScanner}
+        onScan={handleScan}
+      />
     </div>
   )
 }
