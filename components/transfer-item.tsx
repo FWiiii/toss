@@ -3,8 +3,10 @@
 import { useState, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { ImageThumbnail } from "@/components/image-thumbnail"
+import { LinkPreview } from "@/components/link-preview"
 import { Download, FileText, File as FileIcon, ImageIcon, ZoomIn, Copy, Check, Loader2 } from "lucide-react"
 import { cn, formatFileSize, isImageFile } from "@/lib/utils"
+import { parseTextWithLinks } from "@/lib/link-utils"
 import type { TransferItem } from "@/lib/types"
 
 function formatTime(date: Date) {
@@ -216,6 +218,7 @@ function FileItem({
 // Text item component
 function TextItem({ item }: { item: TransferItem }) {
   const [copied, setCopied] = useState(false)
+  const segments = parseTextWithLinks(item.content)
 
   const handleCopy = useCallback(async () => {
     try {
@@ -242,9 +245,16 @@ function TextItem({ item }: { item: TransferItem }) {
   return (
     <div className="flex items-start gap-2">
       <div className="flex-1 min-w-0">
-        <p className="text-sm text-foreground whitespace-pre-wrap break-words">
-          {item.content}
-        </p>
+        <div className="text-sm text-foreground whitespace-pre-wrap break-words">
+          {segments.map((segment, index) => {
+            if (segment.type === "link" && segment.url) {
+              return (
+                <LinkPreview key={index} url={segment.url} inline />
+              )
+            }
+            return <span key={index}>{segment.content}</span>
+          })}
+        </div>
         <p className="text-xs text-muted-foreground mt-1">
           {formatTime(item.timestamp)} · {item.direction === "sent" ? "已发送" : "已接收"}
         </p>
