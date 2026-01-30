@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from "react"
 import { generateUUID, uint8ToBase64, base64ToUint8 } from "./utils"
 import type { TransferItem, ConnectionStatus, ConnectionType, ConnectionInfo } from "./types"
+import { useNotification } from "@/hooks/use-notification"
 
 export type { TransferItem, ConnectionStatus, ConnectionType, ConnectionInfo }
 
@@ -24,6 +25,20 @@ type TransferContextType = {
   isCreatingRoom: boolean
   isJoiningRoom: boolean
   sendingCount: number // Number of files currently being sent
+  // Notification
+  notificationSettings: {
+    soundEnabled: boolean
+    browserNotificationEnabled: boolean
+    vibrationEnabled: boolean
+  }
+  notificationPermission: NotificationPermission
+  updateNotificationSettings: (settings: Partial<{
+    soundEnabled: boolean
+    browserNotificationEnabled: boolean
+    vibrationEnabled: boolean
+  }>) => void
+  requestNotificationPermission: () => Promise<NotificationPermission>
+  testNotification: () => void
 }
 
 const TransferContext = createContext<TransferContextType | null>(null)
@@ -168,6 +183,17 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
   const [isCreatingRoom, setIsCreatingRoom] = useState(false)
   const [isJoiningRoom, setIsJoiningRoom] = useState(false)
   const [sendingCount, setSendingCount] = useState(0)
+  
+  // Notification hook
+  const {
+    settings: notificationSettings,
+    updateSettings: updateNotificationSettings,
+    notificationPermission,
+    requestNotificationPermission,
+    notifyReceived,
+    playSound,
+    vibrate,
+  } = useNotification()
   
   // Reconnection state
   const reconnectAttemptsRef = useRef(0)
@@ -489,6 +515,8 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
           content: data.content,
           direction: "received",
         })
+        // Notify user of received text
+        notifyReceived("text")
       } else if (data.type === "file-start") {
         // Create item with progress tracking
         const itemId = addItemWithId({
@@ -550,6 +578,10 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
             transferredBytes: buffer.size,
             speed: undefined,
           })
+          
+          // Notify user of received file
+          const fileType = buffer.name.match(/\.(jpg|jpeg|png|gif|webp|svg)$/i) ? "image" : "file"
+          notifyReceived(fileType, buffer.name)
           
           // Clear chunks to free memory immediately
           buffer.chunks = []
@@ -868,6 +900,13 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     setItems([])
   }, [revokeAllBlobUrls])
 
+  // Test notification
+  const testNotification = useCallback(() => {
+    playSound()
+    vibrate([100, 50, 100, 50, 100])
+    notifyReceived("text")
+  }, [playSound, vibrate, notifyReceived])
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
@@ -915,6 +954,11 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
         isCreatingRoom,
         isJoiningRoom,
         sendingCount,
+        notificationSettings,
+        notificationPermission,
+        updateNotificationSettings,
+        requestNotificationPermission,
+        testNotification,
       }}
     >
       {children}

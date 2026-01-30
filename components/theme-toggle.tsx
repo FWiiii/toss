@@ -21,7 +21,7 @@ export function ThemeToggle() {
 
   if (!mounted) {
     return (
-      <Button variant="ghost" size="icon" className="h-9 w-9 text-muted-foreground hover:text-foreground">
+      <Button variant="ghost" size="icon" className="h-9 w-9 text-muted-foreground hover:text-foreground focus-visible:ring-0 focus-visible:ring-offset-0">
         <Sun className="h-4 w-4" />
       </Button>
     )
@@ -30,7 +30,7 @@ export function ThemeToggle() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" className="h-9 w-9 text-muted-foreground hover:text-foreground hover:bg-muted">
+        <Button variant="ghost" size="icon" className="h-9 w-9 text-muted-foreground hover:text-foreground hover:bg-muted focus-visible:ring-0 focus-visible:ring-offset-0">
           {theme === "light" ? (
             <Sun className="h-4 w-4" />
           ) : theme === "dark" ? (
