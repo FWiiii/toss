@@ -15,10 +15,14 @@ type TransferContextType = {
   joinRoom: (code: string) => void
   leaveRoom: () => void
   sendText: (text: string) => void
-  sendFile: (file: File) => void
+  sendFile: (file: File) => Promise<void>
   clearHistory: () => void
   peerCount: number
   isHost: boolean
+  // Loading states
+  isCreatingRoom: boolean
+  isJoiningRoom: boolean
+  isSending: boolean
 }
 
 const TransferContext = createContext<TransferContextType | null>(null)
@@ -87,6 +91,11 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
   const [items, setItems] = useState<TransferItem[]>([])
   const [peerCount, setPeerCount] = useState(0)
   const [isHost, setIsHost] = useState(false)
+  
+  // Loading states
+  const [isCreatingRoom, setIsCreatingRoom] = useState(false)
+  const [isJoiningRoom, setIsJoiningRoom] = useState(false)
+  const [isSending, setIsSending] = useState(false)
   
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const peerRef = useRef<any>(null)
@@ -299,140 +308,160 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
   }, [addItem, addSystemMessage, updatePeerCount, createTrackedBlobUrl])
 
   const createRoom = useCallback(async () => {
-    const { default: Peer } = await import("peerjs")
+    setIsCreatingRoom(true)
     
-    const code = generateRoomCode()
-    const peerId = PEER_PREFIX + code
-    
-    // Clean up any existing connections and peer
-    connectionsRef.current.forEach((conn) => {
-      try { conn.close() } catch {}
-    })
-    connectionsRef.current.clear()
-    fileBuffersRef.current.clear()
-    
-    if (peerRef.current) {
-      try { peerRef.current.destroy() } catch {}
-      peerRef.current = null
-    }
-    
-    setRoomCode(code)
-    setConnectionStatus("connecting")
-    setErrorMessage(null)
-    setIsHost(true)
-
-    const peer = new Peer(peerId, {
-      debug: 0,
-      config: ICE_SERVERS,
-      secure: true,
-      host: "0.peerjs.com",
-      port: 443,
-    })
-
-    peer.on("open", () => {
+    try {
+      const { default: Peer } = await import("peerjs")
+      
+      const code = generateRoomCode()
+      const peerId = PEER_PREFIX + code
+      
+      // Clean up any existing connections and peer
+      connectionsRef.current.forEach((conn) => {
+        try { conn.close() } catch {}
+      })
+      connectionsRef.current.clear()
+      fileBuffersRef.current.clear()
+      
+      if (peerRef.current) {
+        try { peerRef.current.destroy() } catch {}
+        peerRef.current = null
+      }
+      
+      setRoomCode(code)
       setConnectionStatus("connecting")
-    })
+      setErrorMessage(null)
+      setIsHost(true)
 
-    peer.on("connection", (conn) => {
-      setupConnection(conn, false)
-    })
+      const peer = new Peer(peerId, {
+        debug: 0,
+        config: ICE_SERVERS,
+        secure: true,
+        host: "0.peerjs.com",
+        port: 443,
+      })
 
-    peer.on("error", (err) => {
-      if (err.type === "unavailable-id") {
-        setErrorMessage("房间代码已被占用，正在重试...")
-        peer.destroy()
-        setTimeout(() => createRoom(), 500)
-      } else if (err.type === "network" || err.type === "server-error") {
-        setConnectionStatus("error")
-        setErrorMessage("网络错误，请检查网络连接")
-      } else {
-        setConnectionStatus("error")
-        setErrorMessage(`连接错误: ${err.type}`)
-      }
-    })
+      peer.on("open", () => {
+        setIsCreatingRoom(false)
+        setConnectionStatus("connecting")
+      })
 
-    peer.on("disconnected", () => {
-      if (!peer.destroyed) {
-        peer.reconnect()
-      }
-    })
+      peer.on("connection", (conn) => {
+        setupConnection(conn, false)
+      })
 
-    peerRef.current = peer
+      peer.on("error", (err) => {
+        setIsCreatingRoom(false)
+        if (err.type === "unavailable-id") {
+          setErrorMessage("房间代码已被占用，正在重试...")
+          peer.destroy()
+          setTimeout(() => createRoom(), 500)
+        } else if (err.type === "network" || err.type === "server-error") {
+          setConnectionStatus("error")
+          setErrorMessage("网络错误，请检查网络连接")
+        } else {
+          setConnectionStatus("error")
+          setErrorMessage(`连接错误: ${err.type}`)
+        }
+      })
+
+      peer.on("disconnected", () => {
+        if (!peer.destroyed) {
+          peer.reconnect()
+        }
+      })
+
+      peerRef.current = peer
+    } catch {
+      setIsCreatingRoom(false)
+      setConnectionStatus("error")
+      setErrorMessage("创建房间失败，请重试")
+    }
   }, [setupConnection])
 
   const joinRoom = useCallback(async (code: string) => {
-    const { default: Peer } = await import("peerjs")
-    
     const normalizedCode = code.toUpperCase().replace(/[^A-Z0-9]/g, "")
     if (normalizedCode.length !== 6) {
       setErrorMessage("请输入6位房间代码")
       return
     }
     
-    const hostPeerId = PEER_PREFIX + normalizedCode
+    setIsJoiningRoom(true)
     
-    // Clean up any existing connections and peer before joining
-    connectionsRef.current.forEach((conn) => {
-      try { conn.close() } catch {}
-    })
-    connectionsRef.current.clear()
-    fileBuffersRef.current.clear()
-    
-    if (peerRef.current) {
-      try { peerRef.current.destroy() } catch {}
-      peerRef.current = null
+    try {
+      const { default: Peer } = await import("peerjs")
+      
+      const hostPeerId = PEER_PREFIX + normalizedCode
+      
+      // Clean up any existing connections and peer before joining
+      connectionsRef.current.forEach((conn) => {
+        try { conn.close() } catch {}
+      })
+      connectionsRef.current.clear()
+      fileBuffersRef.current.clear()
+      
+      if (peerRef.current) {
+        try { peerRef.current.destroy() } catch {}
+        peerRef.current = null
+      }
+      
+      // Small delay to ensure cleanup is complete
+      await new Promise(resolve => setTimeout(resolve, 100))
+      
+      setRoomCode(normalizedCode)
+      setConnectionStatus("connecting")
+      setErrorMessage(null)
+      setIsHost(false)
+
+      const peer = new Peer({
+        debug: 0,
+        config: ICE_SERVERS,
+        secure: true,
+        host: "0.peerjs.com",
+        port: 443,
+      })
+
+      peer.on("open", () => {
+        setIsJoiningRoom(false)
+        const conn = peer.connect(hostPeerId, { reliable: true })
+        if (conn) {
+          setupConnection(conn, true)
+        } else {
+          setConnectionStatus("error")
+          setErrorMessage("无法创建连接")
+        }
+      })
+
+      peer.on("connection", (conn) => {
+        setupConnection(conn, false)
+      })
+
+      peer.on("error", (err) => {
+        setIsJoiningRoom(false)
+        if (err.type === "peer-unavailable") {
+          setConnectionStatus("error")
+          setErrorMessage("找不到房间，请检查代码是否正确，或房间可能已关闭")
+        } else if (err.type === "network" || err.type === "server-error") {
+          setConnectionStatus("error")
+          setErrorMessage("无法连接到信令服务器，请检查网络")
+        } else {
+          setConnectionStatus("error")
+          setErrorMessage(`连接错误: ${err.type}`)
+        }
+      })
+
+      peer.on("disconnected", () => {
+        if (!peer.destroyed) {
+          peer.reconnect()
+        }
+      })
+
+      peerRef.current = peer
+    } catch {
+      setIsJoiningRoom(false)
+      setConnectionStatus("error")
+      setErrorMessage("加入房间失败，请重试")
     }
-    
-    // Small delay to ensure cleanup is complete
-    await new Promise(resolve => setTimeout(resolve, 100))
-    
-    setRoomCode(normalizedCode)
-    setConnectionStatus("connecting")
-    setErrorMessage(null)
-    setIsHost(false)
-
-    const peer = new Peer({
-      debug: 0,
-      config: ICE_SERVERS,
-      secure: true,
-      host: "0.peerjs.com",
-      port: 443,
-    })
-
-    peer.on("open", () => {
-      const conn = peer.connect(hostPeerId, { reliable: true })
-      if (conn) {
-        setupConnection(conn, true)
-      } else {
-        setConnectionStatus("error")
-        setErrorMessage("无法创建连接")
-      }
-    })
-
-    peer.on("connection", (conn) => {
-      setupConnection(conn, false)
-    })
-
-    peer.on("error", (err) => {
-      if (err.type === "peer-unavailable") {
-        setConnectionStatus("error")
-        setErrorMessage("找不到房间，请检查代码是否正确，或房间可能已关闭")
-      } else if (err.type === "network" || err.type === "server-error") {
-        setConnectionStatus("error")
-        setErrorMessage("无法连接到信令服务器，请检查网络")
-      } else {
-        setConnectionStatus("error")
-        setErrorMessage(`连接错误: ${err.type}`)
-      }
-    })
-
-    peer.on("disconnected", () => {
-      if (!peer.destroyed) {
-        peer.reconnect()
-      }
-    })
-
-    peerRef.current = peer
   }, [setupConnection])
 
   const leaveRoom = useCallback(() => {
@@ -489,52 +518,58 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     })
   }, [addItem])
 
-  const sendFile = useCallback(async (file: File) => {
+  const sendFile = useCallback(async (file: File): Promise<void> => {
     const CHUNK_SIZE = 16384
-
-    const url = createTrackedBlobUrl(file)
-    addItem({
-      type: "file",
-      name: file.name,
-      content: url,
-      size: file.size,
-      direction: "sent",
-    })
-
-    const arrayBuffer = await file.arrayBuffer()
-    const uint8Array = new Uint8Array(arrayBuffer)
-
-    // Send file to each connection
-    for (const conn of connectionsRef.current.values()) {
-      if (!conn.open) continue
-
-      conn.send({
-        type: "file-start",
+    
+    setIsSending(true)
+    
+    try {
+      const url = createTrackedBlobUrl(file)
+      addItem({
+        type: "file",
         name: file.name,
+        content: url,
         size: file.size,
+        direction: "sent",
       })
 
-      // Send chunks with small delays to avoid buffer overflow
-      let offset = 0
-      while (offset < uint8Array.length) {
-        const end = Math.min(offset + CHUNK_SIZE, uint8Array.length)
-        const chunk = uint8Array.subarray(offset, end)
-        
-        // Send chunk as base64 string
-        conn.send({
-          type: "file-chunk",
-          data: uint8ToBase64(chunk),
-        })
-        
-        offset = end
-        
-        // Small delay every few chunks to let the buffer drain
-        if ((offset / CHUNK_SIZE) % 10 === 0) {
-          await new Promise(resolve => setTimeout(resolve, 5))
-        }
-      }
+      const arrayBuffer = await file.arrayBuffer()
+      const uint8Array = new Uint8Array(arrayBuffer)
 
-      conn.send({ type: "file-end" })
+      // Send file to each connection
+      for (const conn of connectionsRef.current.values()) {
+        if (!conn.open) continue
+
+        conn.send({
+          type: "file-start",
+          name: file.name,
+          size: file.size,
+        })
+
+        // Send chunks with small delays to avoid buffer overflow
+        let offset = 0
+        while (offset < uint8Array.length) {
+          const end = Math.min(offset + CHUNK_SIZE, uint8Array.length)
+          const chunk = uint8Array.subarray(offset, end)
+          
+          // Send chunk as base64 string
+          conn.send({
+            type: "file-chunk",
+            data: uint8ToBase64(chunk),
+          })
+          
+          offset = end
+          
+          // Small delay every few chunks to let the buffer drain
+          if ((offset / CHUNK_SIZE) % 10 === 0) {
+            await new Promise(resolve => setTimeout(resolve, 5))
+          }
+        }
+
+        conn.send({ type: "file-end" })
+      }
+    } finally {
+      setIsSending(false)
     }
   }, [addItem, createTrackedBlobUrl])
 
@@ -589,6 +624,9 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
         clearHistory,
         peerCount,
         isHost,
+        isCreatingRoom,
+        isJoiningRoom,
+        isSending,
       }}
     >
       {children}

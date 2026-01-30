@@ -7,7 +7,18 @@ import { Input } from "@/components/ui/input"
 import { Copy, Check, LogOut, Users, Wifi, WifiOff, Loader2, AlertCircle, Crown, User } from "lucide-react"
 
 export function RoomPanel() {
-  const { roomCode, connectionStatus, errorMessage, createRoom, joinRoom, leaveRoom, peerCount, isHost } = useTransfer()
+  const { 
+    roomCode, 
+    connectionStatus, 
+    errorMessage, 
+    createRoom, 
+    joinRoom, 
+    leaveRoom, 
+    peerCount, 
+    isHost,
+    isCreatingRoom,
+    isJoiningRoom
+  } = useTransfer()
   const [inputCode, setInputCode] = useState("")
   const [copied, setCopied] = useState(false)
 
@@ -177,8 +188,16 @@ export function RoomPanel() {
           <Button
             className="w-full h-14 text-lg font-medium bg-primary text-primary-foreground hover:bg-primary/90"
             onClick={createRoom}
+            disabled={isCreatingRoom || isJoiningRoom}
           >
-            创建房间
+            {isCreatingRoom ? (
+              <>
+                <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                创建中...
+              </>
+            ) : (
+              "创建房间"
+            )}
           </Button>
           <p className="text-xs text-muted-foreground text-center mt-2">
             生成一个房间代码，分享给其他设备
@@ -202,6 +221,7 @@ export function RoomPanel() {
               onChange={(e) => setInputCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6))}
               className="h-14 text-center text-xl font-mono tracking-[0.2em] uppercase bg-input border-border"
               maxLength={6}
+              disabled={isCreatingRoom || isJoiningRoom}
               onKeyDown={(e) => {
                 if (e.key === "Enter") handleJoinRoom()
               }}
@@ -210,9 +230,13 @@ export function RoomPanel() {
               variant="secondary"
               className="h-14 px-6"
               onClick={handleJoinRoom}
-              disabled={inputCode.length < 6}
+              disabled={inputCode.length < 6 || isCreatingRoom || isJoiningRoom}
             >
-              加入
+              {isJoiningRoom ? (
+                <Loader2 className="w-5 h-5 animate-spin" />
+              ) : (
+                "加入"
+              )}
             </Button>
           </div>
           <p className="text-xs text-muted-foreground text-center mt-2">

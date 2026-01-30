@@ -3,7 +3,7 @@
 import { useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
-import { Send, Upload } from "lucide-react"
+import { Send, Upload, Loader2 } from "lucide-react"
 
 type TransferInputProps = {
   text: string
@@ -11,6 +11,7 @@ type TransferInputProps = {
   onSendText: () => void
   onSendFile: (file: File) => void
   isConnected: boolean
+  isSending?: boolean
 }
 
 export function TransferInput({ 
@@ -18,13 +19,14 @@ export function TransferInput({
   onTextChange, 
   onSendText, 
   onSendFile, 
-  isConnected 
+  isConnected,
+  isSending = false
 }: TransferInputProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
-    if (file && isConnected) {
+    if (file && isConnected && !isSending) {
       onSendFile(file)
     }
     if (fileInputRef.current) {
@@ -33,7 +35,7 @@ export function TransferInput({
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !isSending) {
       e.preventDefault()
       onSendText()
     }
@@ -46,7 +48,7 @@ export function TransferInput({
           placeholder={isConnected ? "输入要发送的文本..." : "连接设备后可发送内容"}
           value={text}
           onChange={(e) => onTextChange(e.target.value)}
-          disabled={!isConnected}
+          disabled={!isConnected || isSending}
           className="min-h-[80px] resize-none bg-input border-border"
           onKeyDown={handleKeyDown}
         />
@@ -57,20 +59,30 @@ export function TransferInput({
           ref={fileInputRef}
           onChange={handleFileSelect}
           className="hidden"
+          disabled={isSending}
         />
         <Button
           variant="outline"
           className="flex-1 bg-transparent"
           onClick={() => fileInputRef.current?.click()}
-          disabled={!isConnected}
+          disabled={!isConnected || isSending}
         >
-          <Upload className="w-4 h-4 mr-2" />
-          选择文件
+          {isSending ? (
+            <>
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              发送中...
+            </>
+          ) : (
+            <>
+              <Upload className="w-4 h-4 mr-2" />
+              选择文件
+            </>
+          )}
         </Button>
         <Button
           className="flex-1 bg-accent text-accent-foreground hover:bg-accent/90"
           onClick={onSendText}
-          disabled={!isConnected || !text.trim()}
+          disabled={!isConnected || !text.trim() || isSending}
         >
           <Send className="w-4 h-4 mr-2" />
           发送文本
