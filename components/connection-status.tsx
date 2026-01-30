@@ -287,83 +287,53 @@ export function ConnectionStatusDisplay({
 
         {/* Connection details when connected */}
         {status === "connected" && peerCount > 0 && (
-          <div className="mt-4 pt-3 border-t border-border/50 space-y-3">
-            <div className="grid grid-cols-3 gap-3">
+          <div className="mt-3 pt-2 border-t border-border/50">
+            {/* Compact single-row layout with all metrics */}
+            <div className="flex items-center gap-4 text-xs text-muted-foreground flex-wrap">
               {/* Peer count */}
-              <div className="flex items-center gap-2">
-                <Users className="w-4 h-4 text-muted-foreground" />
-                <div>
-                  <p className="text-xs text-muted-foreground">设备</p>
-                  <p className="text-sm font-medium">{peerCount} 台</p>
-                </div>
+              <div className="flex items-center gap-1.5" title="连接设备数">
+                <Users className="w-3.5 h-3.5" />
+                <span className="font-medium text-foreground">{peerCount}</span>
               </div>
               
               {/* Connection time */}
-              <div className="flex items-center gap-2">
-                <Clock className="w-4 h-4 text-muted-foreground" />
-                <div>
-                  <p className="text-xs text-muted-foreground">时长</p>
-                  <p className="text-sm font-medium">{formatDuration(connectedTime)}</p>
-                </div>
+              <div className="flex items-center gap-1.5" title="连接时长">
+                <Clock className="w-3.5 h-3.5" />
+                <span className="font-medium text-foreground">{formatDuration(connectedTime)}</span>
               </div>
               
               {/* Connection type */}
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5" title={connectionTypeDisplay.description}>
                 <ConnectionTypeIcon className={cn(
-                  "w-4 h-4",
+                  "w-3.5 h-3.5",
                   connectionTypeDisplay.color,
                   connectionInfo?.type === "unknown" && "animate-spin"
                 )} />
-                <div>
-                  <p className="text-xs text-muted-foreground">模式</p>
-                  <p className="text-sm font-medium">{connectionTypeDisplay.label}</p>
-                </div>
+                <span className={cn("font-medium", connectionTypeDisplay.color)}>
+                  {connectionTypeDisplay.label}
+                </span>
               </div>
-            </div>
-
-            {/* Connection quality */}
-            {connectionQuality && (connectionQuality.latency !== null || connectionQuality.bandwidth !== null) && (
-              <div className="grid grid-cols-2 gap-3">
-                {/* Latency */}
-                {connectionQuality.latency !== null && (
-                  <div className="flex items-center gap-2">
-                    <Activity className={cn("w-4 h-4", getQualityColor(connectionQuality.quality))} />
-                    <div>
-                      <p className="text-xs text-muted-foreground">延迟</p>
-                      <p className={cn("text-sm font-medium", getQualityColor(connectionQuality.quality))}>
-                        {connectionQuality.latency} ms
-                      </p>
-                    </div>
-                  </div>
-                )}
-                
-                {/* Bandwidth */}
-                {connectionQuality.bandwidth !== null && (
-                  <div className="flex items-center gap-2">
-                    <Gauge className="w-4 h-4 text-muted-foreground" />
-                    <div>
-                      <p className="text-xs text-muted-foreground">速度</p>
-                      <p className="text-sm font-medium">
-                        {formatFileSize(connectionQuality.bandwidth)}/s
-                      </p>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-            
-            {/* Connection type description */}
-            {connectionInfo?.type && connectionInfo.type !== "unknown" && (
-              <p className="text-xs text-muted-foreground flex items-center gap-1">
-                <Signal className="w-3 h-3" />
-                {connectionTypeDisplay.description}
-                {connectionInfo.protocol && (
-                  <span className="text-xs bg-muted px-1.5 py-0.5 rounded ml-1">
-                    {connectionInfo.protocol.toUpperCase()}
+              
+              {/* Latency */}
+              {connectionQuality && connectionQuality.latency !== null && (
+                <div className="flex items-center gap-1.5" title="网络延迟">
+                  <Activity className={cn("w-3.5 h-3.5", getQualityColor(connectionQuality.quality))} />
+                  <span className={cn("font-medium", getQualityColor(connectionQuality.quality))}>
+                    {connectionQuality.latency}ms
                   </span>
-                )}
-              </p>
-            )}
+                </div>
+              )}
+              
+              {/* Bandwidth */}
+              {connectionQuality && connectionQuality.bandwidth !== null && (
+                <div className="flex items-center gap-1.5" title="传输速度">
+                  <Gauge className="w-3.5 h-3.5" />
+                  <span className="font-medium text-foreground">
+                    {formatFileSize(connectionQuality.bandwidth)}/s
+                  </span>
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>

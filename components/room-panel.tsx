@@ -207,7 +207,7 @@ export function RoomPanel() {
               placeholder="输入房间代码"
               value={inputCode}
               onChange={(e) => setInputCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6))}
-              className="h-14 text-center text-xl font-mono tracking-[0.2em] uppercase bg-input border-border"
+              className="h-14 text-center text-xl font-mono tracking-[0.2em] uppercase bg-input border-border focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:border-border"
               maxLength={6}
               disabled={isCreatingRoom || isJoiningRoom}
               onKeyDown={(e) => {
