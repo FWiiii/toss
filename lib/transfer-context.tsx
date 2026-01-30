@@ -94,11 +94,20 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
   const fileBuffersRef = useRef<Map<string, { name: string; size: number; chunks: Uint8Array[]; received: number }>>(new Map())
 
   const addItem = useCallback((item: Omit<TransferItem, "id" | "timestamp">) => {
+    // Generate UUID with fallback for older browsers
+    const id = (typeof crypto !== 'undefined' && crypto.randomUUID)
+      ? crypto.randomUUID()
+      : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+          const r = Math.random() * 16 | 0
+          const v = c === 'x' ? r : (r & 0x3 | 0x8)
+          return v.toString(16)
+        })
+    
     setItems((prev) => [
       ...prev,
       {
         ...item,
-        id: crypto.randomUUID(),
+        id,
         timestamp: new Date(),
       },
     ])
@@ -193,8 +202,14 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       } else if (data.type === "file-chunk") {
         const buffer = fileBuffersRef.current.get(conn.peer)
         if (buffer) {
-          buffer.chunks.push(new Uint8Array(data.chunk))
-          buffer.received += data.chunk.length
+          // Decode base64 to Uint8Array
+          const binary = atob(data.data)
+          const bytes = new Uint8Array(binary.length)
+          for (let i = 0; i < binary.length; i++) {
+            bytes[i] = binary.charCodeAt(i)
+          }
+          buffer.chunks.push(bytes)
+          buffer.received += bytes.length
         }
       } else if (data.type === "file-end") {
         const buffer = fileBuffersRef.current.get(conn.peer)
@@ -405,28 +420,48 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
 
     const arrayBuffer = await file.arrayBuffer()
     const uint8Array = new Uint8Array(arrayBuffer)
-
-    connectionsRef.current.forEach((conn) => {
-      if (conn.open) {
-        conn.send({
-          type: "file-start",
-          name: file.name,
-          size: file.size,
-        })
-
-        let offset = 0
-        while (offset < uint8Array.length) {
-          const chunk = uint8Array.slice(offset, offset + CHUNK_SIZE)
-          conn.send({
-            type: "file-chunk",
-            chunk: Array.from(chunk),
-          })
-          offset += CHUNK_SIZE
-        }
-
-        conn.send({ type: "file-end" })
+    
+    // Helper to convert Uint8Array to base64 without stack overflow
+    const uint8ToBase64 = (bytes: Uint8Array): string => {
+      let binary = ''
+      for (let i = 0; i < bytes.length; i++) {
+        binary += String.fromCharCode(bytes[i])
       }
-    })
+      return btoa(binary)
+    }
+
+    // Send file to each connection
+    for (const conn of connectionsRef.current.values()) {
+      if (!conn.open) continue
+
+      conn.send({
+        type: "file-start",
+        name: file.name,
+        size: file.size,
+      })
+
+      // Send chunks with small delays to avoid buffer overflow
+      let offset = 0
+      while (offset < uint8Array.length) {
+        const end = Math.min(offset + CHUNK_SIZE, uint8Array.length)
+        const chunk = uint8Array.subarray(offset, end)
+        
+        // Send chunk as base64 string
+        conn.send({
+          type: "file-chunk",
+          data: uint8ToBase64(chunk),
+        })
+        
+        offset = end
+        
+        // Small delay every few chunks to let the buffer drain
+        if ((offset / CHUNK_SIZE) % 10 === 0) {
+          await new Promise(resolve => setTimeout(resolve, 5))
+        }
+      }
+
+      conn.send({ type: "file-end" })
+    }
   }, [addItem])
 
   const clearHistory = useCallback(() => {

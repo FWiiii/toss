@@ -13,9 +13,27 @@ export function RoomPanel() {
 
   const handleCopyCode = async () => {
     if (roomCode) {
-      await navigator.clipboard.writeText(roomCode)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
+      try {
+        // Try modern clipboard API first
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(roomCode)
+        } else {
+          // Fallback for older browsers or non-HTTPS
+          const textArea = document.createElement('textarea')
+          textArea.value = roomCode
+          textArea.style.position = 'fixed'
+          textArea.style.left = '-9999px'
+          document.body.appendChild(textArea)
+          textArea.select()
+          document.execCommand('copy')
+          document.body.removeChild(textArea)
+        }
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2000)
+      } catch {
+        // If all else fails, show the code for manual copy
+        console.error('Failed to copy to clipboard')
+      }
     }
   }
 

@@ -38,45 +38,60 @@ export function TransferPanel() {
   const [pendingShare, setPendingShare] = useState<{ files: File[], text: string } | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
+  const hasProcessedShareRef = useRef(false)
 
   const isConnected = connectionStatus === "connected" && peerCount > 0
 
   // Handle shared content from Web Share Target
   useEffect(() => {
-    if (hasSharedContent) {
-      if (isConnected) {
-        // Send immediately if connected
+    // Only process once
+    if (!hasSharedContent || hasProcessedShareRef.current) {
+      return
+    }
+
+    if (isConnected) {
+      hasProcessedShareRef.current = true
+      // Send with a small delay to ensure connection is stable
+      const timer = setTimeout(async () => {
         if (sharedText) {
           sendText(sharedText)
         }
-        sharedFiles.forEach((file) => {
-          sendFile(file)
-        })
-        clearSharedData()
-      } else {
-        // Store pending share data
-        setPendingShare({ files: sharedFiles, text: sharedText })
-        // Pre-fill text input
-        if (sharedText) {
-          setText(sharedText)
+        // Send files sequentially
+        for (const file of sharedFiles) {
+          await sendFile(file)
         }
+        clearSharedData()
+      }, 500)
+      return () => clearTimeout(timer)
+    } else {
+      // Store pending share data (only once)
+      hasProcessedShareRef.current = true
+      setPendingShare({ files: [...sharedFiles], text: sharedText })
+      // Pre-fill text input
+      if (sharedText) {
+        setText(sharedText)
       }
+      clearSharedData()
     }
   }, [hasSharedContent, isConnected, sharedFiles, sharedText, sendText, sendFile, clearSharedData])
 
   // Send pending share when connected
   useEffect(() => {
-    if (isConnected && pendingShare) {
-      if (pendingShare.text && text === pendingShare.text) {
-        // Text is still in input, user can choose to send
-      }
-      pendingShare.files.forEach((file) => {
-        sendFile(file)
-      })
-      setPendingShare(null)
-      clearSharedData()
+    if (!isConnected || !pendingShare || pendingShare.files.length === 0) {
+      return
     }
-  }, [isConnected, pendingShare, text, sendFile, clearSharedData])
+
+    // Delay sending to ensure connection is fully established
+    const filesToSend = [...pendingShare.files]
+    setPendingShare(null)
+    
+    const timer = setTimeout(async () => {
+      for (const file of filesToSend) {
+        await sendFile(file)
+      }
+    }, 500)
+    return () => clearTimeout(timer)
+  }, [isConnected, pendingShare, sendFile])
 
   // Auto scroll to bottom when new items arrive
   useEffect(() => {
