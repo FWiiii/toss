@@ -59,6 +59,10 @@ export async function fileToBase64(file: File | Blob): Promise<string> {
   return uint8ToBase64(bytes)
 }
 
+// Re-export types from types.ts for backward compatibility
+export type { SharedData, SharedDataFile } from "./types"
+import type { SharedData } from "./types"
+
 // IndexedDB constants
 export const DB_NAME = "toss-share-db"
 export const STORE_NAME = "shared-data"
@@ -78,21 +82,6 @@ export function openShareDB(): Promise<IDBDatabase> {
       }
     }
   })
-}
-
-export type SharedDataFile = {
-  name: string
-  type: string
-  size: number
-  data: string // base64
-}
-
-export type SharedData = {
-  title: string
-  text: string
-  url: string
-  files: SharedDataFile[]
-  timestamp: number
 }
 
 /**

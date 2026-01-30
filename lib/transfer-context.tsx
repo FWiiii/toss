@@ -2,18 +2,9 @@
 
 import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from "react"
 import { generateUUID, uint8ToBase64, base64ToUint8 } from "./utils"
+import type { TransferItem, ConnectionStatus } from "./types"
 
-export type TransferItem = {
-  id: string
-  type: "text" | "file" | "system"
-  name?: string
-  content: string
-  size?: number
-  timestamp: Date
-  direction: "sent" | "received" | "system"
-}
-
-type ConnectionStatus = "disconnected" | "connecting" | "connected" | "error" | "dissolved"
+export type { TransferItem, ConnectionStatus }
 
 type TransferContextType = {
   roomCode: string | null

@@ -1,27 +1,14 @@
 "use client"
 
-import React from "react"
-
 import { useState, useRef, useCallback, useEffect } from "react"
 import { useTransfer } from "@/lib/transfer-context"
 import { useShareTarget } from "@/hooks/use-share-target"
 import { Button } from "@/components/ui/button"
-import { Textarea } from "@/components/ui/textarea"
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
-import { Send, Upload, FileText, File as FileIcon, Download, Trash2, ImageIcon, Share2, X, ZoomIn } from "lucide-react"
-import { cn, formatFileSize, isImageFile } from "@/lib/utils"
-
-function formatTime(date: Date) {
-  return date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })
-}
-
-function getFileIcon(name?: string) {
-  if (!name) return FileIcon
-  if (isImageFile(name)) return ImageIcon
-  const ext = name.split(".").pop()?.toLowerCase()
-  if (["txt", "md", "json", "js", "ts", "html", "css"].includes(ext || "")) return FileText
-  return FileIcon
-}
+import { TransferItemComponent } from "@/components/transfer-item"
+import { ImagePreviewDialog } from "@/components/image-preview-dialog"
+import { TransferInput } from "@/components/transfer-input"
+import { Send, Upload, Trash2, Share2 } from "lucide-react"
+import { cn } from "@/lib/utils"
 
 export function TransferPanel() {
   const { connectionStatus, items, sendText, sendFile, clearHistory, peerCount } = useTransfer()
@@ -30,7 +17,6 @@ export function TransferPanel() {
   const [isDragging, setIsDragging] = useState(false)
   const [pendingShare, setPendingShare] = useState<{ files: File[], text: string } | null>(null)
   const [previewImage, setPreviewImage] = useState<{ url: string; name: string } | null>(null)
-  const fileInputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const hasProcessedShareRef = useRef(false)
 
@@ -38,19 +24,16 @@ export function TransferPanel() {
 
   // Handle shared content from Web Share Target
   useEffect(() => {
-    // Only process once
     if (!hasSharedContent || hasProcessedShareRef.current) {
       return
     }
 
     if (isConnected) {
       hasProcessedShareRef.current = true
-      // Send with a small delay to ensure connection is stable
       const timer = setTimeout(async () => {
         if (sharedText) {
           sendText(sharedText)
         }
-        // Send files sequentially
         for (const file of sharedFiles) {
           await sendFile(file)
         }
@@ -58,10 +41,8 @@ export function TransferPanel() {
       }, 500)
       return () => clearTimeout(timer)
     } else {
-      // Store pending share data (only once)
       hasProcessedShareRef.current = true
       setPendingShare({ files: [...sharedFiles], text: sharedText })
-      // Pre-fill text input
       if (sharedText) {
         setText(sharedText)
       }
@@ -75,7 +56,6 @@ export function TransferPanel() {
       return
     }
 
-    // Delay sending to ensure connection is fully established
     const filesToSend = [...pendingShare.files]
     setPendingShare(null)
     
@@ -90,45 +70,36 @@ export function TransferPanel() {
   // Auto scroll to bottom when new items arrive
   useEffect(() => {
     if (items.length > 0) {
-      // Check if mobile (< 1024px)
       const isMobile = window.innerWidth < 1024
       
       if (isMobile) {
-        // On mobile, scroll the entire page to bottom
         window.scrollTo({
           top: document.body.scrollHeight,
           behavior: 'smooth'
         })
       } else if (listRef.current) {
-        // On desktop, scroll the list container
         listRef.current.scrollTop = listRef.current.scrollHeight
       }
     }
   }, [items.length])
 
-  const handleSendText = () => {
+  const handleSendText = useCallback(() => {
     if (text.trim() && isConnected) {
       sendText(text)
       setText("")
     }
-  }
+  }, [text, isConnected, sendText])
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (file && isConnected) {
-      sendFile(file)
-    }
-    if (fileInputRef.current) {
-      fileInputRef.current.value = ""
-    }
-  }
-
-  const handleDownload = (url: string, name?: string) => {
+  const handleDownload = useCallback((url: string, name?: string) => {
     const a = document.createElement("a")
     a.href = url
     a.download = name || "download"
     a.click()
-  }
+  }, [])
+
+  const handlePreviewImage = useCallback((url: string, name: string) => {
+    setPreviewImage({ url, name })
+  }, [])
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -205,7 +176,7 @@ export function TransferPanel() {
         </div>
       )}
 
-      {/* Items List - 移动端自然高度，桌面端固定高度可滚动 */}
+      {/* Items List */}
       <div ref={listRef} className="flex-1 lg:overflow-y-auto p-4 space-y-3 lg:min-h-0">
         {items.length === 0 && !pendingShare ? (
           <div className="flex flex-col items-center justify-center h-full text-muted-foreground py-12">
@@ -217,206 +188,32 @@ export function TransferPanel() {
             </p>
           </div>
         ) : (
-          items.map((item) => {
-            // System messages
-            if (item.type === "system") {
-              return (
-                <div key={item.id} className="flex justify-center">
-                  <div className="px-3 py-1 rounded-full bg-muted text-xs text-muted-foreground">
-                    {item.content}
-                  </div>
-                </div>
-              )
-            }
-            
-            const IconComponent = getFileIcon(item.name)
-            const isImage = item.type === "file" && isImageFile(item.name)
-            
-            return (
-              <div
-                key={item.id}
-                className={cn(
-                  "rounded-lg p-3",
-                  item.direction === "sent" ? "bg-primary/10 ml-8" : "bg-secondary mr-8"
-                )}
-              >
-                {/* Image Preview */}
-                {isImage ? (
-                  <div className="space-y-2">
-                    <div 
-                      className="relative group cursor-pointer"
-                      onClick={() => setPreviewImage({ url: item.content, name: item.name || "image" })}
-                    >
-                      <img 
-                        src={item.content} 
-                        alt={item.name || "image"}
-                        className="max-w-full max-h-48 rounded-lg object-contain bg-background"
-                      />
-                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors rounded-lg flex items-center justify-center">
-                        <ZoomIn className="w-8 h-8 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
-                      </div>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <div className="min-w-0 flex-1">
-                        <p className="text-xs text-muted-foreground truncate">{item.name}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {formatFileSize(item.size || 0)} · {formatTime(item.timestamp)} · {item.direction === "sent" ? "已发送" : "已接收"}
-                        </p>
-                      </div>
-                      {item.direction === "received" && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            handleDownload(item.content, item.name)
-                          }}
-                          className="shrink-0 text-muted-foreground hover:text-foreground"
-                        >
-                          <Download className="w-4 h-4" />
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                ) : (
-                  /* Non-image files and text */
-                  <div className="flex items-start gap-3">
-                    {item.type === "file" && (
-                      <div className="w-10 h-10 rounded-lg bg-background flex items-center justify-center shrink-0">
-                        <IconComponent className="w-5 h-5 text-muted-foreground" />
-                      </div>
-                    )}
-                    <div className="flex-1 min-w-0">
-                      {item.type === "text" ? (
-                        <p className="text-sm text-foreground whitespace-pre-wrap break-words">
-                          {item.content}
-                        </p>
-                      ) : (
-                        <div>
-                          <p className="text-sm font-medium text-foreground truncate">{item.name}</p>
-                          <p className="text-xs text-muted-foreground">{formatFileSize(item.size || 0)}</p>
-                        </div>
-                      )}
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {formatTime(item.timestamp)} · {item.direction === "sent" ? "已发送" : "已接收"}
-                      </p>
-                    </div>
-                    {item.type === "file" && item.direction === "received" && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleDownload(item.content, item.name)}
-                        className="shrink-0 text-muted-foreground hover:text-foreground"
-                      >
-                        <Download className="w-4 h-4" />
-                      </Button>
-                    )}
-                  </div>
-                )}
-              </div>
-            )
-          })
+          items.map((item) => (
+            <TransferItemComponent
+              key={item.id}
+              item={item}
+              onPreviewImage={handlePreviewImage}
+              onDownload={handleDownload}
+            />
+          ))
         )}
       </div>
 
       {/* Input Area */}
-      <div className="p-4 border-t border-border">
-        <div className="flex gap-2 mb-2">
-          <Textarea
-            placeholder={isConnected ? "输入要发送的文本..." : "连接设备后可发送内容"}
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            disabled={!isConnected}
-            className="min-h-[80px] resize-none bg-input border-border"
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                e.preventDefault()
-                handleSendText()
-              }
-            }}
-          />
-        </div>
-        <div className="flex gap-2">
-          <input
-            type="file"
-            ref={fileInputRef}
-            onChange={handleFileSelect}
-            className="hidden"
-          />
-          <Button
-            variant="outline"
-            className="flex-1 bg-transparent"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={!isConnected}
-          >
-            <Upload className="w-4 h-4 mr-2" />
-            选择文件
-          </Button>
-          <Button
-            className="flex-1 bg-accent text-accent-foreground hover:bg-accent/90"
-            onClick={handleSendText}
-            disabled={!isConnected || !text.trim()}
-          >
-            <Send className="w-4 h-4 mr-2" />
-            发送文本
-          </Button>
-        </div>
-        <p className="text-xs text-muted-foreground text-center mt-2">
-          按 Ctrl/Cmd + Enter 快速发送
-        </p>
-      </div>
+      <TransferInput
+        text={text}
+        onTextChange={setText}
+        onSendText={handleSendText}
+        onSendFile={sendFile}
+        isConnected={isConnected}
+      />
 
       {/* Image Preview Dialog */}
-      <Dialog open={!!previewImage} onOpenChange={() => setPreviewImage(null)}>
-        <DialogContent className="max-w-[90vw] max-h-[90vh] p-0 bg-black/95 border-none overflow-hidden">
-          <DialogTitle className="sr-only">图片预览</DialogTitle>
-          <div className="relative w-full h-full flex items-center justify-center">
-            {/* Close button */}
-            <Button
-              variant="ghost"
-              size="icon"
-              className="absolute top-2 right-2 z-10 text-white/70 hover:text-white hover:bg-white/10"
-              onClick={() => setPreviewImage(null)}
-            >
-              <X className="w-5 h-5" />
-            </Button>
-            
-            {/* Download button */}
-            {previewImage && (
-              <Button
-                variant="ghost"
-                size="icon"
-                className="absolute top-2 right-12 z-10 text-white/70 hover:text-white hover:bg-white/10"
-                onClick={() => {
-                  if (previewImage) {
-                    handleDownload(previewImage.url, previewImage.name)
-                  }
-                }}
-              >
-                <Download className="w-5 h-5" />
-              </Button>
-            )}
-            
-            {/* Image */}
-            {previewImage && (
-              <img
-                src={previewImage.url}
-                alt={previewImage.name}
-                className="max-w-full max-h-[85vh] object-contain"
-              />
-            )}
-            
-            {/* File name */}
-            {previewImage && (
-              <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/50 to-transparent">
-                <p className="text-white/90 text-sm text-center truncate">
-                  {previewImage.name}
-                </p>
-              </div>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
+      <ImagePreviewDialog
+        image={previewImage}
+        onClose={() => setPreviewImage(null)}
+        onDownload={handleDownload}
+      />
     </div>
   )
 }
