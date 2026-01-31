@@ -55,7 +55,7 @@ export function PWARegister() {
             安装 Toss 到您的设备，享受更好的体验
           </p>
           <div className="flex gap-2 mt-3">
-            <Button size="sm" onClick={handleInstall} className="bg-accent text-accent-foreground hover:bg-accent/90">
+            <Button size="sm" onClick={handleInstall}>
               安装
             </Button>
             <Button size="sm" variant="ghost" onClick={() => setShowInstallPrompt(false)}>
@@ -65,7 +65,7 @@ export function PWARegister() {
         </div>
         <Button
           variant="ghost"
-          size="icon"
+          size="icon-sm"
           className="flex-shrink-0 -mt-1 -mr-1"
           onClick={() => setShowInstallPrompt(false)}
         >

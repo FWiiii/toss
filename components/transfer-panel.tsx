@@ -160,12 +160,7 @@ export function TransferPanel() {
       <div className="flex items-center justify-between px-4 py-3 border-b border-border">
         <h3 className="text-sm font-medium text-foreground">传输记录</h3>
         {items.length > 0 && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={clearHistory}
-            className="text-muted-foreground hover:text-foreground h-8"
-          >
+          <Button variant="ghost" size="sm" onClick={clearHistory}>
             <Trash2 className="w-4 h-4 mr-1" />
             清空
           </Button>

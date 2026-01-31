@@ -62,7 +62,7 @@ export function TransferInput({
         />
         <Button
           variant="outline"
-          className="flex-1 bg-transparent"
+          className="flex-1"
           onClick={() => fileInputRef.current?.click()}
           disabled={!isConnected}
         >
@@ -70,7 +70,7 @@ export function TransferInput({
           选择文件
         </Button>
         <Button
-          className="flex-1 bg-accent text-accent-foreground hover:bg-accent/90"
+          className="flex-1"
           onClick={onSendText}
           disabled={!isConnected || !text.trim()}
         >

@@ -46,7 +46,7 @@ export function NotificationSettings({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" className="h-9 w-9 text-muted-foreground hover:text-foreground hover:bg-muted focus-visible:ring-0 focus-visible:ring-offset-0">
+        <Button variant="ghost" size="icon-sm">
           <Settings className="h-4 w-4" />
           <span className="sr-only">通知设置</span>
         </Button>

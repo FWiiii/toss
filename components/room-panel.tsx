@@ -95,10 +95,7 @@ export function RoomPanel() {
           description="房主已关闭房间，连接已断开"
           iconClassName="bg-destructive/10 text-destructive"
         />
-        <Button
-          className="w-full bg-primary text-primary-foreground hover:bg-primary/90 mt-2"
-          onClick={leaveRoom}
-        >
+        <Button className="w-full mt-2" onClick={leaveRoom}>
           返回首页
         </Button>
       </div>
@@ -115,13 +112,8 @@ export function RoomPanel() {
             <span className="text-4xl font-mono font-bold tracking-[0.3em] text-foreground">
               {formatCode(roomCode)}
             </span>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={handleCopyCode}
-              className="text-muted-foreground hover:text-foreground"
-            >
-              {copied ? <Check className="w-5 h-5 text-accent" /> : <Copy className="w-5 h-5" />}
+            <Button variant="ghost" size="icon-sm" onClick={handleCopyCode}>
+              {copied ? <Check className="w-5 h-5 text-green-500" /> : <Copy className="w-5 h-5" />}
             </Button>
           </div>
         </div>
@@ -140,18 +132,14 @@ export function RoomPanel() {
         {/* Action Buttons */}
         <div className="flex gap-2">
           {isHost && (
-            <Button
-              variant="outline"
-              className="flex-1 bg-transparent"
-              onClick={() => setShowQRCode(true)}
-            >
+            <Button variant="outline" className="flex-1" onClick={() => setShowQRCode(true)}>
               <QrCode className="w-4 h-4 mr-2" />
               显示二维码
             </Button>
           )}
           <Button
-            variant="outline"
-            className={isHost ? "flex-1 bg-transparent" : "w-full bg-transparent"}
+            variant={isHost ? "destructive" : "outline"}
+            className={isHost ? "flex-1" : "w-full"}
             onClick={leaveRoom}
           >
             <LogOut className="w-4 h-4 mr-2" />
@@ -174,7 +162,8 @@ export function RoomPanel() {
       <div className="space-y-6">
         <div>
           <Button
-            className="w-full h-14 text-lg font-medium bg-primary text-primary-foreground hover:bg-primary/90"
+            size="xl"
+            className="w-full"
             onClick={createRoom}
             disabled={isCreatingRoom || isJoiningRoom}
           >
@@ -216,7 +205,7 @@ export function RoomPanel() {
             />
             <Button
               variant="secondary"
-              className="h-14 px-6"
+              size="xl"
               onClick={handleJoinRoom}
               disabled={inputCode.length < 6 || isCreatingRoom || isJoiningRoom}
             >
@@ -231,7 +220,8 @@ export function RoomPanel() {
           {/* Scan QR Code Button */}
           <Button
             variant="outline"
-            className="w-full mt-3 h-12 bg-transparent"
+            size="lg"
+            className="w-full mt-3"
             onClick={() => setShowScanner(true)}
             disabled={isCreatingRoom || isJoiningRoom}
           >

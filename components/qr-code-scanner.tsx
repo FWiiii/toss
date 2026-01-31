@@ -328,7 +328,6 @@ export function QRCodeScanner({ open, onOpenChange, onScan }: QRCodeScannerProps
                     </p>
                     <div className="space-y-2">
                       <Button
-                        variant="secondary"
                         size="sm"
                         className="w-full"
                         onClick={() => fileInputRef.current?.click()}
@@ -337,9 +336,9 @@ export function QRCodeScanner({ open, onOpenChange, onScan }: QRCodeScannerProps
                         上传二维码图片
                       </Button>
                       <Button
-                        variant="outline"
+                        variant="secondary"
                         size="sm"
-                        className="w-full bg-transparent text-white border-white/30 hover:bg-white/10"
+                        className="w-full"
                         onClick={() => setShowManualInput(true)}
                       >
                         <Keyboard className="w-4 h-4 mr-2" />
@@ -349,7 +348,7 @@ export function QRCodeScanner({ open, onOpenChange, onScan }: QRCodeScannerProps
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="w-full text-white/70 hover:text-white hover:bg-white/10"
+                          className="w-full text-white/80 hover:text-white hover:bg-white/10"
                           onClick={startScanner}
                         >
                           重新尝试扫描
@@ -369,25 +368,25 @@ export function QRCodeScanner({ open, onOpenChange, onScan }: QRCodeScannerProps
               <div className="flex gap-2">
                 {cameraSupported && !error && (
                   <Button
-                    variant="outline"
+                    variant="secondary"
                     className="flex-1"
                     onClick={handleSwitchCamera}
                     disabled={isStarting}
                   >
                     <SwitchCamera className="w-4 h-4 mr-2" />
-                    切换摄像头
+                    切换
                   </Button>
                 )}
                 <Button
-                  variant="outline"
+                  variant="secondary"
                   className="flex-1"
                   onClick={() => fileInputRef.current?.click()}
                 >
                   <ImagePlus className="w-4 h-4 mr-2" />
-                  上传图片
+                  上传
                 </Button>
                 <Button
-                  variant="ghost"
+                  variant="outline"
                   className="flex-1"
                   onClick={() => onOpenChange(false)}
                 >

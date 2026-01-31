@@ -133,9 +133,9 @@ function ImageItem({
         {onCancel && (
           <Button
             variant="ghost"
-            size="icon"
+            size="icon-sm"
             onClick={() => onCancel(item.id)}
-            className="shrink-0 h-8 w-8 text-muted-foreground hover:text-destructive"
+            className="shrink-0 hover:text-destructive"
             title="取消传输"
           >
             <X className="w-4 h-4" />
@@ -171,12 +171,12 @@ function ImageItem({
         {item.direction === "received" && (
           <Button
             variant="ghost"
-            size="icon"
+            size="icon-sm"
             onClick={(e) => {
               e.stopPropagation()
               onDownload(item.content, item.name)
             }}
-            className="shrink-0 text-muted-foreground hover:text-foreground"
+            className="shrink-0"
           >
             <Download className="w-4 h-4" />
           </Button>
@@ -264,9 +264,9 @@ function FileItem({
       {isTransferring && onCancel && (
         <Button
           variant="ghost"
-          size="icon"
+          size="icon-sm"
           onClick={() => onCancel(item.id)}
-          className="shrink-0 h-8 w-8 text-muted-foreground hover:text-destructive"
+          className="shrink-0 hover:text-destructive"
           title="取消传输"
         >
           <X className="w-4 h-4" />
@@ -276,9 +276,9 @@ function FileItem({
       {item.direction === "received" && !isTransferring && item.content && (
         <Button
           variant="ghost"
-          size="icon"
+          size="icon-sm"
           onClick={() => onDownload(item.content, item.name)}
-          className="shrink-0 text-muted-foreground hover:text-foreground"
+          className="shrink-0"
         >
           <Download className="w-4 h-4" />
         </Button>
@@ -333,13 +333,13 @@ function TextItem({ item }: { item: TransferItem }) {
       </div>
       <Button
         variant="ghost"
-        size="icon"
+        size="icon-sm"
         onClick={handleCopy}
-        className="shrink-0 h-8 w-8 text-muted-foreground hover:text-foreground"
+        className="shrink-0"
         title={copied ? "已复制" : "复制文本"}
       >
         {copied ? (
-          <Check className="w-4 h-4 text-emerald-500" />
+          <Check className="w-4 h-4 text-green-500" />
         ) : (
           <Copy className="w-4 h-4" />
         )}

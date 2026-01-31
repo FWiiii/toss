@@ -20,7 +20,7 @@ export function ImagePreviewDialog({ image, onClose, onDownload }: ImagePreviewD
           <Button
             variant="ghost"
             size="icon"
-            className="absolute top-2 right-2 z-10 text-white/70 hover:text-white hover:bg-white/10"
+            className="absolute top-2 right-2 z-10 text-white/80 hover:text-white hover:bg-white/20"
             onClick={onClose}
           >
             <X className="w-5 h-5" />
@@ -31,7 +31,7 @@ export function ImagePreviewDialog({ image, onClose, onDownload }: ImagePreviewD
             <Button
               variant="ghost"
               size="icon"
-              className="absolute top-2 right-12 z-10 text-white/70 hover:text-white hover:bg-white/10"
+              className="absolute top-2 right-14 z-10 text-white/80 hover:text-white hover:bg-white/20"
               onClick={() => onDownload(image.url, image.name)}
             >
               <Download className="w-5 h-5" />

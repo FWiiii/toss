@@ -86,13 +86,8 @@ export function QRCodeDisplay({ roomCode, open, onOpenChange }: QRCodeDisplayPro
             使用其他设备扫描二维码即可加入房间
           </p>
           
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleDownload}
-            className="gap-2"
-          >
-            <Download className="w-4 h-4" />
+          <Button variant="secondary" size="sm" onClick={handleDownload}>
+            <Download className="w-4 h-4 mr-2" />
             保存二维码
           </Button>
         </div>
