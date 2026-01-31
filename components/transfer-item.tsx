@@ -23,6 +23,14 @@ function formatSpeed(bytesPerSecond: number): string {
   }
 }
 
+function formatTimeRemaining(seconds: number): string {
+  if (!seconds || !isFinite(seconds) || seconds < 0) return ""
+  if (seconds < 60) return `${seconds}s`
+  const minutes = Math.floor(seconds / 60)
+  const remainingSeconds = seconds % 60
+  return `${minutes}m ${remainingSeconds}s`
+}
+
 function getFileIcon(name?: string) {
   if (!name) return FileIcon
   if (isImageFile(name)) return ImageIcon
@@ -122,11 +130,18 @@ function ImageItem({
               <span className="mx-1">·</span>
               {progress}%
             </p>
-            {item.speed && item.speed > 0 && (
-              <p className="text-xs text-accent font-medium">
-                {formatSpeed(item.speed)}
-              </p>
-            )}
+            <div className="flex items-center gap-2">
+              {item.remainingTime && item.remainingTime > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  {formatTimeRemaining(item.remainingTime)}
+                </p>
+              )}
+              {item.speed && item.speed > 0 && (
+                <p className="text-xs text-accent font-medium">
+                  {formatSpeed(item.speed)}
+                </p>
+              )}
+            </div>
           </div>
         </div>
         {/* Cancel button */}
@@ -244,11 +259,18 @@ function FileItem({
                 <span className="mx-1">·</span>
                 {progress}%
               </p>
+            <div className="flex items-center gap-2">
+              {item.remainingTime && item.remainingTime > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  {formatTimeRemaining(item.remainingTime)}
+                </p>
+              )}
               {item.speed && item.speed > 0 && (
                 <p className="text-xs text-accent font-medium">
                   {formatSpeed(item.speed)}
                 </p>
               )}
+            </div>
             </div>
           </>
         ) : (

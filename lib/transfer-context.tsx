@@ -118,6 +118,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     itemId: string
     lastTime: number
     lastBytes: number 
+    smoothedSpeed: number
   }>>(new Map())
   
   // Reconnection state
@@ -379,6 +380,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
           itemId,
           lastTime: Date.now(),
           lastBytes: 0,
+          smoothedSpeed: 0,
         })
       } else if (data.type === "file-chunk") {
         const buffer = fileBuffersRef.current.get(conn.peer)
@@ -387,17 +389,26 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
           buffer.chunks.push(bytes)
           buffer.received += bytes.length
           
-          const chunkCount = buffer.chunks.length
-          if (chunkCount % 10 === 0 || buffer.received >= buffer.size) {
-            const now = Date.now()
-            const timeDiff = (now - (buffer.lastTime || now)) / 1000
-            const bytesDiff = buffer.received - (buffer.lastBytes || 0)
-            const speed = timeDiff > 0 ? Math.round(bytesDiff / timeDiff) : 0
+          const now = Date.now()
+          if (now - buffer.lastTime >= 500 || buffer.received >= buffer.size) {
+            const timeDiff = (now - buffer.lastTime) / 1000
+            const bytesDiff = buffer.received - buffer.lastBytes
+            const instantSpeed = timeDiff > 0 ? Math.round(bytesDiff / timeDiff) : 0
+            
+            // EMA smoothing (alpha = 0.2)
+            buffer.smoothedSpeed = buffer.smoothedSpeed === 0 
+              ? instantSpeed 
+              : Math.round(buffer.smoothedSpeed * 0.8 + instantSpeed * 0.2)
+            
+            const speed = buffer.smoothedSpeed
+            const remainingBytes = buffer.size - buffer.received
+            const remainingTime = speed > 0 ? Math.ceil(remainingBytes / speed) : undefined
             
             updateItemProgress(buffer.itemId, {
               progress: Math.round((buffer.received / buffer.size) * 100),
               transferredBytes: buffer.received,
               speed,
+              remainingTime,
             })
             
             recordBandwidth(speed)
@@ -418,6 +429,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
             progress: 100,
             transferredBytes: buffer.size,
             speed: undefined,
+            remainingTime: undefined,
           })
           
           const fileType = buffer.name.match(/\.(jpg|jpeg|png|gif|webp|svg)$/i) ? "image" : "file"
@@ -674,6 +686,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       
       let lastTime = Date.now()
       let lastBytes = 0
+      let smoothedSpeed = 0
 
       for (const conn of connectionsRef.current.values()) {
         if (!conn.open) continue
@@ -706,22 +719,35 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
           
           offset = end
           
-          if ((offset / FILE_CHUNK_SIZE) % 10 === 0 || offset >= totalSize) {
-            const now = Date.now()
+          const now = Date.now()
+          if (now - lastTime >= 500 || offset >= totalSize) {
             const timeDiff = (now - lastTime) / 1000
             const bytesDiff = offset - lastBytes
-            const speed = timeDiff > 0 ? Math.round(bytesDiff / timeDiff) : 0
+            const instantSpeed = timeDiff > 0 ? Math.round(bytesDiff / timeDiff) : 0
+            
+            // EMA smoothing (alpha = 0.2)
+            smoothedSpeed = smoothedSpeed === 0 
+              ? instantSpeed 
+              : Math.round(smoothedSpeed * 0.8 + instantSpeed * 0.2)
+            
+            const speed = smoothedSpeed
+            const remainingBytes = totalSize - offset
+            const remainingTime = speed > 0 ? Math.ceil(remainingBytes / speed) : undefined
             
             updateItemProgress(itemId, {
               progress: Math.round((offset / totalSize) * 100),
               transferredBytes: offset,
               speed,
+              remainingTime,
             })
             
             lastTime = now
             lastBytes = offset
-            
-            await new Promise(resolve => setTimeout(resolve, 5))
+          }
+          
+          // Small delay to prevent UI freezing
+          if ((offset / FILE_CHUNK_SIZE) % 5 === 0) {
+            await new Promise(resolve => setTimeout(resolve, 1))
           }
         }
 
@@ -742,6 +768,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
           progress: 100,
           transferredBytes: totalSize,
           speed: undefined,
+          remainingTime: undefined,
         })
       }
     } catch (error) {
@@ -750,6 +777,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
         updateItemProgress(itemId, {
           status: "error",
           speed: undefined,
+          remainingTime: undefined,
         })
       }
     } finally {

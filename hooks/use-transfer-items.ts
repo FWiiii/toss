@@ -71,7 +71,7 @@ export function useTransferItems() {
   // Update item progress by ID
   const updateItemProgress = useCallback((
     id: string, 
-    updates: Partial<Pick<TransferItem, "status" | "progress" | "transferredBytes" | "speed" | "content">>
+    updates: Partial<Pick<TransferItem, "status" | "progress" | "transferredBytes" | "speed" | "content" | "remainingTime">>
   ) => {
     setItems((prev) => 
       prev.map((item) => 

@@ -15,6 +15,7 @@ export type TransferItem = {
   progress?: number // 0-100
   transferredBytes?: number
   speed?: number // bytes per second
+  remainingTime?: number // seconds remaining
 }
 
 export type ConnectionStatus = "disconnected" | "connecting" | "connected" | "error" | "dissolved" | "reconnecting"
