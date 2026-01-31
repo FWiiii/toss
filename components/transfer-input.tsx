@@ -42,7 +42,7 @@ export function TransferInput({
   }
 
   return (
-    <div className="p-4 border-t border-border">
+    <div className="p-4 border-t border-border" data-transfer-input>
       <div className="flex gap-2 mb-2">
         <Textarea
           placeholder={isConnected ? "输入要发送的文本..." : "连接设备后可发送内容"}

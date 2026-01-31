@@ -70,18 +70,38 @@ export function TransferPanel() {
 
   // Auto scroll to bottom when new items arrive
   useEffect(() => {
-    if (items.length > 0) {
-      const isMobile = window.innerWidth < 1024
-      
-      if (isMobile) {
-        window.scrollTo({
-          top: document.body.scrollHeight,
-          behavior: 'smooth'
-        })
-      } else if (listRef.current) {
-        listRef.current.scrollTop = listRef.current.scrollHeight
-      }
-    }
+    if (items.length === 0) return
+
+    // Double requestAnimationFrame to ensure layout is complete
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const isMobile = window.innerWidth < 1024
+        
+        if (isMobile) {
+          // On mobile, scroll to the input area smoothly
+          const inputArea = document.querySelector('[data-transfer-input]')
+          if (inputArea) {
+            inputArea.scrollIntoView({ 
+              behavior: 'smooth', 
+              block: 'end',
+              inline: 'nearest' 
+            })
+          } else {
+            // Fallback: smooth scroll to bottom
+            window.scrollTo({
+              top: document.documentElement.scrollHeight,
+              behavior: 'smooth'
+            })
+          }
+        } else if (listRef.current) {
+          // Desktop: smooth scroll in container
+          listRef.current.scrollTo({
+            top: listRef.current.scrollHeight,
+            behavior: 'smooth'
+          })
+        }
+      })
+    })
   }, [items.length])
 
   const handleSendText = useCallback(() => {
@@ -178,7 +198,7 @@ export function TransferPanel() {
       )}
 
       {/* Items List */}
-      <div ref={listRef} className="flex-1 lg:overflow-y-auto p-4 space-y-3 lg:min-h-0">
+      <div ref={listRef} className="flex-1 lg:overflow-y-auto p-4 space-y-3 lg:min-h-0" style={{ willChange: 'scroll-position' }}>
         {items.length === 0 && !pendingShare ? (
           <EmptyState
             icon={Send}

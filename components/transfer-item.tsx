@@ -31,13 +31,19 @@ function getFileIcon(name?: string) {
   return FileIcon
 }
 
-// Progress bar component
+// Progress bar component - optimized for GPU acceleration
 function ProgressBar({ progress, className }: { progress: number; className?: string }) {
+  const clampedProgress = Math.min(100, Math.max(0, progress))
   return (
     <div className={cn("w-full h-1.5 bg-muted rounded-full overflow-hidden", className)}>
       <div 
-        className="h-full bg-accent transition-all duration-300 ease-out rounded-full"
-        style={{ width: `${Math.min(100, Math.max(0, progress))}%` }}
+        className="h-full bg-accent rounded-full will-change-transform transform-gpu"
+        style={{ 
+          width: '100%',
+          transform: `scaleX(${clampedProgress / 100})`,
+          transformOrigin: 'left',
+          transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
+        }}
       />
     </div>
   )

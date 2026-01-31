@@ -262,9 +262,9 @@ export function ConnectionStatusDisplay({
             </div>
             {/* Pulse indicator */}
             {config.showPulse && (
-              <span className="absolute top-0 right-0 flex h-3 w-3">
+              <span className="absolute top-0 right-0 flex h-3 w-3 will-change-transform">
                 <span className={cn(
-                  "animate-ping absolute inline-flex h-full w-full rounded-full opacity-75",
+                  "animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 transform-gpu",
                   config.dotColor
                 )} />
                 <span className={cn(
