@@ -916,6 +916,10 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
   }, [joinRoom])
 
   const leaveRoom = useCallback(() => {
+    // Immediately reset loading states
+    setIsCreatingRoom(false)
+    setIsJoiningRoom(false)
+    
     // Stop any reconnection attempts
     shouldReconnectRef.current = false
     reconnectAttemptsRef.current = 0
