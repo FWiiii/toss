@@ -1,9 +1,20 @@
 "use client"
 
 import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from "react"
-import { generateUUID, uint8ToBase64, base64ToUint8 } from "./utils"
+import { uint8ToBase64, base64ToUint8 } from "./utils"
 import type { TransferItem, ConnectionStatus, ConnectionType, ConnectionInfo, ConnectionQuality } from "./types"
 import { useNotification } from "@/hooks/use-notification"
+import { useTransferItems } from "@/hooks/use-transfer-items"
+import { useConnectionQuality } from "@/hooks/use-connection-quality"
+import { 
+  PEER_PREFIX, 
+  PEER_OPTIONS, 
+  FILE_CHUNK_SIZE,
+  MAX_RECONNECT_ATTEMPTS,
+  CONNECTION_TIMEOUT,
+  generateRoomCode,
+  detectConnectionType 
+} from "./peer-config"
 
 export type { TransferItem, ConnectionStatus, ConnectionType, ConnectionInfo, ConnectionQuality }
 
@@ -23,11 +34,9 @@ type TransferContextType = {
   clearHistory: () => void
   peerCount: number
   isHost: boolean
-  // Loading states
   isCreatingRoom: boolean
   isJoiningRoom: boolean
-  sendingCount: number // Number of files currently being sent
-  // Notification
+  sendingCount: number
   notificationSettings: {
     soundEnabled: boolean
     browserNotificationEnabled: boolean
@@ -53,145 +62,19 @@ export function useTransfer() {
   return context
 }
 
-function generateRoomCode() {
-  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
-  let code = ""
-  for (let i = 0; i < 6; i++) {
-    code += chars[Math.floor(Math.random() * chars.length)]
-  }
-  return code
-}
-
-// Prefix to avoid collision with other PeerJS apps
-const PEER_PREFIX = "snapdrop-room-"
-
-// ICE servers configuration with TURN servers for VPN/NAT compatibility
-// TURN credentials are loaded from environment variables for security
-const buildIceServers = (): RTCIceServer[] => {
-  const servers: RTCIceServer[] = [
-    { urls: "stun:stun.l.google.com:19302" },
-    { urls: "stun:stun1.l.google.com:19302" },
-  ]
-  
-  // Add TURN servers if credentials are configured
-  const turnUsername = process.env.NEXT_PUBLIC_TURN_USERNAME
-  const turnCredential = process.env.NEXT_PUBLIC_TURN_CREDENTIAL
-  
-  if (turnUsername && turnCredential) {
-    const turnUrls = [
-      process.env.NEXT_PUBLIC_TURN_URL,
-      process.env.NEXT_PUBLIC_TURN_URL_TCP,
-      process.env.NEXT_PUBLIC_TURN_URL_443,
-      process.env.NEXT_PUBLIC_TURNS_URL,
-    ].filter(Boolean) as string[]
-    
-    turnUrls.forEach(url => {
-      servers.push({
-        urls: url,
-        username: turnUsername,
-        credential: turnCredential,
-      })
-    })
-  }
-  
-  return servers
-}
-
-const ICE_SERVERS = {
-  iceServers: buildIceServers(),
-  iceCandidatePoolSize: 10,
-}
-
-// Detect connection type from RTCPeerConnection stats
-async function detectConnectionType(pc: RTCPeerConnection): Promise<ConnectionInfo> {
-  try {
-    const stats = await pc.getStats()
-    let selectedCandidatePairId: string | null = null
-    
-    // Find the selected candidate pair
-    stats.forEach((report) => {
-      if (report.type === "transport" && report.selectedCandidatePairId) {
-        selectedCandidatePairId = report.selectedCandidatePairId
-      }
-    })
-    
-    if (!selectedCandidatePairId) {
-      // Fallback: look for nominated candidate pair
-      stats.forEach((report) => {
-        if (report.type === "candidate-pair" && report.nominated && report.state === "succeeded") {
-          selectedCandidatePairId = report.id
-        }
-      })
-    }
-    
-    if (!selectedCandidatePairId) {
-      return { type: "unknown" }
-    }
-    
-    // Get the candidate pair
-    const candidatePair = stats.get(selectedCandidatePairId)
-    if (!candidatePair) {
-      return { type: "unknown" }
-    }
-    
-    // Get local and remote candidates
-    const localCandidate = stats.get(candidatePair.localCandidateId)
-    const remoteCandidate = stats.get(candidatePair.remoteCandidateId)
-    
-    if (!localCandidate || !remoteCandidate) {
-      return { type: "unknown" }
-    }
-    
-    // Determine connection type based on candidate types
-    // Priority: if either is relay, it's relay; otherwise check for direct
-    const localType = localCandidate.candidateType
-    const remoteType = remoteCandidate.candidateType
-    
-    let connectionType: ConnectionType = "unknown"
-    
-    if (localType === "relay" || remoteType === "relay") {
-      connectionType = "relay"
-    } else if (localType === "host" && remoteType === "host") {
-      connectionType = "direct"
-    } else if (localType === "srflx" || localType === "prflx" || 
-               remoteType === "srflx" || remoteType === "prflx") {
-      connectionType = "stun"
-    } else if (localType === "host" || remoteType === "host") {
-      connectionType = "direct"
-    }
-    
-    return {
-      type: connectionType,
-      localAddress: localCandidate.address || localCandidate.ip,
-      remoteAddress: remoteCandidate.address || remoteCandidate.ip,
-      protocol: localCandidate.protocol as "udp" | "tcp" | undefined,
-    }
-  } catch (error) {
-    console.error("Failed to detect connection type:", error)
-    return { type: "unknown" }
-  }
-}
-
 export function TransferProvider({ children }: { children: React.ReactNode }) {
+  // ============ Core State ============
   const [roomCode, setRoomCode] = useState<string | null>(null)
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>("disconnected")
   const [connectionInfo, setConnectionInfo] = useState<ConnectionInfo>({ type: "unknown" })
-  const [connectionQuality, setConnectionQuality] = useState<ConnectionQuality>({
-    latency: null,
-    bandwidth: null,
-    quality: "unknown",
-  })
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
-  const [items, setItems] = useState<TransferItem[]>([])
   const [peerCount, setPeerCount] = useState(0)
   const [isHost, setIsHost] = useState(false)
-  
-  // Loading states
   const [isCreatingRoom, setIsCreatingRoom] = useState(false)
   const [isJoiningRoom, setIsJoiningRoom] = useState(false)
   const [sendingCount, setSendingCount] = useState(0)
   
-  // Notification hook
+  // ============ Custom Hooks ============
   const {
     settings: notificationSettings,
     updateSettings: updateNotificationSettings,
@@ -201,20 +84,32 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     testNotification,
   } = useNotification()
   
-  // Reconnection state
-  const reconnectAttemptsRef = useRef(0)
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null)
-  const maxReconnectAttempts = 5
-  const shouldReconnectRef = useRef(true)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const setupConnectionRef = useRef<((conn: any, isOutgoing?: boolean) => void) | null>(null)
-  const attemptReconnectRef = useRef<(() => void) | null>(null)
-  const joinRoomRef = useRef<((code: string) => Promise<void>) | null>(null)
+  const {
+    items,
+    addItem,
+    addItemWithId,
+    addSystemMessage,
+    updateItemProgress,
+    clearHistory,
+    createTrackedBlobUrl,
+    cleanup: cleanupItems,
+  } = useTransferItems()
   
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const peerRef = useRef<any>(null)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const connectionsRef = useRef<Map<string, any>>(new Map())
+  
+  const {
+    connectionQuality,
+    startQualityMonitoring,
+    stopQualityMonitoring,
+    handlePong,
+    recordBandwidth,
+    cleanup: cleanupQuality,
+  } = useConnectionQuality(connectionsRef)
+  
+  // ============ Refs ============
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const peerRef = useRef<any>(null)
   const fileBuffersRef = useRef<Map<string, { 
     name: string
     size: number
@@ -224,36 +119,38 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     lastTime: number
     lastBytes: number 
   }>>(new Map())
-  // Track Blob URLs for cleanup to prevent memory leaks
-  const blobUrlsRef = useRef<Set<string>>(new Set())
   
-  // Connection quality monitoring
-  const pingIntervalRef = useRef<NodeJS.Timeout | null>(null)
-  const pendingPingsRef = useRef<Map<string, number>>(new Map()) // pingId -> timestamp
-  const latencyHistoryRef = useRef<number[]>([]) // Keep last 10 measurements
-  const bandwidthHistoryRef = useRef<number[]>([]) // Keep last 10 measurements
-  const qualityIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  // Reconnection state
+  const reconnectAttemptsRef = useRef(0)
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const shouldReconnectRef = useRef(true)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const setupConnectionRef = useRef<((conn: any, isOutgoing?: boolean) => void) | null>(null)
+  const attemptReconnectRef = useRef<(() => void) | null>(null)
+  const joinRoomRef = useRef<((code: string) => Promise<void>) | null>(null)
   const startQualityMonitoringRef = useRef<(() => void) | null>(null)
   const stopQualityMonitoringRef = useRef<(() => void) | null>(null)
   
   // Transfer cancellation tracking
   const cancelledTransfersRef = useRef<Set<string>>(new Set())
 
-  // ============ Utility functions to reduce code duplication ============
-  
-  // Set error state with message
+  // Store quality monitoring functions in refs
+  useEffect(() => {
+    startQualityMonitoringRef.current = startQualityMonitoring
+    stopQualityMonitoringRef.current = stopQualityMonitoring
+  }, [startQualityMonitoring, stopQualityMonitoring])
+
+  // ============ Utility Functions ============
   const setError = useCallback((message: string) => {
     setConnectionStatus("error")
     setErrorMessage(message)
   }, [])
 
-  // Safely close a connection
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const safeClose = (conn: any) => {
     try { conn.close() } catch {}
   }
 
-  // Safely destroy peer
   const destroyPeer = useCallback(() => {
     if (peerRef.current) {
       try {
@@ -264,20 +161,17 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
-  // Close all connections and clear buffers
   const cleanupConnections = useCallback(() => {
     connectionsRef.current.forEach(safeClose)
     connectionsRef.current.clear()
     fileBuffersRef.current.clear()
   }, [])
 
-  // Full cleanup: connections + peer
   const cleanupAll = useCallback(() => {
     cleanupConnections()
     destroyPeer()
   }, [cleanupConnections, destroyPeer])
 
-  // Broadcast data to all open connections
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const broadcastToConnections = useCallback((data: any, excludePeer?: string) => {
     connectionsRef.current.forEach((conn) => {
@@ -286,69 +180,6 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       }
     })
   }, [])
-  
-  // Revoke all tracked Blob URLs to free memory
-  const revokeAllBlobUrls = useCallback(() => {
-    blobUrlsRef.current.forEach(url => {
-      try { URL.revokeObjectURL(url) } catch {}
-    })
-    blobUrlsRef.current.clear()
-  }, [])
-
-  // Create and track a Blob URL
-  const createTrackedBlobUrl = useCallback((blob: Blob | File): string => {
-    const url = URL.createObjectURL(blob)
-    blobUrlsRef.current.add(url)
-    return url
-  }, [])
-
-  // Add system message
-  const addSystemMessage = useCallback((content: string) => {
-    setItems((prev) => [
-      ...prev,
-      {
-        id: generateUUID(),
-        type: "system",
-        content,
-        timestamp: new Date(),
-        direction: "system",
-      },
-    ])
-  }, [])
-
-  const addItem = useCallback((item: Omit<TransferItem, "id" | "timestamp">) => {
-    setItems((prev) => [
-      ...prev,
-      {
-        ...item,
-        id: generateUUID(),
-        timestamp: new Date(),
-      },
-    ])
-  }, [])
-
-  // Add item and return the ID for progress updates
-  const addItemWithId = useCallback((item: Omit<TransferItem, "id" | "timestamp">): string => {
-    const id = generateUUID()
-    setItems((prev) => [
-      ...prev,
-      {
-        ...item,
-        id,
-        timestamp: new Date(),
-      },
-    ])
-    return id
-  }, [])
-
-  // Update item progress by ID
-  const updateItemProgress = useCallback((id: string, updates: Partial<Pick<TransferItem, "status" | "progress" | "transferredBytes" | "speed" | "content">>) => {
-    setItems((prev) => 
-      prev.map((item) => 
-        item.id === id ? { ...item, ...updates } : item
-      )
-    )
-  }, [])
 
   const updatePeerCount = useCallback(() => {
     const count = connectionsRef.current.size
@@ -356,13 +187,11 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     if (count > 0) {
       setConnectionStatus("connected")
       setErrorMessage(null)
-      // Reset reconnect attempts on successful connection
       reconnectAttemptsRef.current = 0
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current)
         reconnectTimeoutRef.current = null
       }
-      // Start quality monitoring when connected
       if (startQualityMonitoringRef.current) {
         startQualityMonitoringRef.current()
       }
@@ -370,121 +199,19 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       if (roomCode && connectionStatus !== "reconnecting") {
         setConnectionStatus("connecting")
       }
-      // Stop quality monitoring when disconnected
       if (stopQualityMonitoringRef.current) {
         stopQualityMonitoringRef.current()
       }
     }
   }, [roomCode, connectionStatus])
 
-  // Update connection quality based on collected metrics
-  const updateConnectionQuality = useCallback(() => {
-    // Calculate average latency
-    const latency = latencyHistoryRef.current.length > 0
-      ? latencyHistoryRef.current.reduce((a, b) => a + b, 0) / latencyHistoryRef.current.length
-      : null
-
-    // Calculate average bandwidth
-    const bandwidth = bandwidthHistoryRef.current.length > 0
-      ? bandwidthHistoryRef.current.reduce((a, b) => a + b, 0) / bandwidthHistoryRef.current.length
-      : null
-
-    // Determine quality level based on latency
-    let quality: "excellent" | "good" | "fair" | "poor" | "unknown" = "unknown"
-    if (latency !== null) {
-      if (latency < 50) quality = "excellent"
-      else if (latency < 100) quality = "good"
-      else if (latency < 200) quality = "fair"
-      else quality = "poor"
-    }
-
-    setConnectionQuality({
-      latency: latency !== null ? Math.round(latency) : null,
-      bandwidth: bandwidth !== null ? Math.round(bandwidth) : null,
-      quality,
-    })
-  }, [])
-
-  // Send ping to all connected peers
-  const sendPing = useCallback(() => {
-    if (connectionsRef.current.size === 0) return
-
-    const pingId = generateUUID()
-    const timestamp = Date.now()
-    pendingPingsRef.current.set(pingId, timestamp)
-
-    // Clean up old pending pings (older than 5 seconds)
-    for (const [id, time] of pendingPingsRef.current.entries()) {
-      if (timestamp - time > 5000) {
-        pendingPingsRef.current.delete(id)
-      }
-    }
-
-    // Send ping to all connections
-    connectionsRef.current.forEach((conn) => {
-      try {
-        conn.send({ type: "ping", id: pingId })
-      } catch (err) {
-        console.error("Failed to send ping:", err)
-      }
-    })
-  }, [])
-
-  // Start monitoring connection quality
-  const startQualityMonitoring = useCallback(() => {
-    // Clear existing intervals
-    if (pingIntervalRef.current) {
-      clearInterval(pingIntervalRef.current)
-    }
-    if (qualityIntervalRef.current) {
-      clearInterval(qualityIntervalRef.current)
-    }
-
-    // Send ping every 3 seconds
-    pingIntervalRef.current = setInterval(sendPing, 3000)
-    
-    // Update quality display every 5 seconds
-    qualityIntervalRef.current = setInterval(updateConnectionQuality, 5000)
-    
-    // Send initial ping
-    sendPing()
-  }, [sendPing, updateConnectionQuality])
-
-  // Stop monitoring connection quality
-  const stopQualityMonitoring = useCallback(() => {
-    if (pingIntervalRef.current) {
-      clearInterval(pingIntervalRef.current)
-      pingIntervalRef.current = null
-    }
-    if (qualityIntervalRef.current) {
-      clearInterval(qualityIntervalRef.current)
-      qualityIntervalRef.current = null
-    }
-    
-    // Reset quality state
-    pendingPingsRef.current.clear()
-    latencyHistoryRef.current = []
-    bandwidthHistoryRef.current = []
-    setConnectionQuality({
-      latency: null,
-      bandwidth: null,
-      quality: "unknown",
-    })
-  }, [])
-
-  // Store quality monitoring functions in refs to avoid circular dependencies
-  useEffect(() => {
-    startQualityMonitoringRef.current = startQualityMonitoring
-    stopQualityMonitoringRef.current = stopQualityMonitoring
-  }, [startQualityMonitoring, stopQualityMonitoring])
-
-  // Reconnection logic
+  // ============ Reconnection Logic ============
   const attemptReconnect = useCallback(() => {
     if (!roomCode || !shouldReconnectRef.current || connectionStatus === "dissolved") {
       return
     }
 
-    if (reconnectAttemptsRef.current >= maxReconnectAttempts) {
+    if (reconnectAttemptsRef.current >= MAX_RECONNECT_ATTEMPTS) {
       setConnectionStatus("error")
       setErrorMessage("重连失败，请手动重新加入房间")
       addSystemMessage("自动重连失败，连接已断开")
@@ -492,22 +219,19 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     }
 
     reconnectAttemptsRef.current += 1
-    const delay = Math.min(1000 * Math.pow(2, reconnectAttemptsRef.current - 1), 10000) // Exponential backoff, max 10s
+    const delay = Math.min(1000 * Math.pow(2, reconnectAttemptsRef.current - 1), 10000)
     
     setConnectionStatus("reconnecting")
-    setErrorMessage(`正在尝试重新连接... (${reconnectAttemptsRef.current}/${maxReconnectAttempts})`)
+    setErrorMessage(`正在尝试重新连接... (${reconnectAttemptsRef.current}/${MAX_RECONNECT_ATTEMPTS})`)
     
     reconnectTimeoutRef.current = setTimeout(() => {
       if (!shouldReconnectRef.current) return
       
       addSystemMessage(`正在尝试重新连接 (第 ${reconnectAttemptsRef.current} 次)...`)
       
-      // Try to reconnect to the host
       if (isHost) {
-        // Host: wait for peers to reconnect
         setConnectionStatus("connecting")
       } else {
-        // Guest: try to reconnect to host
         const hostPeerId = PEER_PREFIX + roomCode
         if (peerRef.current && !peerRef.current.destroyed) {
           try {
@@ -521,7 +245,6 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
             attemptReconnect()
           }
         } else {
-          // Peer is destroyed, need to rejoin
           if (joinRoomRef.current) {
             joinRoomRef.current(roomCode)
           }
@@ -530,6 +253,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     }, delay)
   }, [roomCode, connectionStatus, isHost, addSystemMessage])
 
+  // ============ Connection Setup ============
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const setupConnection = useCallback((conn: any, isOutgoing = false) => {
     let connectionTimeout: NodeJS.Timeout | null = null
@@ -540,15 +264,14 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
           conn.close()
           setError("连接超时，请确保两个设备能够互相访问（同一网络或允许 P2P 连接）")
         }
-      }, 20000)
+      }, CONNECTION_TIMEOUT)
     }
 
     // Monitor ICE state for connection recovery
     let monitorAttempts = 0
-    const maxMonitorAttempts = 25 // 5 seconds max (25 * 200ms)
+    const maxMonitorAttempts = 25
     
     const monitorIceState = () => {
-      // Stop monitoring if connection is already closed or max attempts reached
       if (!conn || conn.destroyed || monitorAttempts >= maxMonitorAttempts) {
         return
       }
@@ -579,26 +302,20 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       connectionsRef.current.set(conn.peer, conn)
       updatePeerCount()
       
-      // Send join notification to all other peers (host does this)
       if (!isOutgoing) {
-        // This is an incoming connection (we are host)
         addSystemMessage("有新设备加入了房间")
-        // Notify all existing connections about the new peer
         broadcastToConnections({ type: "peer-joined" }, conn.peer)
       }
       
-      // Detect connection type after ICE stabilizes
       const detectType = async () => {
         const pc = conn.peerConnection as RTCPeerConnection | undefined
         if (pc && pc.connectionState === "connected") {
           const info = await detectConnectionType(pc)
           setConnectionInfo(info)
         } else if (pc) {
-          // Wait for connection to stabilize
           setTimeout(detectType, 1000)
         }
       }
-      // Start detection after a short delay
       setTimeout(detectType, 500)
     })
 
@@ -608,14 +325,12 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       connectionsRef.current.delete(conn.peer)
       fileBuffersRef.current.delete(conn.peer)
       
-      // Show message when peer disconnects
       if (wasConnected) {
         addSystemMessage("有设备断开了连接")
       }
       
       updatePeerCount()
       
-      // Attempt to reconnect if no peers left and room is still active
       if (connectionsRef.current.size === 0 && roomCode && shouldReconnectRef.current && attemptReconnectRef.current) {
         attemptReconnectRef.current()
       }
@@ -628,7 +343,6 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       
       updatePeerCount()
       
-      // Attempt to reconnect if this was our only connection
       if (isOutgoing && connectionsRef.current.size === 0 && shouldReconnectRef.current && attemptReconnectRef.current) {
         attemptReconnectRef.current()
       } else if (connectionsRef.current.size === 0) {
@@ -644,14 +358,12 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
           content: data.content,
           direction: "received",
         })
-        // Notify user of received text
         notifyReceived("text")
       } else if (data.type === "file-start") {
-        // Create item with progress tracking
         const itemId = addItemWithId({
           type: "file",
           name: data.name,
-          content: "", // Will be set when complete
+          content: "",
           size: data.size,
           direction: "received",
           status: "transferring",
@@ -664,7 +376,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
           size: data.size,
           chunks: [],
           received: 0,
-          itemId, // Track the item ID for progress updates
+          itemId,
           lastTime: Date.now(),
           lastBytes: 0,
         })
@@ -675,7 +387,6 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
           buffer.chunks.push(bytes)
           buffer.received += bytes.length
           
-          // Update progress periodically
           const chunkCount = buffer.chunks.length
           if (chunkCount % 10 === 0 || buffer.received >= buffer.size) {
             const now = Date.now()
@@ -689,13 +400,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
               speed,
             })
             
-            // Track bandwidth for quality monitoring
-            if (speed > 0) {
-              bandwidthHistoryRef.current.push(speed)
-              if (bandwidthHistoryRef.current.length > 10) {
-                bandwidthHistoryRef.current.shift()
-              }
-            }
+            recordBandwidth(speed)
             
             buffer.lastTime = now
             buffer.lastBytes = buffer.received
@@ -707,7 +412,6 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
           const blob = new Blob(buffer.chunks as unknown as BlobPart[])
           const url = createTrackedBlobUrl(blob)
           
-          // Update item with final content and completed status
           updateItemProgress(buffer.itemId, {
             content: url,
             status: "completed",
@@ -716,76 +420,54 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
             speed: undefined,
           })
           
-          // Notify user of received file
           const fileType = buffer.name.match(/\.(jpg|jpeg|png|gif|webp|svg)$/i) ? "image" : "file"
           notifyReceived(fileType, buffer.name)
           
-          // Clear chunks to free memory immediately
           buffer.chunks = []
           fileBuffersRef.current.delete(conn.peer)
         }
       } else if (data.type === "room-dissolved") {
-        // Host has closed the room
         addSystemMessage("房主已解散房间")
         setConnectionStatus("dissolved")
         setErrorMessage("房间已解散")
-        // Clean up
         cleanupAll()
         setPeerCount(0)
       } else if (data.type === "peer-joined") {
         addSystemMessage("有新设备加入了房间")
       } else if (data.type === "ping") {
-        // Respond to ping with pong
         try {
           conn.send({ type: "pong", id: data.id })
         } catch (err) {
           console.error("Failed to send pong:", err)
         }
       } else if (data.type === "pong") {
-        // Calculate latency from ping-pong
-        const sendTime = pendingPingsRef.current.get(data.id)
-        if (sendTime) {
-          const latency = Date.now() - sendTime
-          pendingPingsRef.current.delete(data.id)
-          
-          // Update latency history (keep last 10)
-          latencyHistoryRef.current.push(latency)
-          if (latencyHistoryRef.current.length > 10) {
-            latencyHistoryRef.current.shift()
-          }
-          
-          // Update connection quality
-          updateConnectionQuality()
-        }
+        handlePong(data.id)
       } else if (data.type === "file-cancel") {
-        // Handle transfer cancellation from the other side
         const buffer = fileBuffersRef.current.get(conn.peer)
         if (buffer) {
-          // Update item status to cancelled
           updateItemProgress(buffer.itemId, {
             status: "cancelled",
             speed: undefined,
           })
           
-          // Clear the buffer
           buffer.chunks = []
           fileBuffersRef.current.delete(conn.peer)
         }
         
-        // Also check if this is a cancellation for a sending transfer
         if (data.itemId) {
           cancelledTransfersRef.current.add(data.itemId)
         }
       }
     })
-  }, [addItem, addItemWithId, updateItemProgress, addSystemMessage, updatePeerCount, createTrackedBlobUrl, broadcastToConnections, cleanupAll, setError, updateConnectionQuality])
+  }, [addItem, addItemWithId, updateItemProgress, addSystemMessage, updatePeerCount, createTrackedBlobUrl, broadcastToConnections, cleanupAll, setError, handlePong, recordBandwidth, notifyReceived])
 
-  // Store functions in refs to avoid circular dependencies
+  // Store functions in refs
   useEffect(() => {
     setupConnectionRef.current = setupConnection
     attemptReconnectRef.current = attemptReconnect
   }, [setupConnection, attemptReconnect])
 
+  // ============ Room Management ============
   const createRoom = useCallback(async () => {
     setIsCreatingRoom(true)
     
@@ -795,10 +477,8 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       const code = generateRoomCode()
       const peerId = PEER_PREFIX + code
       
-      // Clean up any existing connections and peer
       cleanupAll()
       
-      // Reset reconnection state
       shouldReconnectRef.current = true
       reconnectAttemptsRef.current = 0
       if (reconnectTimeoutRef.current) {
@@ -811,13 +491,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       setErrorMessage(null)
       setIsHost(true)
 
-      const peer = new Peer(peerId, {
-        debug: 0,
-        config: ICE_SERVERS,
-        secure: true,
-        host: "0.peerjs.com",
-        port: 443,
-      })
+      const peer = new Peer(peerId, PEER_OPTIONS)
 
       peer.on("open", () => {
         setIsCreatingRoom(false)
@@ -868,10 +542,8 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       
       const hostPeerId = PEER_PREFIX + normalizedCode
       
-      // Clean up any existing connections and peer before joining
       cleanupAll()
       
-      // Reset reconnection state
       shouldReconnectRef.current = true
       reconnectAttemptsRef.current = 0
       if (reconnectTimeoutRef.current) {
@@ -879,7 +551,6 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
         reconnectTimeoutRef.current = null
       }
       
-      // Small delay to ensure cleanup is complete
       await new Promise(resolve => setTimeout(resolve, 100))
       
       setRoomCode(normalizedCode)
@@ -887,13 +558,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       setErrorMessage(null)
       setIsHost(false)
 
-      const peer = new Peer({
-        debug: 0,
-        config: ICE_SERVERS,
-        secure: true,
-        host: "0.peerjs.com",
-        port: 443,
-      })
+      const peer = new Peer(PEER_OPTIONS)
 
       peer.on("open", () => {
         setIsJoiningRoom(false)
@@ -933,17 +598,14 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     }
   }, [setupConnection, cleanupAll, setError])
 
-  // Store joinRoom in ref after it's defined
   useEffect(() => {
     joinRoomRef.current = joinRoom
   }, [joinRoom])
 
   const leaveRoom = useCallback(() => {
-    // Immediately reset loading states
     setIsCreatingRoom(false)
     setIsJoiningRoom(false)
     
-    // Stop any reconnection attempts
     shouldReconnectRef.current = false
     reconnectAttemptsRef.current = 0
     if (reconnectTimeoutRef.current) {
@@ -951,17 +613,14 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       reconnectTimeoutRef.current = null
     }
     
-    // Stop quality monitoring
     if (stopQualityMonitoringRef.current) {
       stopQualityMonitoringRef.current()
     }
     
-    // If host, notify all guests that room is being dissolved
     if (isHost) {
       broadcastToConnections({ type: "room-dissolved" })
     }
     
-    // Small delay to ensure messages are sent before closing
     setTimeout(() => {
       cleanupAll()
       
@@ -972,11 +631,11 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       setPeerCount(0)
       setIsHost(false)
       
-      // Allow reconnection for future rooms
       shouldReconnectRef.current = true
     }, 100)
   }, [isHost, broadcastToConnections, cleanupAll])
 
+  // ============ Data Transfer ============
   const sendText = useCallback((text: string) => {
     if (!text.trim()) return
     
@@ -990,9 +649,6 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
   }, [addItem, broadcastToConnections])
 
   const sendFile = useCallback(async (file: File): Promise<void> => {
-    const CHUNK_SIZE = 16384
-    
-    // Increment sending count (for UI feedback, but don't block)
     setSendingCount(prev => prev + 1)
     
     let itemId: string | null = null
@@ -1001,7 +657,6 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     try {
       const url = createTrackedBlobUrl(file)
       
-      // Add item with initial progress state
       itemId = addItemWithId({
         type: "file",
         name: file.name,
@@ -1017,11 +672,9 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       const uint8Array = new Uint8Array(arrayBuffer)
       const totalSize = uint8Array.length
       
-      // Track speed calculation
       let lastTime = Date.now()
       let lastBytes = 0
 
-      // Send file to each connection
       for (const conn of connectionsRef.current.values()) {
         if (!conn.open) continue
 
@@ -1029,16 +682,13 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
           type: "file-start",
           name: file.name,
           size: file.size,
-          itemId, // Send itemId so receiver can track cancellation
+          itemId,
         })
 
-        // Send chunks with small delays to avoid buffer overflow
         let offset = 0
         while (offset < uint8Array.length) {
-          // Check if transfer was cancelled
           if (cancelledTransfersRef.current.has(itemId)) {
             cancelled = true
-            // Notify receiver that transfer was cancelled
             conn.send({
               type: "file-cancel",
               itemId,
@@ -1046,10 +696,9 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
             break
           }
           
-          const end = Math.min(offset + CHUNK_SIZE, uint8Array.length)
+          const end = Math.min(offset + FILE_CHUNK_SIZE, uint8Array.length)
           const chunk = uint8Array.subarray(offset, end)
           
-          // Send chunk as base64 string
           conn.send({
             type: "file-chunk",
             data: uint8ToBase64(chunk),
@@ -1057,10 +706,9 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
           
           offset = end
           
-          // Update progress every 10 chunks
-          if ((offset / CHUNK_SIZE) % 10 === 0 || offset >= totalSize) {
+          if ((offset / FILE_CHUNK_SIZE) % 10 === 0 || offset >= totalSize) {
             const now = Date.now()
-            const timeDiff = (now - lastTime) / 1000 // seconds
+            const timeDiff = (now - lastTime) / 1000
             const bytesDiff = offset - lastBytes
             const speed = timeDiff > 0 ? Math.round(bytesDiff / timeDiff) : 0
             
@@ -1073,24 +721,20 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
             lastTime = now
             lastBytes = offset
             
-            // Small delay to let the buffer drain
             await new Promise(resolve => setTimeout(resolve, 5))
           }
         }
 
-        // Only send file-end if not cancelled
         if (!cancelled) {
           conn.send({ type: "file-end" })
         }
       }
       
-      // Mark as completed or cancelled
       if (cancelled) {
         updateItemProgress(itemId, {
           status: "cancelled",
           speed: undefined,
         })
-        // Clean up from cancelled set
         cancelledTransfersRef.current.delete(itemId)
       } else {
         updateItemProgress(itemId, {
@@ -1109,34 +753,25 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
         })
       }
     } finally {
-      // Always decrement sending count
       setSendingCount(prev => Math.max(0, prev - 1))
-      // Clean up cancelled set
       if (itemId) {
         cancelledTransfersRef.current.delete(itemId)
       }
     }
   }, [addItemWithId, updateItemProgress, createTrackedBlobUrl])
 
-  // Cancel a file transfer
   const cancelTransfer = useCallback((itemId: string) => {
-    // Find the item to check if it's a sending or receiving transfer
     const item = items.find(i => i.id === itemId)
     if (!item || item.status !== "transferring") return
 
     if (item.direction === "sent") {
-      // For sending: add to cancelled set, the sendFile loop will pick it up
       cancelledTransfersRef.current.add(itemId)
     } else if (item.direction === "received") {
-      // For receiving: clean up buffer and update status
-      // Find the connection that's sending this file
       for (const [peerId, buffer] of fileBuffersRef.current.entries()) {
         if (buffer.itemId === itemId) {
-          // Clear the buffer
           buffer.chunks = []
           fileBuffersRef.current.delete(peerId)
           
-          // Notify sender that we cancelled
           const conn = connectionsRef.current.get(peerId)
           if (conn && conn.open) {
             conn.send({
@@ -1148,7 +783,6 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
         }
       }
       
-      // Update item status
       updateItemProgress(itemId, {
         status: "cancelled",
         speed: undefined,
@@ -1156,33 +790,17 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     }
   }, [items, updateItemProgress])
 
-  const clearHistory = useCallback(() => {
-    // Revoke all Blob URLs before clearing items to prevent memory leaks
-    revokeAllBlobUrls()
-    setItems([])
-  }, [revokeAllBlobUrls])
-
-  // Cleanup on unmount
+  // ============ Cleanup ============
   useEffect(() => {
     return () => {
-      // Stop reconnection attempts
       shouldReconnectRef.current = false
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current)
         reconnectTimeoutRef.current = null
       }
       
-      // Stop quality monitoring
-      if (pingIntervalRef.current) {
-        clearInterval(pingIntervalRef.current)
-        pingIntervalRef.current = null
-      }
-      if (qualityIntervalRef.current) {
-        clearInterval(qualityIntervalRef.current)
-        qualityIntervalRef.current = null
-      }
+      cleanupQuality()
       
-      // Close all connections and destroy peer
       connectionsRef.current.forEach(safeClose)
       connectionsRef.current.clear()
       fileBuffersRef.current.clear()
@@ -1192,14 +810,11 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
         peerRef.current = null
       }
       
-      // Revoke all Blob URLs to free memory
-      blobUrlsRef.current.forEach(url => {
-        try { URL.revokeObjectURL(url) } catch {}
-      })
-      blobUrlsRef.current.clear()
+      cleanupItems()
     }
-  }, [])
+  }, [cleanupQuality, cleanupItems])
 
+  // ============ Provider ============
   return (
     <TransferContext.Provider
       value={{
