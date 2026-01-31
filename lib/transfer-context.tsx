@@ -19,6 +19,7 @@ type TransferContextType = {
   leaveRoom: () => void
   sendText: (text: string) => void
   sendFile: (file: File) => Promise<void>
+  cancelTransfer: (itemId: string) => void
   clearHistory: () => void
   peerCount: number
   isHost: boolean
@@ -234,6 +235,9 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
   const qualityIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const startQualityMonitoringRef = useRef<(() => void) | null>(null)
   const stopQualityMonitoringRef = useRef<(() => void) | null>(null)
+  
+  // Transfer cancellation tracking
+  const cancelledTransfersRef = useRef<Set<string>>(new Set())
 
   // ============ Utility functions to reduce code duplication ============
   
@@ -617,7 +621,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       }
     })
 
-    conn.on("error", (err) => {
+    conn.on("error", (err: unknown) => {
       console.error("Connection error:", err)
       if (connectionTimeout) clearTimeout(connectionTimeout)
       connectionsRef.current.delete(conn.peer)
@@ -752,6 +756,25 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
           
           // Update connection quality
           updateConnectionQuality()
+        }
+      } else if (data.type === "file-cancel") {
+        // Handle transfer cancellation from the other side
+        const buffer = fileBuffersRef.current.get(conn.peer)
+        if (buffer) {
+          // Update item status to cancelled
+          updateItemProgress(buffer.itemId, {
+            status: "cancelled",
+            speed: undefined,
+          })
+          
+          // Clear the buffer
+          buffer.chunks = []
+          fileBuffersRef.current.delete(conn.peer)
+        }
+        
+        // Also check if this is a cancellation for a sending transfer
+        if (data.itemId) {
+          cancelledTransfersRef.current.add(data.itemId)
         }
       }
     })
@@ -972,11 +995,14 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     // Increment sending count (for UI feedback, but don't block)
     setSendingCount(prev => prev + 1)
     
+    let itemId: string | null = null
+    let cancelled = false
+    
     try {
       const url = createTrackedBlobUrl(file)
       
       // Add item with initial progress state
-      const itemId = addItemWithId({
+      itemId = addItemWithId({
         type: "file",
         name: file.name,
         content: url,
@@ -1003,11 +1029,23 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
           type: "file-start",
           name: file.name,
           size: file.size,
+          itemId, // Send itemId so receiver can track cancellation
         })
 
         // Send chunks with small delays to avoid buffer overflow
         let offset = 0
         while (offset < uint8Array.length) {
+          // Check if transfer was cancelled
+          if (cancelledTransfersRef.current.has(itemId)) {
+            cancelled = true
+            // Notify receiver that transfer was cancelled
+            conn.send({
+              type: "file-cancel",
+              itemId,
+            })
+            break
+          }
+          
           const end = Math.min(offset + CHUNK_SIZE, uint8Array.length)
           const chunk = uint8Array.subarray(offset, end)
           
@@ -1040,24 +1078,83 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
           }
         }
 
-        conn.send({ type: "file-end" })
+        // Only send file-end if not cancelled
+        if (!cancelled) {
+          conn.send({ type: "file-end" })
+        }
       }
       
-      // Mark as completed
-      updateItemProgress(itemId, {
-        status: "completed",
-        progress: 100,
-        transferredBytes: totalSize,
-        speed: undefined,
-      })
+      // Mark as completed or cancelled
+      if (cancelled) {
+        updateItemProgress(itemId, {
+          status: "cancelled",
+          speed: undefined,
+        })
+        // Clean up from cancelled set
+        cancelledTransfersRef.current.delete(itemId)
+      } else {
+        updateItemProgress(itemId, {
+          status: "completed",
+          progress: 100,
+          transferredBytes: totalSize,
+          speed: undefined,
+        })
+      }
     } catch (error) {
       console.error("File send error:", error)
-      // You might want to update the item status to "error" here
+      if (itemId) {
+        updateItemProgress(itemId, {
+          status: "error",
+          speed: undefined,
+        })
+      }
     } finally {
       // Always decrement sending count
       setSendingCount(prev => Math.max(0, prev - 1))
+      // Clean up cancelled set
+      if (itemId) {
+        cancelledTransfersRef.current.delete(itemId)
+      }
     }
   }, [addItemWithId, updateItemProgress, createTrackedBlobUrl])
+
+  // Cancel a file transfer
+  const cancelTransfer = useCallback((itemId: string) => {
+    // Find the item to check if it's a sending or receiving transfer
+    const item = items.find(i => i.id === itemId)
+    if (!item || item.status !== "transferring") return
+
+    if (item.direction === "sent") {
+      // For sending: add to cancelled set, the sendFile loop will pick it up
+      cancelledTransfersRef.current.add(itemId)
+    } else if (item.direction === "received") {
+      // For receiving: clean up buffer and update status
+      // Find the connection that's sending this file
+      for (const [peerId, buffer] of fileBuffersRef.current.entries()) {
+        if (buffer.itemId === itemId) {
+          // Clear the buffer
+          buffer.chunks = []
+          fileBuffersRef.current.delete(peerId)
+          
+          // Notify sender that we cancelled
+          const conn = connectionsRef.current.get(peerId)
+          if (conn && conn.open) {
+            conn.send({
+              type: "file-cancel",
+              itemId: buffer.itemId,
+            })
+          }
+          break
+        }
+      }
+      
+      // Update item status
+      updateItemProgress(itemId, {
+        status: "cancelled",
+        speed: undefined,
+      })
+    }
+  }, [items, updateItemProgress])
 
   const clearHistory = useCallback(() => {
     // Revoke all Blob URLs before clearing items to prevent memory leaks
@@ -1117,6 +1214,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
         leaveRoom,
         sendText,
         sendFile,
+        cancelTransfer,
         clearHistory,
         peerCount,
         isHost,

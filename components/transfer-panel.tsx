@@ -12,7 +12,7 @@ import { Send, Trash2, Share2, Upload } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 export function TransferPanel() {
-  const { connectionStatus, items, sendText, sendFile, clearHistory, peerCount, sendingCount } = useTransfer()
+  const { connectionStatus, items, sendText, sendFile, cancelTransfer, clearHistory, peerCount, sendingCount } = useTransfer()
   const { sharedFiles, sharedText, hasSharedContent, clearSharedData } = useShareTarget()
   const [text, setText] = useState("")
   const [isDragging, setIsDragging] = useState(false)
@@ -212,6 +212,7 @@ export function TransferPanel() {
               item={item}
               onPreviewImage={handlePreviewImage}
               onDownload={handleDownload}
+              onCancel={cancelTransfer}
             />
           ))
         )}

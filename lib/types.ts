@@ -1,6 +1,6 @@
 // Shared type definitions
 
-export type TransferStatus = "pending" | "transferring" | "completed" | "error"
+export type TransferStatus = "pending" | "transferring" | "completed" | "error" | "cancelled"
 
 export type TransferItem = {
   id: string

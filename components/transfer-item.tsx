@@ -4,7 +4,7 @@ import { useState, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { ImageThumbnail } from "@/components/image-thumbnail"
 import { LinkPreview } from "@/components/link-preview"
-import { Download, FileText, File as FileIcon, ImageIcon, ZoomIn, Copy, Check, Loader2 } from "lucide-react"
+import { Download, FileText, File as FileIcon, ImageIcon, ZoomIn, Copy, Check, Loader2, X, Ban } from "lucide-react"
 import { cn, formatFileSize, isImageFile } from "@/lib/utils"
 import { parseTextWithLinks } from "@/lib/link-utils"
 import type { TransferItem } from "@/lib/types"
@@ -53,6 +53,7 @@ type TransferItemProps = {
   item: TransferItem
   onPreviewImage: (url: string, name: string) => void
   onDownload: (url: string, name?: string) => void
+  onCancel?: (itemId: string) => void
 }
 
 // System message component
@@ -70,16 +71,36 @@ function SystemMessage({ content }: { content: string }) {
 function ImageItem({ 
   item, 
   onPreviewImage, 
-  onDownload 
+  onDownload,
+  onCancel
 }: { 
   item: TransferItem
   onPreviewImage: (url: string, name: string) => void
   onDownload: (url: string, name?: string) => void
+  onCancel?: (itemId: string) => void
 }) {
   const isTransferring = item.status === "transferring"
+  const isCancelled = item.status === "cancelled"
   const progress = item.progress ?? 100
   const transferredBytes = item.transferredBytes ?? item.size ?? 0
   const totalSize = item.size ?? 0
+
+  // Show cancelled state
+  if (isCancelled) {
+    return (
+      <div className="flex items-start gap-3 opacity-60">
+        <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center shrink-0">
+          <Ban className="w-5 h-5 text-muted-foreground" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium text-foreground truncate">{item.name}</p>
+          <p className="text-xs text-muted-foreground mt-1">
+            已取消 · {formatFileSize(transferredBytes)} / {formatFileSize(totalSize)}
+          </p>
+        </div>
+      </div>
+    )
+  }
 
   // Show file-style view when transferring (no preview available yet)
   if (isTransferring || !item.content) {
@@ -108,6 +129,18 @@ function ImageItem({
             )}
           </div>
         </div>
+        {/* Cancel button */}
+        {onCancel && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => onCancel(item.id)}
+            className="shrink-0 h-8 w-8 text-muted-foreground hover:text-destructive"
+            title="取消传输"
+          >
+            <X className="w-4 h-4" />
+          </Button>
+        )}
       </div>
     )
   }
@@ -156,16 +189,36 @@ function ImageItem({
 // File item component
 function FileItem({ 
   item, 
-  onDownload 
+  onDownload,
+  onCancel
 }: { 
   item: TransferItem
   onDownload: (url: string, name?: string) => void
+  onCancel?: (itemId: string) => void
 }) {
   const IconComponent = getFileIcon(item.name)
   const isTransferring = item.status === "transferring"
+  const isCancelled = item.status === "cancelled"
   const progress = item.progress ?? 100
   const transferredBytes = item.transferredBytes ?? item.size ?? 0
   const totalSize = item.size ?? 0
+
+  // Show cancelled state
+  if (isCancelled) {
+    return (
+      <div className="flex items-start gap-3 opacity-60">
+        <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center shrink-0">
+          <Ban className="w-5 h-5 text-muted-foreground" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium text-foreground truncate">{item.name}</p>
+          <p className="text-xs text-muted-foreground mt-1">
+            已取消 · {formatFileSize(transferredBytes)} / {formatFileSize(totalSize)}
+          </p>
+        </div>
+      </div>
+    )
+  }
   
   return (
     <div className="flex items-start gap-3">
@@ -207,6 +260,19 @@ function FileItem({
           </>
         )}
       </div>
+      {/* Cancel button during transfer */}
+      {isTransferring && onCancel && (
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => onCancel(item.id)}
+          className="shrink-0 h-8 w-8 text-muted-foreground hover:text-destructive"
+          title="取消传输"
+        >
+          <X className="w-4 h-4" />
+        </Button>
+      )}
+      {/* Download button after transfer */}
       {item.direction === "received" && !isTransferring && item.content && (
         <Button
           variant="ghost"
@@ -282,7 +348,7 @@ function TextItem({ item }: { item: TransferItem }) {
   )
 }
 
-export function TransferItemComponent({ item, onPreviewImage, onDownload }: TransferItemProps) {
+export function TransferItemComponent({ item, onPreviewImage, onDownload, onCancel }: TransferItemProps) {
   // System messages
   if (item.type === "system") {
     return <SystemMessage content={item.content} />
@@ -298,9 +364,9 @@ export function TransferItemComponent({ item, onPreviewImage, onDownload }: Tran
       )}
     >
       {isImage ? (
-        <ImageItem item={item} onPreviewImage={onPreviewImage} onDownload={onDownload} />
+        <ImageItem item={item} onPreviewImage={onPreviewImage} onDownload={onDownload} onCancel={onCancel} />
       ) : item.type === "file" ? (
-        <FileItem item={item} onDownload={onDownload} />
+        <FileItem item={item} onDownload={onDownload} onCancel={onCancel} />
       ) : (
         <TextItem item={item} />
       )}
