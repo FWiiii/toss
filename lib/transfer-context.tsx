@@ -272,10 +272,13 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     setConnectionStatus("reconnecting")
     setErrorMessage(`正在尝试重新连接... (${reconnectAttemptsRef.current}/${MAX_RECONNECT_ATTEMPTS})`)
     
-    reconnectTimeoutRef.current = setTimeout(() => {
-      if (!shouldReconnectRef.current) return
-      
-      addSystemMessage(`正在尝试重新连接 (第 ${reconnectAttemptsRef.current} 次)...`)
+      reconnectTimeoutRef.current = setTimeout(() => {
+        if (!shouldReconnectRef.current) return
+        
+        // 简化：只在第一次重连时显示消息
+        if (reconnectAttemptsRef.current === 1) {
+          addSystemMessage("正在尝试重新连接...")
+        }
       
       if (isHost) {
         setConnectionStatus("connecting")
@@ -386,7 +389,8 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       updatePeerCount()
       
       if (!isOutgoing) {
-        addSystemMessage("有新设备加入了房间")
+        // 简化：不显示设备加入消息，连接状态已能说明
+        // addSystemMessage("有新设备加入了房间")
         // 延迟广播，等待加密建立
         setTimeout(() => {
           broadcastToConnections({ type: "peer-joined" }, conn.peer)
@@ -413,9 +417,10 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       encryptorsRef.current.delete(conn.peer)
       keyExchangePendingRef.current.delete(conn.peer)
       
-      if (wasConnected) {
-        addSystemMessage("有设备断开了连接")
-      }
+      // 简化：不显示断开连接消息，连接状态已能说明
+      // if (wasConnected) {
+      //   addSystemMessage("有设备断开了连接")
+      // }
       
       updatePeerCount()
       
@@ -477,7 +482,8 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
           const allEncrypted = Array.from(encryptorsRef.current.values()).every(e => e.isReady())
           setIsEncrypted(allEncrypted && encryptorsRef.current.size > 0)
           
-          addSystemMessage("端到端加密已启用")
+          // 简化：加密状态已在UI中显示，不需要系统消息
+          // addSystemMessage("端到端加密已启用")
         } catch (error) {
           console.error("Key exchange error:", error)
           setError("密钥交换失败")
@@ -547,7 +553,8 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
           decryptedData = await decryptJSON(encryptor, data.encrypted)
         } catch (error) {
           console.error("Decryption error:", error)
-          addSystemMessage("解密失败，数据可能已损坏")
+          // 简化：只在控制台记录，不显示系统消息（避免干扰）
+          // addSystemMessage("解密失败，数据可能已损坏")
           return
         }
       }
@@ -609,7 +616,8 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
         cleanupAll()
         setPeerCount(0)
       } else if (decryptedData.type === "peer-joined") {
-        addSystemMessage("有新设备加入了房间")
+        // 简化：不显示设备加入消息
+        // addSystemMessage("有新设备加入了房间")
       } else if (decryptedData.type === "ping") {
         try {
           const pingData = { type: "ping", id: decryptedData.id }
