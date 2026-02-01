@@ -15,6 +15,19 @@ import {
   generateRoomCode,
   detectConnectionType 
 } from "./peer-config"
+import {
+  generateKeyPair,
+  exportPublicKey,
+  importPublicKey,
+  deriveSharedSecret,
+  SessionEncryptor,
+  encryptJSON,
+  decryptJSON,
+  encryptBytes,
+  decryptBytes,
+  arrayBufferToBase64,
+  base64ToArrayBuffer,
+} from "./crypto"
 
 export type { TransferItem, ConnectionStatus, ConnectionType, ConnectionInfo, ConnectionQuality }
 
@@ -37,6 +50,7 @@ type TransferContextType = {
   isCreatingRoom: boolean
   isJoiningRoom: boolean
   sendingCount: number
+  isEncrypted: boolean
   notificationSettings: {
     soundEnabled: boolean
     browserNotificationEnabled: boolean
@@ -73,6 +87,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
   const [isCreatingRoom, setIsCreatingRoom] = useState(false)
   const [isJoiningRoom, setIsJoiningRoom] = useState(false)
   const [sendingCount, setSendingCount] = useState(0)
+  const [isEncrypted, setIsEncrypted] = useState(false)
   
   // ============ Custom Hooks ============
   const {
@@ -121,6 +136,15 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     smoothedSpeed: number
   }>>(new Map())
   
+  // 加密相关 refs
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const encryptorsRef = useRef<Map<string, SessionEncryptor>>(new Map())
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const keyExchangePendingRef = useRef<Map<string, { 
+    keyPair: Awaited<ReturnType<typeof generateKeyPair>>
+    isOutgoing: boolean
+  }>>(new Map())
+  
   // Reconnection state
   const reconnectAttemptsRef = useRef(0)
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null)
@@ -166,6 +190,8 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     connectionsRef.current.forEach(safeClose)
     connectionsRef.current.clear()
     fileBuffersRef.current.clear()
+    encryptorsRef.current.clear()
+    keyExchangePendingRef.current.clear()
   }, [])
 
   const cleanupAll = useCallback(() => {
@@ -174,17 +200,34 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
   }, [cleanupConnections, destroyPeer])
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const broadcastToConnections = useCallback((data: any, excludePeer?: string) => {
-    connectionsRef.current.forEach((conn) => {
+  const broadcastToConnections = useCallback(async (data: any, excludePeer?: string) => {
+    for (const [peerId, conn] of connectionsRef.current.entries()) {
       if (conn.open && conn.peer !== excludePeer) {
-        try { conn.send(data) } catch {}
+        try {
+          const encryptor = encryptorsRef.current.get(peerId)
+          const isEncrypted = encryptor?.isReady() ?? false
+
+          if (isEncrypted) {
+            const encrypted = await encryptJSON(encryptor, data)
+            conn.send({ type: "encrypted", encrypted })
+          } else {
+            conn.send(data)
+          }
+        } catch (error) {
+          console.error("Failed to broadcast:", error)
+        }
       }
-    })
+    }
   }, [])
 
   const updatePeerCount = useCallback(() => {
     const count = connectionsRef.current.size
     setPeerCount(count)
+    
+    // 更新加密状态
+    const allEncrypted = count > 0 && Array.from(encryptorsRef.current.values()).every(e => e.isReady())
+    setIsEncrypted(allEncrypted)
+    
     if (count > 0) {
       setConnectionStatus("connected")
       setErrorMessage(null)
@@ -197,6 +240,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
         startQualityMonitoringRef.current()
       }
     } else {
+      setIsEncrypted(false)
       if (roomCode && connectionStatus !== "reconnecting") {
         setConnectionStatus("connecting")
       }
@@ -256,7 +300,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
 
   // ============ Connection Setup ============
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const setupConnection = useCallback((conn: any, isOutgoing = false) => {
+  const setupConnection = useCallback(async (conn: any, isOutgoing = false) => {
     let connectionTimeout: NodeJS.Timeout | null = null
     
     if (isOutgoing) {
@@ -266,6 +310,17 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
           setError("连接超时，请确保两个设备能够互相访问（同一网络或允许 P2P 连接）")
         }
       }, CONNECTION_TIMEOUT)
+    }
+
+    // 生成密钥对用于密钥交换
+    let keyPair: Awaited<ReturnType<typeof generateKeyPair>>
+    try {
+      keyPair = await generateKeyPair()
+      keyExchangePendingRef.current.set(conn.peer, { keyPair, isOutgoing })
+    } catch (error) {
+      console.error("Failed to generate key pair:", error)
+      setError("加密初始化失败")
+      return
     }
 
     // Monitor ICE state for connection recovery
@@ -298,14 +353,41 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     }
     setTimeout(monitorIceState, 100)
 
-    conn.on("open", () => {
+    conn.on("open", async () => {
       if (connectionTimeout) clearTimeout(connectionTimeout)
       connectionsRef.current.set(conn.peer, conn)
+      
+      // 进行密钥交换
+      try {
+        const pending = keyExchangePendingRef.current.get(conn.peer)
+        if (!pending) {
+          console.error("Key exchange pending data not found")
+          return
+        }
+
+        const publicKeyData = await exportPublicKey(pending.keyPair.publicKey)
+        const publicKeyBase64 = arrayBufferToBase64(publicKeyData)
+
+        if (pending.isOutgoing) {
+          // 发起方：先发送公钥
+          conn.send({ type: "key-exchange", publicKey: publicKeyBase64 })
+        } else {
+          // 接收方：等待对方公钥，收到后发送自己的公钥
+          // 公钥会在 data 事件中处理
+        }
+      } catch (error) {
+        console.error("Key exchange failed:", error)
+        setError("密钥交换失败")
+      }
+      
       updatePeerCount()
       
       if (!isOutgoing) {
         addSystemMessage("有新设备加入了房间")
-        broadcastToConnections({ type: "peer-joined" }, conn.peer)
+        // 延迟广播，等待加密建立
+        setTimeout(() => {
+          broadcastToConnections({ type: "peer-joined" }, conn.peer)
+        }, 1000)
       }
       
       const detectType = async () => {
@@ -325,6 +407,8 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       const wasConnected = connectionsRef.current.has(conn.peer)
       connectionsRef.current.delete(conn.peer)
       fileBuffersRef.current.delete(conn.peer)
+      encryptorsRef.current.delete(conn.peer)
+      keyExchangePendingRef.current.delete(conn.peer)
       
       if (wasConnected) {
         addSystemMessage("有设备断开了连接")
@@ -341,6 +425,8 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       console.error("Connection error:", err)
       if (connectionTimeout) clearTimeout(connectionTimeout)
       connectionsRef.current.delete(conn.peer)
+      encryptorsRef.current.delete(conn.peer)
+      keyExchangePendingRef.current.delete(conn.peer)
       
       updatePeerCount()
       
@@ -352,20 +438,79 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     })
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    conn.on("data", (data: any) => {
-      if (data.type === "text") {
+    conn.on("data", async (data: any) => {
+      // 处理密钥交换
+      if (data.type === "key-exchange") {
+        try {
+          const pending = keyExchangePendingRef.current.get(conn.peer)
+          if (!pending) {
+            console.error("Key exchange pending data not found")
+            return
+          }
+
+          const peerPublicKeyData = base64ToArrayBuffer(data.publicKey)
+          const peerPublicKey = await importPublicKey(peerPublicKeyData)
+
+          // 计算共享密钥
+          const sharedSecret = await deriveSharedSecret(pending.keyPair.privateKey, peerPublicKey)
+
+          // 创建加密器并派生密钥
+          const encryptor = new SessionEncryptor()
+          await encryptor.deriveKeys(sharedSecret)
+          encryptorsRef.current.set(conn.peer, encryptor)
+
+          // 如果是接收方，现在发送自己的公钥
+          if (!pending.isOutgoing) {
+            const publicKeyData = await exportPublicKey(pending.keyPair.publicKey)
+            const publicKeyBase64 = arrayBufferToBase64(publicKeyData)
+            conn.send({ type: "key-exchange", publicKey: publicKeyBase64 })
+          }
+          // 注意：ECDH 是对称的，双方计算出的共享密钥相同，所以双方都能正确加解密
+
+          // 清理待处理的密钥交换数据
+          keyExchangePendingRef.current.delete(conn.peer)
+          
+          // 更新加密状态
+          const allEncrypted = Array.from(encryptorsRef.current.values()).every(e => e.isReady())
+          setIsEncrypted(allEncrypted && encryptorsRef.current.size > 0)
+          
+          addSystemMessage("端到端加密已启用")
+        } catch (error) {
+          console.error("Key exchange error:", error)
+          setError("密钥交换失败")
+        }
+        return
+      }
+
+      // 获取加密器（如果已建立）
+      const encryptor = encryptorsRef.current.get(conn.peer)
+      const isEncrypted = encryptor?.isReady() ?? false
+
+      // 解密数据（如果已加密）
+      let decryptedData: any = data
+      if (isEncrypted && data.encrypted) {
+        try {
+          decryptedData = await decryptJSON(encryptor, data.encrypted)
+        } catch (error) {
+          console.error("Decryption error:", error)
+          addSystemMessage("解密失败，数据可能已损坏")
+          return
+        }
+      }
+
+      if (decryptedData.type === "text") {
         addItem({
           type: "text",
-          content: data.content,
+          content: decryptedData.content,
           direction: "received",
         })
         notifyReceived("text")
-      } else if (data.type === "file-start") {
+      } else if (decryptedData.type === "file-start") {
         const itemId = addItemWithId({
           type: "file",
-          name: data.name,
+          name: decryptedData.name,
           content: "",
-          size: data.size,
+          size: decryptedData.size,
           direction: "received",
           status: "transferring",
           progress: 0,
@@ -373,8 +518,8 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
         })
         
         fileBuffersRef.current.set(conn.peer, {
-          name: data.name,
-          size: data.size,
+          name: decryptedData.name,
+          size: decryptedData.size,
           chunks: [],
           received: 0,
           itemId,
@@ -382,10 +527,22 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
           lastBytes: 0,
           smoothedSpeed: 0,
         })
-      } else if (data.type === "file-chunk") {
+      } else if (decryptedData.type === "file-chunk") {
         const buffer = fileBuffersRef.current.get(conn.peer)
         if (buffer) {
-          const bytes = base64ToUint8(data.data)
+          let bytes: Uint8Array
+          if (isEncrypted && decryptedData.encrypted) {
+            // 解密文件块
+            try {
+              bytes = await decryptBytes(encryptor!, decryptedData.encrypted)
+            } catch (error) {
+              console.error("File chunk decryption error:", error)
+              return
+            }
+          } else {
+            // 未加密的文件块
+            bytes = base64ToUint8(decryptedData.data)
+          }
           buffer.chunks.push(bytes)
           buffer.received += bytes.length
           
@@ -417,7 +574,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
             buffer.lastBytes = buffer.received
           }
         }
-      } else if (data.type === "file-end") {
+      } else if (decryptedData.type === "file-end") {
         const buffer = fileBuffersRef.current.get(conn.peer)
         if (buffer) {
           const blob = new Blob(buffer.chunks as unknown as BlobPart[])
@@ -438,23 +595,29 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
           buffer.chunks = []
           fileBuffersRef.current.delete(conn.peer)
         }
-      } else if (data.type === "room-dissolved") {
+      } else if (decryptedData.type === "room-dissolved") {
         addSystemMessage("房主已解散房间")
         setConnectionStatus("dissolved")
         setErrorMessage("房间已解散")
         cleanupAll()
         setPeerCount(0)
-      } else if (data.type === "peer-joined") {
+      } else if (decryptedData.type === "peer-joined") {
         addSystemMessage("有新设备加入了房间")
-      } else if (data.type === "ping") {
+      } else if (decryptedData.type === "ping") {
         try {
-          conn.send({ type: "pong", id: data.id })
+          const pingData = { type: "ping", id: decryptedData.id }
+          if (isEncrypted) {
+            const encrypted = await encryptJSON(encryptor!, pingData)
+            conn.send({ type: "encrypted", encrypted })
+          } else {
+            conn.send(pingData)
+          }
         } catch (err) {
           console.error("Failed to send pong:", err)
         }
-      } else if (data.type === "pong") {
-        handlePong(data.id)
-      } else if (data.type === "file-cancel") {
+      } else if (decryptedData.type === "pong") {
+        handlePong(decryptedData.id)
+      } else if (decryptedData.type === "file-cancel") {
         const buffer = fileBuffersRef.current.get(conn.peer)
         if (buffer) {
           updateItemProgress(buffer.itemId, {
@@ -466,8 +629,8 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
           fileBuffersRef.current.delete(conn.peer)
         }
         
-        if (data.itemId) {
-          cancelledTransfersRef.current.add(data.itemId)
+        if (decryptedData.itemId) {
+          cancelledTransfersRef.current.add(decryptedData.itemId)
         }
       }
     })
@@ -614,7 +777,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     joinRoomRef.current = joinRoom
   }, [joinRoom])
 
-  const leaveRoom = useCallback(() => {
+  const leaveRoom = useCallback(async () => {
     setIsCreatingRoom(false)
     setIsJoiningRoom(false)
     
@@ -630,7 +793,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     }
     
     if (isHost) {
-      broadcastToConnections({ type: "room-dissolved" })
+      await broadcastToConnections({ type: "room-dissolved" })
     }
     
     setTimeout(() => {
@@ -648,17 +811,34 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
   }, [isHost, broadcastToConnections, cleanupAll])
 
   // ============ Data Transfer ============
-  const sendText = useCallback((text: string) => {
+  const sendText = useCallback(async (text: string) => {
     if (!text.trim()) return
     
-    broadcastToConnections({ type: "text", content: text })
+    // 发送到所有连接（带加密）
+    for (const [peerId, conn] of connectionsRef.current.entries()) {
+      if (!conn.open) continue
+
+      const encryptor = encryptorsRef.current.get(peerId)
+      const isEncrypted = encryptor?.isReady() ?? false
+
+      try {
+        if (isEncrypted) {
+          const encrypted = await encryptJSON(encryptor, { type: "text", content: text })
+          conn.send({ type: "encrypted", encrypted })
+        } else {
+          conn.send({ type: "text", content: text })
+        }
+      } catch (error) {
+        console.error("Failed to send text:", error)
+      }
+    }
     
     addItem({
       type: "text",
       content: text,
       direction: "sent",
     })
-  }, [addItem, broadcastToConnections])
+  }, [addItem])
 
   const sendFile = useCallback(async (file: File): Promise<void> => {
     setSendingCount(prev => prev + 1)
@@ -688,34 +868,80 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       let lastBytes = 0
       let smoothedSpeed = 0
 
-      for (const conn of connectionsRef.current.values()) {
+      for (const [peerId, conn] of connectionsRef.current.entries()) {
         if (!conn.open) continue
 
-        conn.send({
-          type: "file-start",
-          name: file.name,
-          size: file.size,
-          itemId,
-        })
+        const encryptor = encryptorsRef.current.get(peerId)
+        const isEncrypted = encryptor?.isReady() ?? false
+
+        // 发送文件开始消息
+        try {
+          if (isEncrypted) {
+            const encrypted = await encryptJSON(encryptor, {
+              type: "file-start",
+              name: file.name,
+              size: file.size,
+              itemId,
+            })
+            conn.send({ type: "encrypted", encrypted })
+          } else {
+            conn.send({
+              type: "file-start",
+              name: file.name,
+              size: file.size,
+              itemId,
+            })
+          }
+        } catch (error) {
+          console.error("Failed to send file-start:", error)
+          continue
+        }
 
         let offset = 0
         while (offset < uint8Array.length) {
           if (cancelledTransfersRef.current.has(itemId)) {
             cancelled = true
-            conn.send({
-              type: "file-cancel",
-              itemId,
-            })
+            try {
+              if (isEncrypted) {
+                const encrypted = await encryptJSON(encryptor, {
+                  type: "file-cancel",
+                  itemId,
+                })
+                conn.send({ type: "encrypted", encrypted })
+              } else {
+                conn.send({
+                  type: "file-cancel",
+                  itemId,
+                })
+              }
+            } catch (error) {
+              console.error("Failed to send file-cancel:", error)
+            }
             break
           }
           
           const end = Math.min(offset + FILE_CHUNK_SIZE, uint8Array.length)
           const chunk = uint8Array.subarray(offset, end)
           
-          conn.send({
-            type: "file-chunk",
-            data: uint8ToBase64(chunk),
-          })
+          try {
+            if (isEncrypted) {
+              // 加密文件块，然后用 JSON 包装并加密
+              const encryptedChunk = await encryptBytes(encryptor, chunk)
+              const encrypted = await encryptJSON(encryptor, {
+                type: "file-chunk",
+                encrypted: encryptedChunk,
+              })
+              conn.send({ type: "encrypted", encrypted })
+            } else {
+              conn.send({
+                type: "file-chunk",
+                data: uint8ToBase64(chunk),
+              })
+            }
+          } catch (error) {
+            console.error("Failed to send file-chunk:", error)
+            break
+          }
           
           offset = end
           
@@ -752,7 +978,16 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
         }
 
         if (!cancelled) {
-          conn.send({ type: "file-end" })
+          try {
+            if (isEncrypted) {
+              const encrypted = await encryptJSON(encryptor, { type: "file-end" })
+              conn.send({ type: "encrypted", encrypted })
+            } else {
+              conn.send({ type: "file-end" })
+            }
+          } catch (error) {
+            console.error("Failed to send file-end:", error)
+          }
         }
       }
       
@@ -864,6 +1099,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
         isCreatingRoom,
         isJoiningRoom,
         sendingCount,
+        isEncrypted,
         notificationSettings,
         notificationPermission,
         updateNotificationSettings,

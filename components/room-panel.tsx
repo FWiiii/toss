@@ -27,7 +27,8 @@ export function RoomPanel() {
     peerCount, 
     isHost,
     isCreatingRoom,
-    isJoiningRoom
+    isJoiningRoom,
+    isEncrypted
   } = useTransfer()
   const { joinCode, clearJoinCode } = useJoinCode()
   const [inputCode, setInputCode] = useState("")
@@ -126,6 +127,7 @@ export function RoomPanel() {
           errorMessage={errorMessage}
           connectionInfo={connectionInfo}
           connectionQuality={connectionQuality}
+          isEncrypted={isEncrypted}
           className="mb-5"
         />
 

@@ -16,7 +16,8 @@ import {
   Radio,
   Server,
   Activity,
-  Gauge
+  Gauge,
+  Lock
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { formatFileSize } from "@/lib/utils"
@@ -28,6 +29,7 @@ interface ConnectionStatusDisplayProps {
   errorMessage?: string | null
   connectionInfo?: ConnectionInfo
   connectionQuality?: ConnectionQuality
+  isEncrypted?: boolean
   className?: string
 }
 
@@ -102,6 +104,7 @@ export function ConnectionStatusDisplay({
   errorMessage,
   connectionInfo,
   connectionQuality,
+  isEncrypted = false,
   className 
 }: ConnectionStatusDisplayProps) {
   const connectionTypeDisplay = getConnectionTypeDisplay(connectionInfo?.type || "unknown")
@@ -351,6 +354,14 @@ export function ConnectionStatusDisplay({
                   <span className="font-medium text-foreground">
                     {formatFileSize(connectionQuality.bandwidth)}/s
                   </span>
+                </div>
+              )}
+              
+              {/* Encryption status */}
+              {isEncrypted && (
+                <div className="flex items-center gap-1.5" title="端到端加密已启用">
+                  <Lock className="w-3.5 h-3.5 text-green-500 dark:text-green-400" />
+                  <span className="font-medium text-green-600 dark:text-green-400">已加密</span>
                 </div>
               )}
             </div>
