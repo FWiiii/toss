@@ -1,33 +1,23 @@
 "use client"
 
 import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from "react"
-import { uint8ToBase64, base64ToUint8 } from "./utils"
-import type { TransferItem, ConnectionStatus, ConnectionType, ConnectionInfo, ConnectionQuality } from "./types"
+import type { TransferItem, ConnectionStatus, ConnectionType, ConnectionInfo, ConnectionQuality, EncryptionPerformance } from "./types"
 import { useNotification } from "@/hooks/use-notification"
 import { useTransferItems } from "@/hooks/use-transfer-items"
 import { useConnectionQuality } from "@/hooks/use-connection-quality"
+import { SessionEncryptor, encryptJSON, encryptBytes } from "./crypto"
+import { generateKeyPair } from "./crypto"
+import { uint8ToBase64 } from "./utils"
 import { 
   PEER_PREFIX, 
   PEER_OPTIONS, 
   FILE_CHUNK_SIZE,
-  MAX_RECONNECT_ATTEMPTS,
-  CONNECTION_TIMEOUT,
   generateRoomCode,
-  detectConnectionType 
 } from "./peer-config"
-import {
-  generateKeyPair,
-  exportPublicKey,
-  importPublicKey,
-  deriveSharedSecret,
-  SessionEncryptor,
-  encryptJSON,
-  decryptJSON,
-  encryptBytes,
-  decryptBytes,
-  arrayBufferToBase64,
-  base64ToArrayBuffer,
-} from "./crypto"
+import { createSetupConnection, createAttemptReconnect, type ConnectionRefs, type ConnectionCallbacks } from "./transfer-connection"
+import { createRoomManagement, type RoomCallbacks } from "./transfer-room"
+import { createDataTransfer, type DataTransferCallbacks } from "./transfer-data"
+import { createPerformanceMonitoring } from "./transfer-performance"
 
 export type { TransferItem, ConnectionStatus, ConnectionType, ConnectionInfo, ConnectionQuality, EncryptionPerformance }
 
@@ -210,7 +200,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
           const encryptor = encryptorsRef.current.get(peerId)
           const isEncrypted = encryptor?.isReady() ?? false
 
-          if (isEncrypted) {
+          if (isEncrypted && encryptor) {
             const encrypted = await encryptJSON(encryptor, data)
             conn.send({ type: "encrypted", encrypted })
           } else {
@@ -253,403 +243,55 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     }
   }, [roomCode, connectionStatus])
 
-  // ============ Reconnection Logic ============
-  const attemptReconnect = useCallback(() => {
-    if (!roomCode || !shouldReconnectRef.current || connectionStatus === "dissolved") {
-      return
-    }
+  // ============ Connection Refs Setup ============
+  const connectionRefs: ConnectionRefs = {
+    connectionsRef,
+    encryptorsRef,
+    keyExchangePendingRef,
+    fileBuffersRef,
+    reconnectAttemptsRef,
+    reconnectTimeoutRef,
+    shouldReconnectRef,
+    peerRef,
+    setupConnectionRef,
+    attemptReconnectRef,
+    joinRoomRef,
+    cancelledTransfersRef,
+  }
 
-    if (reconnectAttemptsRef.current >= MAX_RECONNECT_ATTEMPTS) {
-      setConnectionStatus("error")
-      setErrorMessage("重连失败，请手动重新加入房间")
-      addSystemMessage("自动重连失败，连接已断开")
-      return
-    }
-
-    reconnectAttemptsRef.current += 1
-    const delay = Math.min(1000 * Math.pow(2, reconnectAttemptsRef.current - 1), 10000)
-    
-    setConnectionStatus("reconnecting")
-    setErrorMessage(`正在尝试重新连接... (${reconnectAttemptsRef.current}/${MAX_RECONNECT_ATTEMPTS})`)
-    
-      reconnectTimeoutRef.current = setTimeout(() => {
-        if (!shouldReconnectRef.current) return
-        
-        // 简化：只在第一次重连时显示消息
-        if (reconnectAttemptsRef.current === 1) {
-          addSystemMessage("正在尝试重新连接...")
-        }
-      
-      if (isHost) {
-        setConnectionStatus("connecting")
-      } else {
-        const hostPeerId = PEER_PREFIX + roomCode
-        if (peerRef.current && !peerRef.current.destroyed) {
-          try {
-            const conn = peerRef.current.connect(hostPeerId, { reliable: true })
-            if (conn && setupConnectionRef.current) {
-              setupConnectionRef.current(conn, true)
-            } else {
-              attemptReconnect()
-            }
-          } catch {
-            attemptReconnect()
-          }
-        } else {
-          if (joinRoomRef.current) {
-            joinRoomRef.current(roomCode)
-          }
-        }
-      }
-    }, delay)
-  }, [roomCode, connectionStatus, isHost, addSystemMessage])
+  // ============ Connection Callbacks Setup ============
+  const connectionCallbacks: ConnectionCallbacks = {
+    setError,
+    setConnectionStatus,
+    setConnectionInfo,
+    setErrorMessage,
+    setIsEncrypted,
+    setPeerCount,
+    updatePeerCount,
+    addSystemMessage,
+    addItem,
+    addItemWithId,
+    updateItemProgress,
+    createTrackedBlobUrl,
+    broadcastToConnections,
+    cleanupAll,
+    handlePong,
+    recordBandwidth,
+    notifyReceived: (type: string, name?: string) => notifyReceived(type as "text" | "image" | "file", name),
+  }
 
   // ============ Connection Setup ============
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const setupConnection = useCallback(async (conn: any, isOutgoing = false) => {
-    let connectionTimeout: NodeJS.Timeout | null = null
-    
-    if (isOutgoing) {
-      connectionTimeout = setTimeout(() => {
-        if (!conn.open) {
-          conn.close()
-          setError("连接超时，请确保两个设备能够互相访问（同一网络或允许 P2P 连接）")
-        }
-      }, CONNECTION_TIMEOUT)
-    }
+    const setupFn = createSetupConnection(connectionRefs, connectionCallbacks, roomCode)
+    return setupFn(conn, isOutgoing)
+  }, [roomCode])
 
-    // 生成密钥对用于密钥交换
-    let keyPair: Awaited<ReturnType<typeof generateKeyPair>>
-    try {
-      keyPair = await generateKeyPair()
-      keyExchangePendingRef.current.set(conn.peer, { keyPair, isOutgoing })
-    } catch (error) {
-      console.error("Failed to generate key pair:", error)
-      setError("加密初始化失败")
-      return
-    }
-
-    // Monitor ICE state for connection recovery
-    let monitorAttempts = 0
-    const maxMonitorAttempts = 25
-    
-    const monitorIceState = () => {
-      if (!conn || conn.destroyed || monitorAttempts >= maxMonitorAttempts) {
-        return
-      }
-      
-      const pc = conn.peerConnection as RTCPeerConnection | undefined
-      if (pc) {
-        pc.oniceconnectionstatechange = () => {
-          if (pc.iceConnectionState === "failed") {
-            if (connectionTimeout) clearTimeout(connectionTimeout)
-            try {
-              pc.restartIce()
-            } catch {
-              if (!conn.open && isOutgoing) {
-                setError("连接失败，请确保两设备在同一网络或允许 P2P 连接")
-              }
-            }
-          }
-        }
-      } else {
-        monitorAttempts++
-        setTimeout(monitorIceState, 200)
-      }
-    }
-    setTimeout(monitorIceState, 100)
-
-    conn.on("open", async () => {
-      if (connectionTimeout) clearTimeout(connectionTimeout)
-      connectionsRef.current.set(conn.peer, conn)
-      
-      // 进行密钥交换
-      try {
-        const pending = keyExchangePendingRef.current.get(conn.peer)
-        if (!pending) {
-          console.error("Key exchange pending data not found")
-          return
-        }
-
-        const publicKeyData = await exportPublicKey(pending.keyPair.publicKey)
-        const publicKeyBase64 = arrayBufferToBase64(publicKeyData)
-
-        if (pending.isOutgoing) {
-          // 发起方：先发送公钥
-          conn.send({ type: "key-exchange", publicKey: publicKeyBase64 })
-        } else {
-          // 接收方：等待对方公钥，收到后发送自己的公钥
-          // 公钥会在 data 事件中处理
-        }
-      } catch (error) {
-        console.error("Key exchange failed:", error)
-        setError("密钥交换失败")
-      }
-      
-      updatePeerCount()
-      
-      if (!isOutgoing) {
-        // 简化：不显示设备加入消息，连接状态已能说明
-        // addSystemMessage("有新设备加入了房间")
-        // 延迟广播，等待加密建立
-        setTimeout(() => {
-          broadcastToConnections({ type: "peer-joined" }, conn.peer)
-        }, 1000)
-      }
-      
-      const detectType = async () => {
-        const pc = conn.peerConnection as RTCPeerConnection | undefined
-        if (pc && pc.connectionState === "connected") {
-          const info = await detectConnectionType(pc)
-          setConnectionInfo(info)
-        } else if (pc) {
-          setTimeout(detectType, 1000)
-        }
-      }
-      setTimeout(detectType, 500)
-    })
-
-    conn.on("close", () => {
-      if (connectionTimeout) clearTimeout(connectionTimeout)
-      const wasConnected = connectionsRef.current.has(conn.peer)
-      connectionsRef.current.delete(conn.peer)
-      fileBuffersRef.current.delete(conn.peer)
-      encryptorsRef.current.delete(conn.peer)
-      keyExchangePendingRef.current.delete(conn.peer)
-      
-      // 简化：不显示断开连接消息，连接状态已能说明
-      // if (wasConnected) {
-      //   addSystemMessage("有设备断开了连接")
-      // }
-      
-      updatePeerCount()
-      
-      if (connectionsRef.current.size === 0 && roomCode && shouldReconnectRef.current && attemptReconnectRef.current) {
-        attemptReconnectRef.current()
-      }
-    })
-
-    conn.on("error", (err: unknown) => {
-      console.error("Connection error:", err)
-      if (connectionTimeout) clearTimeout(connectionTimeout)
-      connectionsRef.current.delete(conn.peer)
-      encryptorsRef.current.delete(conn.peer)
-      keyExchangePendingRef.current.delete(conn.peer)
-      
-      updatePeerCount()
-      
-      if (isOutgoing && connectionsRef.current.size === 0 && shouldReconnectRef.current && attemptReconnectRef.current) {
-        attemptReconnectRef.current()
-      } else if (connectionsRef.current.size === 0) {
-        setError("连接失败，正在尝试重连...")
-      }
-    })
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    conn.on("data", async (data: any) => {
-      // 处理密钥交换
-      if (data.type === "key-exchange") {
-        try {
-          const pending = keyExchangePendingRef.current.get(conn.peer)
-          if (!pending) {
-            console.error("Key exchange pending data not found")
-            return
-          }
-
-          const peerPublicKeyData = base64ToArrayBuffer(data.publicKey)
-          const peerPublicKey = await importPublicKey(peerPublicKeyData)
-
-          // 计算共享密钥
-          const sharedSecret = await deriveSharedSecret(pending.keyPair.privateKey, peerPublicKey)
-
-          // 创建加密器并派生密钥
-          const encryptor = new SessionEncryptor()
-          await encryptor.deriveKeys(sharedSecret)
-          encryptorsRef.current.set(conn.peer, encryptor)
-
-          // 如果是接收方，现在发送自己的公钥
-          if (!pending.isOutgoing) {
-            const publicKeyData = await exportPublicKey(pending.keyPair.publicKey)
-            const publicKeyBase64 = arrayBufferToBase64(publicKeyData)
-            conn.send({ type: "key-exchange", publicKey: publicKeyBase64 })
-          }
-          // 注意：ECDH 是对称的，双方计算出的共享密钥相同，所以双方都能正确加解密
-
-          // 清理待处理的密钥交换数据
-          keyExchangePendingRef.current.delete(conn.peer)
-          
-          // 更新加密状态
-          const allEncrypted = Array.from(encryptorsRef.current.values()).every(e => e.isReady())
-          setIsEncrypted(allEncrypted && encryptorsRef.current.size > 0)
-          
-          // 简化：加密状态已在UI中显示，不需要系统消息
-          // addSystemMessage("端到端加密已启用")
-        } catch (error) {
-          console.error("Key exchange error:", error)
-          setError("密钥交换失败")
-        }
-        return
-      }
-
-      // 获取加密器（如果已建立）
-      const encryptor = encryptorsRef.current.get(conn.peer)
-      const isEncrypted = encryptor?.isReady() ?? false
-
-      // 处理文件块（简化后，文件块不加密 JSON，直接处理）
-      if (data.type === "file-chunk") {
-        const buffer = fileBuffersRef.current.get(conn.peer)
-        if (buffer) {
-          let bytes: Uint8Array
-          if (isEncrypted && data.encrypted) {
-            // 直接解密文件块（不再需要解密 JSON）
-            try {
-              bytes = await decryptBytes(encryptor!, data.encrypted)
-            } catch (error) {
-              console.error("File chunk decryption error:", error)
-              return
-            }
-          } else {
-            // 未加密的文件块
-            bytes = base64ToUint8(data.data)
-          }
-          buffer.chunks.push(bytes)
-          buffer.received += bytes.length
-          
-          const now = Date.now()
-          if (now - buffer.lastTime >= 500 || buffer.received >= buffer.size) {
-            const timeDiff = (now - buffer.lastTime) / 1000
-            const bytesDiff = buffer.received - buffer.lastBytes
-            const instantSpeed = timeDiff > 0 ? Math.round(bytesDiff / timeDiff) : 0
-            
-            // EMA smoothing (alpha = 0.2)
-            buffer.smoothedSpeed = buffer.smoothedSpeed === 0 
-              ? instantSpeed 
-              : Math.round(buffer.smoothedSpeed * 0.8 + instantSpeed * 0.2)
-            
-            const speed = buffer.smoothedSpeed
-            const remainingBytes = buffer.size - buffer.received
-            const remainingTime = speed > 0 ? Math.ceil(remainingBytes / speed) : undefined
-            
-            updateItemProgress(buffer.itemId, {
-              progress: Math.round((buffer.received / buffer.size) * 100),
-              transferredBytes: buffer.received,
-              speed,
-              remainingTime,
-            })
-            
-            recordBandwidth(speed)
-            
-            buffer.lastTime = now
-            buffer.lastBytes = buffer.received
-          }
-        }
-        return
-      }
-
-      // 解密其他类型的数据（文本、元数据等）- 这些仍然使用 JSON 加密
-      let decryptedData: any = data
-      if (isEncrypted && data.encrypted) {
-        try {
-          decryptedData = await decryptJSON(encryptor, data.encrypted)
-        } catch (error) {
-          console.error("Decryption error:", error)
-          // 简化：只在控制台记录，不显示系统消息（避免干扰）
-          // addSystemMessage("解密失败，数据可能已损坏")
-          return
-        }
-      }
-
-      if (decryptedData.type === "text") {
-        addItem({
-          type: "text",
-          content: decryptedData.content,
-          direction: "received",
-        })
-        notifyReceived("text")
-      } else if (decryptedData.type === "file-start") {
-        const itemId = addItemWithId({
-          type: "file",
-          name: decryptedData.name,
-          content: "",
-          size: decryptedData.size,
-          direction: "received",
-          status: "transferring",
-          progress: 0,
-          transferredBytes: 0,
-        })
-        
-        fileBuffersRef.current.set(conn.peer, {
-          name: decryptedData.name,
-          size: decryptedData.size,
-          chunks: [],
-          received: 0,
-          itemId,
-          lastTime: Date.now(),
-          lastBytes: 0,
-          smoothedSpeed: 0,
-        })
-      } else if (decryptedData.type === "file-end") {
-        const buffer = fileBuffersRef.current.get(conn.peer)
-        if (buffer) {
-          const blob = new Blob(buffer.chunks as unknown as BlobPart[])
-          const url = createTrackedBlobUrl(blob)
-          
-          updateItemProgress(buffer.itemId, {
-            content: url,
-            status: "completed",
-            progress: 100,
-            transferredBytes: buffer.size,
-            speed: undefined,
-            remainingTime: undefined,
-          })
-          
-          const fileType = buffer.name.match(/\.(jpg|jpeg|png|gif|webp|svg)$/i) ? "image" : "file"
-          notifyReceived(fileType, buffer.name)
-          
-          buffer.chunks = []
-          fileBuffersRef.current.delete(conn.peer)
-        }
-      } else if (decryptedData.type === "room-dissolved") {
-        addSystemMessage("房主已解散房间")
-        setConnectionStatus("dissolved")
-        setErrorMessage("房间已解散")
-        cleanupAll()
-        setPeerCount(0)
-      } else if (decryptedData.type === "peer-joined") {
-        // 简化：不显示设备加入消息
-        // addSystemMessage("有新设备加入了房间")
-      } else if (decryptedData.type === "ping") {
-        try {
-          const pingData = { type: "ping", id: decryptedData.id }
-          if (isEncrypted) {
-            const encrypted = await encryptJSON(encryptor!, pingData)
-            conn.send({ type: "encrypted", encrypted })
-          } else {
-            conn.send(pingData)
-          }
-        } catch (err) {
-          console.error("Failed to send pong:", err)
-        }
-      } else if (decryptedData.type === "pong") {
-        handlePong(decryptedData.id)
-      } else if (decryptedData.type === "file-cancel") {
-        const buffer = fileBuffersRef.current.get(conn.peer)
-        if (buffer) {
-          updateItemProgress(buffer.itemId, {
-            status: "cancelled",
-            speed: undefined,
-          })
-          
-          buffer.chunks = []
-          fileBuffersRef.current.delete(conn.peer)
-        }
-        
-        if (decryptedData.itemId) {
-          cancelledTransfersRef.current.add(decryptedData.itemId)
-        }
-      }
-    })
-  }, [addItem, addItemWithId, updateItemProgress, addSystemMessage, updatePeerCount, createTrackedBlobUrl, broadcastToConnections, cleanupAll, setError, handlePong, recordBandwidth, notifyReceived])
+  // ============ Reconnection Logic ============
+  const attemptReconnect = useCallback(() => {
+    const reconnectFn = createAttemptReconnect(connectionRefs, connectionCallbacks, roomCode, connectionStatus, isHost)
+    return reconnectFn()
+  }, [roomCode, connectionStatus, isHost, connectionRefs, connectionCallbacks])
 
   // Store functions in refs
   useEffect(() => {
@@ -658,175 +300,50 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
   }, [setupConnection, attemptReconnect])
 
   // ============ Room Management ============
-  const createRoom = useCallback(async () => {
-    setIsCreatingRoom(true)
-    
-    try {
-      const { default: Peer } = await import("peerjs")
-      
-      const code = generateRoomCode()
-      const peerId = PEER_PREFIX + code
-      
-      cleanupAll()
-      
-      shouldReconnectRef.current = true
-      reconnectAttemptsRef.current = 0
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current)
-        reconnectTimeoutRef.current = null
-      }
-      
-      setRoomCode(code)
-      setConnectionStatus("connecting")
-      setErrorMessage(null)
-      setIsHost(true)
+  const roomCallbacks: RoomCallbacks = {
+    setIsCreatingRoom,
+    setIsJoiningRoom,
+    setRoomCode,
+    setConnectionStatus,
+    setErrorMessage,
+    setIsHost,
+    setError,
+    cleanupAll,
+    broadcastToConnections,
+    setConnectionInfo,
+    setPeerCount,
+  }
 
-      const peer = new Peer(peerId, PEER_OPTIONS)
+  const { createRoom, joinRoom, leaveRoom: leaveRoomFn } = createRoomManagement(
+    connectionRefs,
+    roomCallbacks,
+    setupConnection
+  )
 
-      peer.on("open", () => {
-        setIsCreatingRoom(false)
-        setConnectionStatus("connecting")
-      })
-
-      peer.on("connection", (conn) => {
-        setupConnection(conn, false)
-      })
-
-      peer.on("error", (err) => {
-        setIsCreatingRoom(false)
-        if (err.type === "unavailable-id") {
-          setErrorMessage("房间代码已被占用，正在重试...")
-          peer.destroy()
-          setTimeout(() => createRoom(), 500)
-        } else if (err.type === "network" || err.type === "server-error") {
-          setError("网络错误，请检查网络连接")
-        } else {
-          setError(`连接错误: ${err.type}`)
-        }
-      })
-
-      peer.on("disconnected", () => {
-        if (!peer.destroyed) {
-          peer.reconnect()
-        }
-      })
-
-      peerRef.current = peer
-    } catch {
-      setIsCreatingRoom(false)
-      setError("创建房间失败，请重试")
-    }
-  }, [setupConnection, cleanupAll, setError])
-
-  const joinRoom = useCallback(async (code: string) => {
-    const normalizedCode = code.toUpperCase().replace(/[^A-Z0-9]/g, "")
-    if (normalizedCode.length !== 6) {
-      setErrorMessage("请输入6位房间代码")
-      return
-    }
-    
-    setIsJoiningRoom(true)
-    
-    try {
-      const { default: Peer } = await import("peerjs")
-      
-      const hostPeerId = PEER_PREFIX + normalizedCode
-      
-      cleanupAll()
-      
-      shouldReconnectRef.current = true
-      reconnectAttemptsRef.current = 0
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current)
-        reconnectTimeoutRef.current = null
-      }
-      
-      await new Promise(resolve => setTimeout(resolve, 100))
-      
-      setRoomCode(normalizedCode)
-      setConnectionStatus("connecting")
-      setErrorMessage(null)
-      setIsHost(false)
-
-      const peer = new Peer(PEER_OPTIONS)
-
-      peer.on("open", () => {
-        setIsJoiningRoom(false)
-        const conn = peer.connect(hostPeerId, { reliable: true })
-        if (conn) {
-          setupConnection(conn, true)
-        } else {
-          setError("无法创建连接")
-        }
-      })
-
-      peer.on("connection", (conn) => {
-        setupConnection(conn, false)
-      })
-
-      peer.on("error", (err) => {
-        setIsJoiningRoom(false)
-        if (err.type === "peer-unavailable") {
-          setError("找不到房间，请检查代码是否正确，或房间可能已关闭")
-        } else if (err.type === "network" || err.type === "server-error") {
-          setError("无法连接到信令服务器，请检查网络")
-        } else {
-          setError(`连接错误: ${err.type}`)
-        }
-      })
-
-      peer.on("disconnected", () => {
-        if (!peer.destroyed) {
-          peer.reconnect()
-        }
-      })
-
-      peerRef.current = peer
-    } catch {
-      setIsJoiningRoom(false)
-      setError("加入房间失败，请重试")
-    }
-  }, [setupConnection, cleanupAll, setError])
+  const leaveRoom = useCallback(async () => {
+    await leaveRoomFn(isHost)
+  }, [isHost, leaveRoomFn])
 
   useEffect(() => {
     joinRoomRef.current = joinRoom
   }, [joinRoom])
 
-  const leaveRoom = useCallback(async () => {
-    setIsCreatingRoom(false)
-    setIsJoiningRoom(false)
-    
-    shouldReconnectRef.current = false
-    reconnectAttemptsRef.current = 0
-    if (reconnectTimeoutRef.current) {
-      clearTimeout(reconnectTimeoutRef.current)
-      reconnectTimeoutRef.current = null
-    }
-    
-    if (stopQualityMonitoringRef.current) {
-      stopQualityMonitoringRef.current()
-    }
-    
-    if (isHost) {
-      await broadcastToConnections({ type: "room-dissolved" })
-    }
-    
-    setTimeout(() => {
-      cleanupAll()
-      
-      setRoomCode(null)
-      setConnectionStatus("disconnected")
-      setConnectionInfo({ type: "unknown" })
-      setErrorMessage(null)
-      setPeerCount(0)
-      setIsHost(false)
-      
-      shouldReconnectRef.current = true
-    }, 100)
-  }, [isHost, broadcastToConnections, cleanupAll])
-
   // ============ Data Transfer ============
-  const sendText = useCallback(async (text: string) => {
+  const dataTransferCallbacks: DataTransferCallbacks = {
+    setSendingCount,
+    addItem,
+    addItemWithId,
+    updateItemProgress,
+    createTrackedBlobUrl,
+  }
+
+  const { sendText, sendFile } = createDataTransfer(
+    connectionRefs,
+    dataTransferCallbacks,
+    encryptorsRef
+  )
+
+  const sendTextOriginal = useCallback(async (text: string) => {
     if (!text.trim()) return
     
     // 发送到所有连接（带加密）
@@ -837,7 +354,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       const isEncrypted = encryptor?.isReady() ?? false
 
       try {
-        if (isEncrypted) {
+        if (isEncrypted && encryptor) {
           const encrypted = await encryptJSON(encryptor, { type: "text", content: text })
           conn.send({ type: "encrypted", encrypted })
         } else {
@@ -855,7 +372,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     })
   }, [addItem])
 
-  const sendFile = useCallback(async (file: File): Promise<void> => {
+  const sendFileOriginal = useCallback(async (file: File): Promise<void> => {
     setSendingCount(prev => prev + 1)
     
     let itemId: string | null = null
@@ -891,7 +408,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
 
         // 发送文件开始消息
         try {
-          if (isEncrypted) {
+          if (isEncrypted && encryptor) {
             const encrypted = await encryptJSON(encryptor, {
               type: "file-start",
               name: file.name,
@@ -900,12 +417,12 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
             })
             conn.send({ type: "encrypted", encrypted })
           } else {
-            conn.send({
-              type: "file-start",
-              name: file.name,
-              size: file.size,
-              itemId,
-            })
+        conn.send({
+          type: "file-start",
+          name: file.name,
+          size: file.size,
+          itemId,
+        })
           }
         } catch (error) {
           console.error("Failed to send file-start:", error)
@@ -917,17 +434,17 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
           if (cancelledTransfersRef.current.has(itemId)) {
             cancelled = true
             try {
-              if (isEncrypted) {
+              if (isEncrypted && encryptor) {
                 const encrypted = await encryptJSON(encryptor, {
                   type: "file-cancel",
                   itemId,
                 })
                 conn.send({ type: "encrypted", encrypted })
               } else {
-                conn.send({
-                  type: "file-cancel",
-                  itemId,
-                })
+            conn.send({
+              type: "file-cancel",
+              itemId,
+            })
               }
             } catch (error) {
               console.error("Failed to send file-cancel:", error)
@@ -939,7 +456,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
           const chunk = uint8Array.subarray(offset, end)
           
           try {
-            if (isEncrypted) {
+            if (isEncrypted && encryptor) {
               // 简化：只加密文件块，JSON 元数据不加密（减少双重加密）
               const encryptedChunk = await encryptBytes(encryptor, chunk)
               conn.send({
@@ -947,10 +464,10 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
                 encrypted: encryptedChunk, // 直接发送加密后的 base64，不再次加密 JSON
               })
             } else {
-              conn.send({
-                type: "file-chunk",
-                data: uint8ToBase64(chunk),
-              })
+          conn.send({
+            type: "file-chunk",
+            data: uint8ToBase64(chunk),
+          })
             }
           } catch (error) {
             console.error("Failed to send file-chunk:", error)
@@ -1001,11 +518,11 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
 
         if (!cancelled) {
           try {
-            if (isEncrypted) {
+            if (isEncrypted && encryptor) {
               const encrypted = await encryptJSON(encryptor, { type: "file-end" })
               conn.send({ type: "encrypted", encrypted })
             } else {
-              conn.send({ type: "file-end" })
+          conn.send({ type: "file-end" })
             }
           } catch (error) {
             console.error("Failed to send file-end:", error)
