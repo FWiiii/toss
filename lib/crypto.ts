@@ -33,6 +33,13 @@ export interface EncryptionKeyPair {
 export class SessionEncryptor {
   private key: CryptoKey | null = null
   private ivCounter: number = 0
+  
+  // 性能监控
+  private encryptTimes: number[] = []
+  private decryptTimes: number[] = []
+  private totalEncryptedBytes: number = 0
+  private totalDecryptedBytes: number = 0
+  private chunkCount: number = 0
 
   /**
    * 从共享密钥派生加密密钥
@@ -89,6 +96,7 @@ export class SessionEncryptor {
       throw new Error("加密密钥未初始化")
     }
 
+    const startTime = performance.now()
     const iv = this.generateIV()
     const encrypted = await crypto.subtle.encrypt(
       {
@@ -105,6 +113,17 @@ export class SessionEncryptor {
     result.set(iv, 0)
     result.set(new Uint8Array(encrypted), 12)
     
+    // 性能监控
+    const encryptTime = performance.now() - startTime
+    this.encryptTimes.push(encryptTime)
+    this.totalEncryptedBytes += data.length
+    this.chunkCount++
+    
+    // 只保留最近 100 次的记录，避免内存泄漏
+    if (this.encryptTimes.length > 100) {
+      this.encryptTimes.shift()
+    }
+    
     return result
   }
 
@@ -120,6 +139,7 @@ export class SessionEncryptor {
       throw new Error("加密数据格式错误：缺少 IV")
     }
 
+    const startTime = performance.now()
     // 提取 IV 和加密数据
     const iv = encryptedData.slice(0, 12)
     const ciphertext = encryptedData.slice(12)
@@ -134,7 +154,19 @@ export class SessionEncryptor {
       ciphertext
     )
 
-    return new Uint8Array(decrypted)
+    const result = new Uint8Array(decrypted)
+    
+    // 性能监控
+    const decryptTime = performance.now() - startTime
+    this.decryptTimes.push(decryptTime)
+    this.totalDecryptedBytes += result.length
+    
+    // 只保留最近 100 次的记录
+    if (this.decryptTimes.length > 100) {
+      this.decryptTimes.shift()
+    }
+    
+    return result
   }
 
   /**
@@ -142,6 +174,48 @@ export class SessionEncryptor {
    */
   isReady(): boolean {
     return this.key !== null
+  }
+
+  /**
+   * 获取性能统计
+   */
+  getPerformanceStats() {
+    const avgEncryptTime = this.encryptTimes.length > 0
+      ? this.encryptTimes.reduce((a, b) => a + b, 0) / this.encryptTimes.length
+      : 0
+    
+    const avgDecryptTime = this.decryptTimes.length > 0
+      ? this.decryptTimes.reduce((a, b) => a + b, 0) / this.decryptTimes.length
+      : 0
+
+    const encryptThroughput = avgEncryptTime > 0 && this.totalEncryptedBytes > 0
+      ? this.totalEncryptedBytes / (this.encryptTimes.reduce((a, b) => a + b, 0))
+      : 0
+
+    const decryptThroughput = avgDecryptTime > 0 && this.totalDecryptedBytes > 0
+      ? this.totalDecryptedBytes / (this.decryptTimes.reduce((a, b) => a + b, 0))
+      : 0
+
+    return {
+      encryptTime: avgEncryptTime,
+      decryptTime: avgDecryptTime,
+      encryptThroughput,
+      decryptThroughput,
+      totalEncrypted: this.totalEncryptedBytes,
+      totalDecrypted: this.totalDecryptedBytes,
+      chunkCount: this.chunkCount,
+    }
+  }
+
+  /**
+   * 重置性能统计
+   */
+  resetPerformanceStats() {
+    this.encryptTimes = []
+    this.decryptTimes = []
+    this.totalEncryptedBytes = 0
+    this.totalDecryptedBytes = 0
+    this.chunkCount = 0
   }
 }
 

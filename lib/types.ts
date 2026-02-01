@@ -41,6 +41,16 @@ export type ConnectionQuality = {
   packetLoss?: number // percentage (0-100)
 }
 
+export type EncryptionPerformance = {
+  encryptTime: number // ms - 平均加密时间
+  decryptTime: number // ms - 平均解密时间
+  encryptThroughput: number // bytes/ms - 加密吞吐量
+  decryptThroughput: number // bytes/ms - 解密吞吐量
+  totalEncrypted: number // bytes - 总加密数据量
+  totalDecrypted: number // bytes - 总解密数据量
+  chunkCount: number // 处理的块数量
+}
+
 export type SharedDataFile = {
   name: string
   type: string

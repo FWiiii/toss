@@ -29,7 +29,7 @@ import {
   base64ToArrayBuffer,
 } from "./crypto"
 
-export type { TransferItem, ConnectionStatus, ConnectionType, ConnectionInfo, ConnectionQuality }
+export type { TransferItem, ConnectionStatus, ConnectionType, ConnectionInfo, ConnectionQuality, EncryptionPerformance }
 
 type TransferContextType = {
   roomCode: string | null
@@ -64,6 +64,8 @@ type TransferContextType = {
   }>) => void
   requestNotificationPermission: () => Promise<NotificationPermission>
   testNotification: () => void
+  encryptionPerformance: EncryptionPerformance | null
+  getEncryptionPerformance: () => EncryptionPerformance | null
 }
 
 const TransferContext = createContext<TransferContextType | null>(null)
@@ -88,6 +90,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
   const [isJoiningRoom, setIsJoiningRoom] = useState(false)
   const [sendingCount, setSendingCount] = useState(0)
   const [isEncrypted, setIsEncrypted] = useState(false)
+  const [encryptionPerformance, setEncryptionPerformance] = useState<EncryptionPerformance | null>(null)
   
   // ============ Custom Hooks ============
   const {
@@ -486,7 +489,58 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       const encryptor = encryptorsRef.current.get(conn.peer)
       const isEncrypted = encryptor?.isReady() ?? false
 
-      // 解密数据（如果已加密）
+      // 处理文件块（简化后，文件块不加密 JSON，直接处理）
+      if (data.type === "file-chunk") {
+        const buffer = fileBuffersRef.current.get(conn.peer)
+        if (buffer) {
+          let bytes: Uint8Array
+          if (isEncrypted && data.encrypted) {
+            // 直接解密文件块（不再需要解密 JSON）
+            try {
+              bytes = await decryptBytes(encryptor!, data.encrypted)
+            } catch (error) {
+              console.error("File chunk decryption error:", error)
+              return
+            }
+          } else {
+            // 未加密的文件块
+            bytes = base64ToUint8(data.data)
+          }
+          buffer.chunks.push(bytes)
+          buffer.received += bytes.length
+          
+          const now = Date.now()
+          if (now - buffer.lastTime >= 500 || buffer.received >= buffer.size) {
+            const timeDiff = (now - buffer.lastTime) / 1000
+            const bytesDiff = buffer.received - buffer.lastBytes
+            const instantSpeed = timeDiff > 0 ? Math.round(bytesDiff / timeDiff) : 0
+            
+            // EMA smoothing (alpha = 0.2)
+            buffer.smoothedSpeed = buffer.smoothedSpeed === 0 
+              ? instantSpeed 
+              : Math.round(buffer.smoothedSpeed * 0.8 + instantSpeed * 0.2)
+            
+            const speed = buffer.smoothedSpeed
+            const remainingBytes = buffer.size - buffer.received
+            const remainingTime = speed > 0 ? Math.ceil(remainingBytes / speed) : undefined
+            
+            updateItemProgress(buffer.itemId, {
+              progress: Math.round((buffer.received / buffer.size) * 100),
+              transferredBytes: buffer.received,
+              speed,
+              remainingTime,
+            })
+            
+            recordBandwidth(speed)
+            
+            buffer.lastTime = now
+            buffer.lastBytes = buffer.received
+          }
+        }
+        return
+      }
+
+      // 解密其他类型的数据（文本、元数据等）- 这些仍然使用 JSON 加密
       let decryptedData: any = data
       if (isEncrypted && data.encrypted) {
         try {
@@ -527,53 +581,6 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
           lastBytes: 0,
           smoothedSpeed: 0,
         })
-      } else if (decryptedData.type === "file-chunk") {
-        const buffer = fileBuffersRef.current.get(conn.peer)
-        if (buffer) {
-          let bytes: Uint8Array
-          if (isEncrypted && decryptedData.encrypted) {
-            // 解密文件块
-            try {
-              bytes = await decryptBytes(encryptor!, decryptedData.encrypted)
-            } catch (error) {
-              console.error("File chunk decryption error:", error)
-              return
-            }
-          } else {
-            // 未加密的文件块
-            bytes = base64ToUint8(decryptedData.data)
-          }
-          buffer.chunks.push(bytes)
-          buffer.received += bytes.length
-          
-          const now = Date.now()
-          if (now - buffer.lastTime >= 500 || buffer.received >= buffer.size) {
-            const timeDiff = (now - buffer.lastTime) / 1000
-            const bytesDiff = buffer.received - buffer.lastBytes
-            const instantSpeed = timeDiff > 0 ? Math.round(bytesDiff / timeDiff) : 0
-            
-            // EMA smoothing (alpha = 0.2)
-            buffer.smoothedSpeed = buffer.smoothedSpeed === 0 
-              ? instantSpeed 
-              : Math.round(buffer.smoothedSpeed * 0.8 + instantSpeed * 0.2)
-            
-            const speed = buffer.smoothedSpeed
-            const remainingBytes = buffer.size - buffer.received
-            const remainingTime = speed > 0 ? Math.ceil(remainingBytes / speed) : undefined
-            
-            updateItemProgress(buffer.itemId, {
-              progress: Math.round((buffer.received / buffer.size) * 100),
-              transferredBytes: buffer.received,
-              speed,
-              remainingTime,
-            })
-            
-            recordBandwidth(speed)
-            
-            buffer.lastTime = now
-            buffer.lastBytes = buffer.received
-          }
-        }
       } else if (decryptedData.type === "file-end") {
         const buffer = fileBuffersRef.current.get(conn.peer)
         if (buffer) {
@@ -925,13 +932,12 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
           
           try {
             if (isEncrypted) {
-              // 加密文件块，然后用 JSON 包装并加密
+              // 简化：只加密文件块，JSON 元数据不加密（减少双重加密）
               const encryptedChunk = await encryptBytes(encryptor, chunk)
-              const encrypted = await encryptJSON(encryptor, {
+              conn.send({
                 type: "file-chunk",
-                encrypted: encryptedChunk,
+                encrypted: encryptedChunk, // 直接发送加密后的 base64，不再次加密 JSON
               })
-              conn.send({ type: "encrypted", encrypted })
             } else {
               conn.send({
                 type: "file-chunk",
@@ -971,9 +977,17 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
             lastBytes = offset
           }
           
-          // Small delay to prevent UI freezing
-          if ((offset / FILE_CHUNK_SIZE) % 5 === 0) {
-            await new Promise(resolve => setTimeout(resolve, 1))
+          // 优化批量处理：使用 requestIdleCallback 或 setTimeout 给 UI 让路
+          // 每处理 3 个块就让出控制权，避免阻塞主线程
+          if ((offset / FILE_CHUNK_SIZE) % 3 === 0) {
+            // 优先使用 requestIdleCallback，如果不支持则使用 setTimeout
+            if (typeof requestIdleCallback !== 'undefined') {
+              await new Promise(resolve => {
+                requestIdleCallback(() => resolve(undefined), { timeout: 5 })
+              })
+            } else {
+              await new Promise(resolve => setTimeout(resolve, 0))
+            }
           }
         }
 
@@ -1077,6 +1091,69 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     }
   }, [cleanupQuality, cleanupItems])
 
+  // ============ Performance Monitoring ============
+  const getEncryptionPerformance = useCallback((): EncryptionPerformance | null => {
+    if (encryptorsRef.current.size === 0) {
+      return null
+    }
+
+    // 聚合所有连接的加密性能数据
+    let totalEncryptTime = 0
+    let totalDecryptTime = 0
+    let totalEncryptThroughput = 0
+    let totalDecryptThroughput = 0
+    let totalEncrypted = 0
+    let totalDecrypted = 0
+    let totalChunks = 0
+    let encryptorCount = 0
+
+    encryptorsRef.current.forEach((encryptor) => {
+      const stats = encryptor.getPerformanceStats()
+      if (stats.chunkCount > 0) {
+        totalEncryptTime += stats.encryptTime
+        totalDecryptTime += stats.decryptTime
+        totalEncryptThroughput += stats.encryptThroughput
+        totalDecryptThroughput += stats.decryptThroughput
+        totalEncrypted += stats.totalEncrypted
+        totalDecrypted += stats.totalDecrypted
+        totalChunks += stats.chunkCount
+        encryptorCount++
+      }
+    })
+
+    if (encryptorCount === 0) {
+      return null
+    }
+
+    return {
+      encryptTime: totalEncryptTime / encryptorCount,
+      decryptTime: totalDecryptTime / encryptorCount,
+      encryptThroughput: totalEncryptThroughput / encryptorCount,
+      decryptThroughput: totalDecryptThroughput / encryptorCount,
+      totalEncrypted,
+      totalDecrypted,
+      chunkCount: totalChunks,
+    }
+  }, [])
+
+  // 定期更新性能数据
+  useEffect(() => {
+    if (!isEncrypted || encryptorsRef.current.size === 0) {
+      setEncryptionPerformance(null)
+      return
+    }
+
+    const updatePerformance = () => {
+      const perf = getEncryptionPerformance()
+      setEncryptionPerformance(perf)
+    }
+
+    updatePerformance()
+    const interval = setInterval(updatePerformance, 2000) // 每 2 秒更新一次
+
+    return () => clearInterval(interval)
+  }, [isEncrypted, getEncryptionPerformance])
+
   // ============ Provider ============
   return (
     <TransferContext.Provider
@@ -1105,6 +1182,8 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
         updateNotificationSettings,
         requestNotificationPermission,
         testNotification,
+        encryptionPerformance,
+        getEncryptionPerformance,
       }}
     >
       {children}
