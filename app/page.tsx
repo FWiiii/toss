@@ -80,15 +80,15 @@ export default function Home() {
 
         {/* Footer */}
         <footer className="border-t border-border py-4 shrink-0">
-          <div className="container mx-auto px-4 flex flex-col items-center gap-2">
-            <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-              <span className="flex items-center gap-1">🔒 端对端加密</span>
+          <div className="container mx-auto px-4">
+            <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs text-muted-foreground">
+              <span>端到端加密传输</span>
               <span className="text-border">·</span>
-              <span className="flex items-center gap-1">⚡ 局域网直传</span>
+              <span>局域网高速直连</span>
               <span className="text-border">·</span>
-              <span className="flex items-center gap-1">📱 跨平台</span>
+              <span>全平台兼容</span>
               <span className="text-border">·</span>
-              <span>支持 PWA 安装</span>
+              <span>支持 PWA 离线使用</span>
             </div>
           </div>
         </footer>
