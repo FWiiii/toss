@@ -22,8 +22,24 @@ export function TransferPanel() {
   const [isSendingClipboard, setIsSendingClipboard] = useState(false)
   const listRef = useRef<HTMLDivElement>(null)
   const hasProcessedShareRef = useRef(false)
+  const hasFocusedRef = useRef(false)
 
   const isConnected = connectionStatus === "connected" && peerCount > 0
+  
+  useEffect(() => {
+    if (!isConnected) {
+      hasFocusedRef.current = false
+      return
+    }
+    if (hasFocusedRef.current) return
+    hasFocusedRef.current = true
+    requestAnimationFrame(() => {
+      const input = document.querySelector<HTMLTextAreaElement>('[data-transfer-input] textarea')
+      if (input) {
+        input.focus()
+      }
+    })
+  }, [isConnected])
   const activeItems = items.filter((item) => item.status === "transferring" || item.status === "pending")
   const completedItems = items.filter((item) => !(item.status === "transferring" || item.status === "pending"))
   const hasItems = activeItems.length > 0 || completedItems.length > 0
