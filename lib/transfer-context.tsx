@@ -6,6 +6,7 @@ import { useNotification } from "@/hooks/use-notification"
 import { useTransferItems } from "@/hooks/use-transfer-items"
 import { useConnectionQuality } from "@/hooks/use-connection-quality"
 import { SessionEncryptor, generateKeyPair } from "./crypto"
+import { PEER_OPTIONS } from "./peer-config"
 import { createSetupConnection, createAttemptReconnect, type ConnectionRefs, type ConnectionCallbacks } from "./transfer-connection"
 import { createRoomManagement, type RoomCallbacks } from "./transfer-room"
 import { createDataTransfer, type DataTransferCallbacks } from "./transfer-data"
@@ -21,6 +22,7 @@ type TransferContextType = {
   items: TransferItem[]
   createRoom: () => void
   joinRoom: (code: string) => void
+  connectToPeer: (peerId: string) => void
   leaveRoom: () => void
   sendText: (text: string) => void
   sendFile: (file: File) => Promise<void>
@@ -282,6 +284,36 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     return setupFn(conn, isOutgoing)
   }, [roomCode])
 
+  const ensureDiscoveryPeer = useCallback(async () => {
+    if (peerRef.current && !peerRef.current.destroyed) {
+      return peerRef.current
+    }
+
+    const { default: Peer } = await import("peerjs")
+    const peer = new Peer(PEER_OPTIONS)
+
+    peer.on("open", (id: string) => {
+      setSelfPeerId(id)
+    })
+
+    peer.on("connection", (conn: any) => {
+      setupConnection(conn, false)
+    })
+
+    peer.on("error", (err: any) => {
+      console.error("Peer error:", err)
+    })
+
+    peer.on("disconnected", () => {
+      if (!peer.destroyed) {
+        peer.reconnect()
+      }
+    })
+
+    peerRef.current = peer
+    return peer
+  }, [setupConnection])
+
   // ============ Reconnection Logic ============
   const attemptReconnect = useCallback(() => {
     const reconnectFn = createAttemptReconnect(connectionRefs, connectionCallbacks, roomCode, connectionStatus, isHost)
@@ -293,6 +325,13 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     setupConnectionRef.current = setupConnection
     attemptReconnectRef.current = attemptReconnect
   }, [setupConnection, attemptReconnect])
+
+  useEffect(() => {
+    if (isCreatingRoom || isJoiningRoom) return
+    if (!peerRef.current || peerRef.current.destroyed) {
+      ensureDiscoveryPeer()
+    }
+  }, [ensureDiscoveryPeer, isCreatingRoom, isJoiningRoom])
 
   // ============ Room Management ============
   const roomCallbacks: RoomCallbacks = {
@@ -319,6 +358,31 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
   const leaveRoom = useCallback(async () => {
     await leaveRoomFn(isHost)
   }, [isHost, leaveRoomFn])
+
+  const connectToPeer = useCallback(async (peerId: string) => {
+    const targetPeerId = peerId.trim()
+    if (!targetPeerId) return
+
+    setIsJoiningRoom(true)
+    setErrorMessage(null)
+    setConnectionStatus("connecting")
+    setIsHost(true)
+
+    try {
+      const peer = await ensureDiscoveryPeer()
+      const conn = peer.connect(targetPeerId, { reliable: true })
+      if (conn) {
+        setupConnection(conn, true)
+      } else {
+        setError("无法创建连接")
+      }
+    } catch (error) {
+      console.error("Direct connect error:", error)
+      setError("连接失败，请重试")
+    } finally {
+      setIsJoiningRoom(false)
+    }
+  }, [ensureDiscoveryPeer, setupConnection, setError])
 
   useEffect(() => {
     joinRoomRef.current = joinRoom
@@ -468,6 +532,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
         items,
         createRoom,
         joinRoom,
+        connectToPeer,
         leaveRoom,
         sendText,
         sendFile,
