@@ -326,6 +326,40 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     attemptReconnectRef.current = attemptReconnect
   }, [setupConnection, attemptReconnect])
 
+  // Reconnect when app returns to foreground or network comes back
+  useEffect(() => {
+    if (typeof window === "undefined") return
+
+    const tryReconnect = () => {
+      if (peerRef.current && peerRef.current.disconnected) {
+        try {
+          peerRef.current.reconnect()
+        } catch {}
+      }
+      if (attemptReconnectRef.current) {
+        attemptReconnectRef.current()
+      }
+    }
+
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") {
+        tryReconnect()
+      }
+    }
+
+    const handleOnline = () => {
+      tryReconnect()
+    }
+
+    document.addEventListener("visibilitychange", handleVisibility)
+    window.addEventListener("online", handleOnline)
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibility)
+      window.removeEventListener("online", handleOnline)
+    }
+  }, [])
+
   useEffect(() => {
     if (isCreatingRoom || isJoiningRoom) return
     if (!peerRef.current || peerRef.current.destroyed) {
