@@ -148,11 +148,13 @@ export function createDataTransfer(
               const encryptedChunk = await encryptBytes(encryptor, chunk)
               conn.send({
                 type: "file-chunk",
+                itemId,
                 encrypted: encryptedChunk, // 直接发送加密后的 base64，不再次加密 JSON
               })
             } else {
               conn.send({
                 type: "file-chunk",
+                itemId,
                 data: uint8ToBase64(chunk),
               })
             }
@@ -206,10 +208,10 @@ export function createDataTransfer(
         if (!cancelled) {
           try {
             if (isEncrypted) {
-              const encrypted = await encryptJSON(encryptor, { type: "file-end" })
+              const encrypted = await encryptJSON(encryptor, { type: "file-end", itemId })
               conn.send({ type: "encrypted", encrypted })
             } else {
-              conn.send({ type: "file-end" })
+              conn.send({ type: "file-end", itemId })
             }
           } catch (error) {
             console.error("Failed to send file-end:", error)

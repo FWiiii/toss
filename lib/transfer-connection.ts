@@ -34,11 +34,13 @@ export type ConnectionRefs = {
     isOutgoing: boolean
   }>>
   fileBuffersRef: React.MutableRefObject<Map<string, { 
+    peerId: string
     name: string
     size: number
     chunks: Uint8Array[]
     received: number
-    itemId: string
+    localItemId: string
+    remoteItemId: string
     lastTime: number
     lastBytes: number 
     smoothedSpeed: number
@@ -102,6 +104,23 @@ export function createSetupConnection(
     recordBandwidth,
     notifyReceived,
   } = callbacks
+
+  const removeBuffersForPeer = (peerId: string) => {
+    for (const [bufferKey, buffer] of fileBuffersRef.current.entries()) {
+      if (buffer.peerId === peerId) {
+        fileBuffersRef.current.delete(bufferKey)
+      }
+    }
+  }
+
+  const findBufferKeyByPeer = (peerId: string) => {
+    for (const [bufferKey, buffer] of fileBuffersRef.current.entries()) {
+      if (buffer.peerId === peerId) {
+        return bufferKey
+      }
+    }
+    return null
+  }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return async (conn: any, isOutgoing = false) => {
@@ -205,7 +224,7 @@ export function createSetupConnection(
     conn.on("close", () => {
       if (connectionTimeout) clearTimeout(connectionTimeout)
       connectionsRef.current.delete(conn.peer)
-      fileBuffersRef.current.delete(conn.peer)
+      removeBuffersForPeer(conn.peer)
       encryptorsRef.current.delete(conn.peer)
       keyExchangePendingRef.current.delete(conn.peer)
       
@@ -220,6 +239,7 @@ export function createSetupConnection(
       console.error("Connection error:", err)
       if (connectionTimeout) clearTimeout(connectionTimeout)
       connectionsRef.current.delete(conn.peer)
+      removeBuffersForPeer(conn.peer)
       encryptorsRef.current.delete(conn.peer)
       keyExchangePendingRef.current.delete(conn.peer)
       
@@ -281,7 +301,8 @@ export function createSetupConnection(
 
       // 处理文件块（简化后，文件块不加密 JSON，直接处理）
       if (data.type === "file-chunk") {
-        const buffer = fileBuffersRef.current.get(conn.peer)
+        const bufferKey = data.itemId ?? findBufferKeyByPeer(conn.peer)
+        const buffer = bufferKey ? fileBuffersRef.current.get(bufferKey) : undefined
         if (buffer) {
           let bytes: Uint8Array
           if (isEncrypted && data.encrypted) {
@@ -314,7 +335,7 @@ export function createSetupConnection(
             const remainingBytes = buffer.size - buffer.received
             const remainingTime = speed > 0 ? Math.ceil(remainingBytes / speed) : undefined
             
-            updateItemProgress(buffer.itemId, {
+            updateItemProgress(buffer.localItemId, {
               progress: Math.round((buffer.received / buffer.size) * 100),
               transferredBytes: buffer.received,
               speed,
@@ -349,7 +370,7 @@ export function createSetupConnection(
         })
         notifyReceived("text")
       } else if (decryptedData.type === "file-start") {
-        const itemId = addItemWithId({
+        const localItemId = addItemWithId({
           type: "file",
           name: decryptedData.name,
           content: "",
@@ -359,24 +380,28 @@ export function createSetupConnection(
           progress: 0,
           transferredBytes: 0,
         })
-        
-        fileBuffersRef.current.set(conn.peer, {
+
+        const remoteItemId = decryptedData.itemId || localItemId
+        fileBuffersRef.current.set(remoteItemId, {
+          peerId: conn.peer,
           name: decryptedData.name,
           size: decryptedData.size,
           chunks: [],
           received: 0,
-          itemId,
+          localItemId,
+          remoteItemId,
           lastTime: Date.now(),
           lastBytes: 0,
           smoothedSpeed: 0,
         })
       } else if (decryptedData.type === "file-end") {
-        const buffer = fileBuffersRef.current.get(conn.peer)
+        const bufferKey = decryptedData.itemId || findBufferKeyByPeer(conn.peer)
+        const buffer = bufferKey ? fileBuffersRef.current.get(bufferKey) : undefined
         if (buffer) {
           const blob = new Blob(buffer.chunks as unknown as BlobPart[])
           const url = createTrackedBlobUrl(blob)
           
-          updateItemProgress(buffer.itemId, {
+          updateItemProgress(buffer.localItemId, {
             content: url,
             status: "completed",
             progress: 100,
@@ -389,7 +414,7 @@ export function createSetupConnection(
           notifyReceived(fileType, buffer.name)
           
           buffer.chunks = []
-          fileBuffersRef.current.delete(conn.peer)
+          fileBuffersRef.current.delete(buffer.remoteItemId)
         }
       } else if (decryptedData.type === "room-dissolved") {
         callbacks.addSystemMessage("房主已解散房间")
@@ -412,15 +437,16 @@ export function createSetupConnection(
       } else if (decryptedData.type === "pong") {
         handlePong(decryptedData.id)
       } else if (decryptedData.type === "file-cancel") {
-        const buffer = fileBuffersRef.current.get(conn.peer)
+        const bufferKey = decryptedData.itemId || findBufferKeyByPeer(conn.peer)
+        const buffer = bufferKey ? fileBuffersRef.current.get(bufferKey) : undefined
         if (buffer) {
-          updateItemProgress(buffer.itemId, {
+          updateItemProgress(buffer.localItemId, {
             status: "cancelled",
             speed: undefined,
           })
           
           buffer.chunks = []
-          fileBuffersRef.current.delete(conn.peer)
+          fileBuffersRef.current.delete(buffer.remoteItemId)
         }
         
         if (decryptedData.itemId) {

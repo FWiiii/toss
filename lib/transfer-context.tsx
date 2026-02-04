@@ -119,11 +119,13 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const peerRef = useRef<any>(null)
   const fileBuffersRef = useRef<Map<string, { 
+    peerId: string
     name: string
     size: number
     chunks: Uint8Array[]
     received: number
-    itemId: string
+    localItemId: string
+    remoteItemId: string
     lastTime: number
     lastBytes: number 
     smoothedSpeed: number
@@ -570,15 +572,15 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       cancelledTransfersRef.current.add(itemId)
     } else if (item.direction === "received") {
       for (const [peerId, buffer] of fileBuffersRef.current.entries()) {
-        if (buffer.itemId === itemId) {
+        if (buffer.localItemId === itemId) {
           buffer.chunks = []
           fileBuffersRef.current.delete(peerId)
           
-          const conn = connectionsRef.current.get(peerId)
+          const conn = connectionsRef.current.get(buffer.peerId)
           if (conn && conn.open) {
             conn.send({
               type: "file-cancel",
-              itemId: buffer.itemId,
+              itemId: buffer.remoteItemId,
             })
           }
           break
