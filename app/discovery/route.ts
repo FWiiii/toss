@@ -23,7 +23,21 @@ function getClientIp(request: NextRequest): string | null {
     if (ip) return ip
   }
   const realIp = request.headers.get("x-real-ip")
-  return realIp ?? null
+  if (realIp) return realIp
+
+  const reqIp = (request as unknown as { ip?: string }).ip
+  if (reqIp) return reqIp
+
+  const host = request.headers.get("host") || ""
+  if (
+    host.includes("localhost") ||
+    host.startsWith("127.0.0.1") ||
+    host.startsWith("[::1]")
+  ) {
+    return "127.0.0.1"
+  }
+
+  return null
 }
 
 function getIpGroup(ip: string): string {
