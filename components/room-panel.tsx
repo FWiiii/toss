@@ -24,6 +24,7 @@ export function RoomPanel() {
     errorMessage, 
     createRoom, 
     joinRoom, 
+    connectToPeer,
     leaveRoom, 
     peerCount, 
     isHost,
@@ -34,7 +35,7 @@ export function RoomPanel() {
   } = useTransfer()
   const { joinCode, clearJoinCode } = useJoinCode()
   const { devices: nearbyDevices, isLoading: isDiscoveryLoading } = useDeviceDiscovery({
-    enabled: !roomCode,
+    enabled: true,
     isHost,
     roomCode,
     peerId: selfPeerId,
@@ -117,21 +118,30 @@ export function RoomPanel() {
     )
   }
 
-  if (roomCode) {
+  const isConnected = connectionStatus === "connected" && peerCount > 0
+
+  if (roomCode || isConnected) {
     return (
       <div className={CARD_CLASS}>
         {/* Room Code Display */}
-        <div className="text-center mb-5">
-          <p className="text-xs text-muted-foreground mb-2 uppercase tracking-wider">房间代码</p>
-          <div className="flex items-center justify-center gap-2">
-            <span className="text-4xl font-mono font-bold tracking-[0.3em] text-foreground">
-              {formatCode(roomCode)}
-            </span>
-            <Button variant="ghost" size="icon-sm" onClick={handleCopyCode}>
-              {copied ? <Check className="w-5 h-5 text-green-500" /> : <Copy className="w-5 h-5" />}
-            </Button>
+        {roomCode ? (
+          <div className="text-center mb-5">
+            <p className="text-xs text-muted-foreground mb-2 uppercase tracking-wider">房间代码</p>
+            <div className="flex items-center justify-center gap-2">
+              <span className="text-4xl font-mono font-bold tracking-[0.3em] text-foreground">
+                {formatCode(roomCode)}
+              </span>
+              <Button variant="ghost" size="icon-sm" onClick={handleCopyCode}>
+                {copied ? <Check className="w-5 h-5 text-green-500" /> : <Copy className="w-5 h-5" />}
+              </Button>
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="text-center mb-5">
+            <p className="text-xs text-muted-foreground mb-2 uppercase tracking-wider">直连模式</p>
+            <div className="text-lg font-semibold text-foreground">已连接附近设备</div>
+          </div>
+        )}
 
         {/* Connection Status Display */}
         <ConnectionStatusDisplay
@@ -147,7 +157,7 @@ export function RoomPanel() {
 
         {/* Action Buttons */}
         <div className="flex gap-2">
-          {isHost && (
+          {isHost && roomCode && (
             <Button variant="outline" className="flex-1" onClick={() => setShowQRCode(true)}>
               <QrCode className="w-4 h-4 mr-2" />
               显示二维码
@@ -286,7 +296,7 @@ export function RoomPanel() {
                     </div>
                     <Button
                       size="sm"
-                      onClick={() => joinRoom(device.roomCode)}
+                      onClick={() => connectToPeer(device.peerId)}
                       disabled={isCreatingRoom || isJoiningRoom}
                     >
                       连接
