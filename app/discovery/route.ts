@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getRedisClient } from "@/lib/redis"
 
+export const dynamic = "force-dynamic"
+export const revalidate = 0
+
 type DeviceType = "mobile" | "desktop" | "tablet" | "unknown"
 
 type DiscoveryEntry = {
@@ -17,6 +20,12 @@ type DiscoveryEntry = {
 const DISCOVERY_TTL_SEC = 25
 const GROUP_TTL_SEC = 90
 const REDIS_PREFIX = "toss:discovery"
+
+function jsonNoStore(data: unknown, init?: Parameters<typeof NextResponse.json>[1]) {
+  const response = NextResponse.json(data, init)
+  response.headers.set("Cache-Control", "no-store")
+  return response
+}
 
 function getClientIp(request: NextRequest): string | null {
   const forwarded = request.headers.get("x-forwarded-for")
@@ -69,7 +78,7 @@ export async function POST(request: NextRequest) {
 
   const ip = getClientIp(request)
   if (!ip) {
-    return NextResponse.json({ ok: false }, { status: 400 })
+    return jsonNoStore({ ok: false }, { status: 400 })
   }
 
   let body: {
@@ -89,7 +98,7 @@ export async function POST(request: NextRequest) {
   }
 
   if (!body?.deviceId) {
-    return NextResponse.json({ ok: false }, { status: 400 })
+    return jsonNoStore({ ok: false }, { status: 400 })
   }
 
   const ipGroup = getIpGroup(ip)
@@ -103,11 +112,11 @@ export async function POST(request: NextRequest) {
     } catch {
       // Ignore cleanup errors
     }
-    return NextResponse.json({ ok: true })
+    return jsonNoStore({ ok: true })
   }
 
   if (!body.peerId || !body.name) {
-    return NextResponse.json({ ok: false }, { status: 400 })
+    return jsonNoStore({ ok: false }, { status: 400 })
   }
 
   const entry: DiscoveryEntry = {
@@ -131,10 +140,10 @@ export async function POST(request: NextRequest) {
       .expire(group, GROUP_TTL_SEC)
       .exec()
   } catch {
-    return NextResponse.json({ ok: false }, { status: 500 })
+    return jsonNoStore({ ok: false }, { status: 500 })
   }
 
-  return NextResponse.json({ ok: true })
+  return jsonNoStore({ ok: true })
 }
 
 export async function GET(request: NextRequest) {
@@ -142,7 +151,7 @@ export async function GET(request: NextRequest) {
 
   const ip = getClientIp(request)
   if (!ip) {
-    return NextResponse.json({ devices: [] })
+    return jsonNoStore({ devices: [] })
   }
 
   const ipGroup = getIpGroup(ip)
@@ -156,7 +165,7 @@ export async function GET(request: NextRequest) {
     const group = groupKey(ipGroup)
     const ids = await client.sMembers(group)
     if (ids.length === 0) {
-      return NextResponse.json({ devices: [] })
+      return jsonNoStore({ devices: [] })
     }
 
     const keys = ids.map((id) => deviceKey(ipGroup, id))
@@ -182,7 +191,7 @@ export async function GET(request: NextRequest) {
       await client.sRem(group, ...staleIds)
     }
   } catch {
-    return NextResponse.json({ devices: [] })
+    return jsonNoStore({ devices: [] })
   }
 
   const payload = devices
@@ -198,5 +207,5 @@ export async function GET(request: NextRequest) {
       lastSeen: entry.lastSeen,
     }))
 
-  return NextResponse.json({ devices: payload })
+  return jsonNoStore({ devices: payload })
 }
