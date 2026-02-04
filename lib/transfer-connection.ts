@@ -424,12 +424,12 @@ export function createSetupConnection(
         callbacks.setPeerCount(0)
       } else if (decryptedData.type === "ping") {
         try {
-          const pingData = { type: "ping", id: decryptedData.id }
+          const pongData = { type: "pong", id: decryptedData.id }
           if (isEncrypted) {
-            const encrypted = await encryptJSON(encryptor!, pingData)
+            const encrypted = await encryptJSON(encryptor!, pongData)
             conn.send({ type: "encrypted", encrypted })
           } else {
-            conn.send(pingData)
+            conn.send(pongData)
           }
         } catch (err) {
           console.error("Failed to send pong:", err)
