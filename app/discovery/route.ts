@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { getRedisClient } from "@/lib/redis"
 
 type DeviceType = "mobile" | "desktop" | "tablet" | "unknown"
 
@@ -13,8 +14,9 @@ type DiscoveryEntry = {
   ipGroup: string
 }
 
-const DISCOVERY_TTL_MS = 25 * 1000
-const discoveryStorage = new Map<string, DiscoveryEntry>()
+const DISCOVERY_TTL_SEC = 25
+const GROUP_TTL_SEC = 90
+const REDIS_PREFIX = "toss:discovery"
 
 function getClientIp(request: NextRequest): string | null {
   const forwarded = request.headers.get("x-forwarded-for")
@@ -54,17 +56,16 @@ function getIpGroup(ip: string): string {
   return ip
 }
 
-function cleanupStorage(now: number) {
-  for (const [key, entry] of discoveryStorage.entries()) {
-    if (now - entry.lastSeen > DISCOVERY_TTL_MS) {
-      discoveryStorage.delete(key)
-    }
-  }
+function deviceKey(ipGroup: string, deviceId: string) {
+  return `${REDIS_PREFIX}:device:${ipGroup}:${deviceId}`
+}
+
+function groupKey(ipGroup: string) {
+  return `${REDIS_PREFIX}:group:${ipGroup}`
 }
 
 export async function POST(request: NextRequest) {
   const now = Date.now()
-  cleanupStorage(now)
 
   const ip = getClientIp(request)
   if (!ip) {
@@ -92,10 +93,16 @@ export async function POST(request: NextRequest) {
   }
 
   const ipGroup = getIpGroup(ip)
-  const entryKey = `${ipGroup}:${body.deviceId}`
+  const entryKey = deviceKey(ipGroup, body.deviceId)
+  const group = groupKey(ipGroup)
 
   if (body.action === "unregister") {
-    discoveryStorage.delete(entryKey)
+    try {
+      const client = await getRedisClient()
+      await client.multi().del(entryKey).sRem(group, body.deviceId).exec()
+    } catch {
+      // Ignore cleanup errors
+    }
     return NextResponse.json({ ok: true })
   }
 
@@ -103,7 +110,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false }, { status: 400 })
   }
 
-  discoveryStorage.set(entryKey, {
+  const entry: DiscoveryEntry = {
     deviceId: body.deviceId,
     name: body.name,
     peerId: body.peerId,
@@ -112,14 +119,26 @@ export async function POST(request: NextRequest) {
     deviceType: body.deviceType ?? "unknown",
     lastSeen: now,
     ipGroup,
-  })
+  }
+
+  try {
+    const client = await getRedisClient()
+    const payload = JSON.stringify(entry)
+    await client
+      .multi()
+      .set(entryKey, payload, { EX: DISCOVERY_TTL_SEC })
+      .sAdd(group, body.deviceId)
+      .expire(group, GROUP_TTL_SEC)
+      .exec()
+  } catch {
+    return NextResponse.json({ ok: false }, { status: 500 })
+  }
 
   return NextResponse.json({ ok: true })
 }
 
 export async function GET(request: NextRequest) {
   const now = Date.now()
-  cleanupStorage(now)
 
   const ip = getClientIp(request)
   if (!ip) {
@@ -130,9 +149,43 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const deviceId = searchParams.get("deviceId")
 
-  const devices = Array.from(discoveryStorage.values())
-    .filter((entry) => entry.ipGroup === ipGroup)
-    .filter((entry) => entry.peerId)
+  let devices: DiscoveryEntry[] = []
+
+  try {
+    const client = await getRedisClient()
+    const group = groupKey(ipGroup)
+    const ids = await client.sMembers(group)
+    if (ids.length === 0) {
+      return NextResponse.json({ devices: [] })
+    }
+
+    const keys = ids.map((id) => deviceKey(ipGroup, id))
+    const values = await client.mGet(keys)
+    const staleIds: string[] = []
+
+    values.forEach((value, index) => {
+      if (!value) {
+        staleIds.push(ids[index])
+        return
+      }
+      try {
+        const entry = JSON.parse(value) as DiscoveryEntry
+        if (entry.peerId) {
+          devices.push(entry)
+        }
+      } catch {
+        staleIds.push(ids[index])
+      }
+    })
+
+    if (staleIds.length > 0) {
+      await client.sRem(group, ...staleIds)
+    }
+  } catch {
+    return NextResponse.json({ devices: [] })
+  }
+
+  const payload = devices
     .filter((entry) => (deviceId ? entry.deviceId !== deviceId : true))
     .sort((a, b) => b.lastSeen - a.lastSeen)
     .map((entry) => ({
@@ -145,5 +198,5 @@ export async function GET(request: NextRequest) {
       lastSeen: entry.lastSeen,
     }))
 
-  return NextResponse.json({ devices })
+  return NextResponse.json({ devices: payload })
 }
