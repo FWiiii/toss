@@ -125,6 +125,7 @@ export function createSetupConnection(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return async (conn: any, isOutgoing = false) => {
     let connectionTimeout: NodeJS.Timeout | null = null
+    let disconnectedTimer: NodeJS.Timeout | null = null
     
     if (isOutgoing) {
       connectionTimeout = setTimeout(() => {
@@ -167,6 +168,20 @@ export function createSetupConnection(
                 setError("连接失败，请确保两设备在同一网络或允许 P2P 连接")
               }
             }
+          } else if (pc.iceConnectionState === "disconnected") {
+            if (disconnectedTimer) {
+              clearTimeout(disconnectedTimer)
+            }
+            disconnectedTimer = setTimeout(() => {
+              if (pc.iceConnectionState === "disconnected") {
+                try {
+                  pc.restartIce()
+                } catch {}
+              }
+            }, 1000)
+          } else if (disconnectedTimer) {
+            clearTimeout(disconnectedTimer)
+            disconnectedTimer = null
           }
         }
       } else {
@@ -223,6 +238,7 @@ export function createSetupConnection(
 
     conn.on("close", () => {
       if (connectionTimeout) clearTimeout(connectionTimeout)
+      if (disconnectedTimer) clearTimeout(disconnectedTimer)
       connectionsRef.current.delete(conn.peer)
       removeBuffersForPeer(conn.peer)
       encryptorsRef.current.delete(conn.peer)
@@ -238,6 +254,7 @@ export function createSetupConnection(
     conn.on("error", (err: unknown) => {
       console.error("Connection error:", err)
       if (connectionTimeout) clearTimeout(connectionTimeout)
+      if (disconnectedTimer) clearTimeout(disconnectedTimer)
       connectionsRef.current.delete(conn.peer)
       removeBuffersForPeer(conn.peer)
       encryptorsRef.current.delete(conn.peer)
