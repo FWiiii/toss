@@ -31,8 +31,9 @@ export interface EncryptionKeyPair {
  * 会话加密器 - 用于加密和解密数据
  */
 export class SessionEncryptor {
-  private key: CryptoKey | null = null
-  private ivCounter: number = 0
+  private sendKey: CryptoKey | null = null
+  private recvKey: CryptoKey | null = null
+  private sendIvCounter: number = 0
   
   // 性能监控
   private encryptTimes: number[] = []
@@ -45,7 +46,7 @@ export class SessionEncryptor {
    * 从共享密钥派生加密密钥
    * 注意：双方使用相同的密钥进行加密和解密（对称加密）
    */
-  async deriveKeys(sharedSecret: ArrayBuffer): Promise<void> {
+  async deriveKeys(sharedSecret: ArrayBuffer, role: "initiator" | "responder"): Promise<void> {
     // 将共享密钥导入为原始密钥，用于 HKDF 派生
     const baseKey = await crypto.subtle.importKey(
       "raw",
@@ -57,19 +58,31 @@ export class SessionEncryptor {
       ["deriveBits", "deriveKey"] // HKDF 密钥需要 deriveBits 和 deriveKey 权限
     )
 
-    // 派生共享的加密密钥（双方使用相同的密钥）
-    this.key = await crypto.subtle.deriveKey(
-      {
-        name: "HKDF",
-        hash: "SHA-256",
-        salt: new Uint8Array(32), // 固定盐值（在实际应用中可以使用随机盐）
-        info: new TextEncoder().encode("toss-shared-key"), // 双方使用相同的 info
-      },
-      baseKey,
-      AES_GCM_ALGORITHM,
-      false,
-      ["encrypt", "decrypt"] // 同一个密钥可以用于加密和解密
-    )
+    const derive = async (info: string) => {
+      return await crypto.subtle.deriveKey(
+        {
+          name: "HKDF",
+          hash: "SHA-256",
+          salt: new Uint8Array(32), // 固定盐值（在实际应用中可以使用随机盐）
+          info: new TextEncoder().encode(info),
+        },
+        baseKey,
+        AES_GCM_ALGORITHM,
+        false,
+        ["encrypt", "decrypt"]
+      )
+    }
+
+    const keyA = await derive("toss-key-a")
+    const keyB = await derive("toss-key-b")
+
+    if (role === "initiator") {
+      this.sendKey = keyA
+      this.recvKey = keyB
+    } else {
+      this.sendKey = keyB
+      this.recvKey = keyA
+    }
   }
 
   /**
@@ -78,7 +91,7 @@ export class SessionEncryptor {
    */
   private generateIV(): Uint8Array {
     const iv = new Uint8Array(12) // AES-GCM 标准 IV 长度
-    const counter = this.ivCounter++
+    const counter = this.sendIvCounter++
     
     // 将计数器编码到 IV 中（前 8 字节）
     const view = new DataView(iv.buffer)
@@ -92,7 +105,7 @@ export class SessionEncryptor {
    * 加密数据
    */
   async encrypt(data: Uint8Array): Promise<Uint8Array> {
-    if (!this.key) {
+    if (!this.sendKey) {
       throw new Error("加密密钥未初始化")
     }
 
@@ -104,7 +117,7 @@ export class SessionEncryptor {
         iv: iv,
         tagLength: 128, // 128 位认证标签
       },
-      this.key,
+      this.sendKey,
       data
     )
 
@@ -131,7 +144,7 @@ export class SessionEncryptor {
    * 解密数据
    */
   async decrypt(encryptedData: Uint8Array): Promise<Uint8Array> {
-    if (!this.key) {
+    if (!this.recvKey) {
       throw new Error("解密密钥未初始化")
     }
 
@@ -150,7 +163,7 @@ export class SessionEncryptor {
         iv: iv,
         tagLength: 128,
       },
-      this.key,
+      this.recvKey,
       ciphertext
     )
 
@@ -173,7 +186,7 @@ export class SessionEncryptor {
    * 检查是否已初始化
    */
   isReady(): boolean {
-    return this.key !== null
+    return this.sendKey !== null && this.recvKey !== null
   }
 
   /**

@@ -251,7 +251,8 @@ export function createSetupConnection(
 
           // 创建加密器并派生密钥
           const encryptor = new SessionEncryptor()
-          await encryptor.deriveKeys(sharedSecret)
+          const role = pending.isOutgoing ? "initiator" : "responder"
+          await encryptor.deriveKeys(sharedSecret, role)
           encryptorsRef.current.set(conn.peer, encryptor)
 
           // 如果是接收方，现在发送自己的公钥
