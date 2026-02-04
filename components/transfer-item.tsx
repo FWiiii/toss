@@ -31,6 +31,39 @@ function formatTimeRemaining(seconds: number): string {
   return `${minutes}m ${remainingSeconds}s`
 }
 
+type PillStatus = "transferring" | "completed" | "cancelled" | "error"
+
+function getPillStatus(item: TransferItem): PillStatus | null {
+  if (item.type === "system") return null
+  if (item.status === "error") return "error"
+  if (item.status === "cancelled") return "cancelled"
+  if (item.status === "transferring" || item.status === "pending") return "transferring"
+  return "completed"
+}
+
+function StatusPill({ status }: { status: PillStatus }) {
+  const label =
+    status === "transferring" ? "传输中" :
+    status === "cancelled" ? "取消" :
+    status === "error" ? "失败" :
+    "完成"
+
+  const className =
+    status === "transferring"
+      ? "bg-accent/10 text-accent"
+      : status === "cancelled"
+        ? "bg-muted text-muted-foreground"
+        : status === "error"
+          ? "bg-destructive/10 text-destructive"
+          : "bg-foreground/5 text-foreground/80"
+
+  return (
+    <span className={cn("px-2 py-0.5 rounded-full text-[11px] font-medium", className)}>
+      {label}
+    </span>
+  )
+}
+
 function getFileIcon(name?: string) {
   if (!name) return FileIcon
   if (isImageFile(name)) return ImageIcon
@@ -378,6 +411,7 @@ export function TransferItemComponent({ item, onPreviewImage, onDownload, onCanc
   
   const isImage = item.type === "file" && isImageFile(item.name || "")
   const directionClass = item.direction === "sent" ? "border-l-2 border-l-foreground/60" : "border-l-2 border-l-accent/70"
+  const pillStatus = getPillStatus(item)
   
   return (
     <div
@@ -386,6 +420,11 @@ export function TransferItemComponent({ item, onPreviewImage, onDownload, onCanc
         directionClass
       )}
     >
+      {pillStatus && (
+        <div className="flex items-center justify-end mb-2">
+          <StatusPill status={pillStatus} />
+        </div>
+      )}
       {isImage ? (
         <ImageItem item={item} onPreviewImage={onPreviewImage} onDownload={onDownload} onCancel={onCancel} />
       ) : item.type === "file" ? (
