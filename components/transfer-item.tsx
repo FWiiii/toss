@@ -416,12 +416,12 @@ export function TransferItemComponent({ item, onPreviewImage, onDownload, onCanc
   return (
     <div
       className={cn(
-        "rounded-md border border-border/60 bg-card/50 px-3 py-2 hover:bg-card transition-colors",
+        "relative rounded-md border border-border/60 bg-card/50 px-3 py-2 pr-12 hover:bg-card transition-colors",
         directionClass
       )}
     >
       {pillStatus && (
-        <div className="flex items-center justify-end mb-2">
+        <div className="absolute right-2 top-2">
           <StatusPill status={pillStatus} />
         </div>
       )}
