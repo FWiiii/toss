@@ -43,9 +43,9 @@ function getFileIcon(name?: string) {
 function ProgressBar({ progress, className }: { progress: number; className?: string }) {
   const clampedProgress = Math.min(100, Math.max(0, progress))
   return (
-    <div className={cn("w-full h-1.5 bg-muted rounded-full overflow-hidden", className)}>
+    <div className={cn("w-full h-1 bg-muted rounded-full overflow-hidden", className)}>
       <div 
-        className="h-full bg-accent rounded-full will-change-transform transform-gpu"
+        className="h-full bg-foreground/70 rounded-full will-change-transform transform-gpu"
         style={{ 
           width: '100%',
           transform: `scaleX(${clampedProgress / 100})`,
@@ -377,12 +377,13 @@ export function TransferItemComponent({ item, onPreviewImage, onDownload, onCanc
   }
   
   const isImage = item.type === "file" && isImageFile(item.name || "")
+  const directionClass = item.direction === "sent" ? "border-l-2 border-l-foreground/60" : "border-l-2 border-l-accent/70"
   
   return (
     <div
       className={cn(
-        "rounded-lg p-3",
-        item.direction === "sent" ? "bg-primary/10 ml-8" : "bg-secondary mr-8"
+        "rounded-md border border-border/60 bg-card/50 px-3 py-2 hover:bg-card transition-colors",
+        directionClass
       )}
     >
       {isImage ? (

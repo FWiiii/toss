@@ -193,7 +193,11 @@ export function TransferPanel() {
       )}
 
       {/* Items List */}
-      <div ref={listRef} className="flex-1 lg:overflow-y-auto p-4 space-y-3 min-h-[300px] lg:min-h-0" style={{ willChange: 'scroll-position' }}>
+      <div
+        ref={listRef}
+        className="flex-1 lg:overflow-y-auto p-4 space-y-2 min-h-[300px] lg:min-h-0"
+        style={{ willChange: 'scroll-position' }}
+      >
         {items.length === 0 && !pendingShare ? (
           <EmptyState
             icon={Send}
