@@ -27,6 +27,12 @@ export function TransferPanel() {
   const completedItems = items.filter((item) => !(item.status === "transferring" || item.status === "pending"))
   const hasItems = activeItems.length > 0 || completedItems.length > 0
 
+  const sendFiles = useCallback(async (files: File[]) => {
+    for (const file of files) {
+      await sendFile(file)
+    }
+  }, [sendFile])
+
   // Handle shared content from Web Share Target
   useEffect(() => {
     if (!hasSharedContent || hasProcessedShareRef.current) {
@@ -39,9 +45,7 @@ export function TransferPanel() {
         if (sharedText) {
           sendText(sharedText)
         }
-        for (const file of sharedFiles) {
-          await sendFile(file)
-        }
+        await sendFiles(sharedFiles)
         clearSharedData()
       }, 500)
       return () => clearTimeout(timer)
@@ -65,12 +69,10 @@ export function TransferPanel() {
     setPendingShare(null)
     
     const timer = setTimeout(async () => {
-      for (const file of filesToSend) {
-        await sendFile(file)
-      }
+      await sendFiles(filesToSend)
     }, 500)
     return () => clearTimeout(timer)
-  }, [isConnected, pendingShare, sendFile])
+  }, [isConnected, pendingShare, sendFiles])
 
   // Auto scroll to bottom when new items arrive
   useEffect(() => {
@@ -146,9 +148,9 @@ export function TransferPanel() {
     
     const files = e.dataTransfer.files
     if (files.length > 0) {
-      sendFile(files[0])
+      sendFiles(Array.from(files))
     }
-  }, [isConnected, sendFile])
+  }, [isConnected, sendFiles])
 
   return (
     <div 
@@ -264,7 +266,7 @@ export function TransferPanel() {
         text={text}
         onTextChange={setText}
         onSendText={handleSendText}
-        onSendFile={sendFile}
+        onSendFiles={sendFiles}
         isConnected={isConnected}
         sendingCount={sendingCount}
       />

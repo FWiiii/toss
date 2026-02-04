@@ -9,7 +9,7 @@ type TransferInputProps = {
   text: string
   onTextChange: (text: string) => void
   onSendText: () => void
-  onSendFile: (file: File) => void
+  onSendFiles: (files: File[]) => void
   isConnected: boolean
   sendingCount?: number
 }
@@ -18,16 +18,16 @@ export function TransferInput({
   text, 
   onTextChange, 
   onSendText, 
-  onSendFile, 
+  onSendFiles, 
   isConnected,
   sendingCount = 0
 }: TransferInputProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (file && isConnected) {
-      onSendFile(file)
+    const fileList = e.target.files
+    if (fileList && fileList.length > 0 && isConnected) {
+      onSendFiles(Array.from(fileList))
     }
     if (fileInputRef.current) {
       fileInputRef.current.value = ""
@@ -57,6 +57,7 @@ export function TransferInput({
         <input
           type="file"
           ref={fileInputRef}
+          multiple
           onChange={handleFileSelect}
           className="hidden"
         />
