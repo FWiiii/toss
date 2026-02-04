@@ -12,20 +12,22 @@ import { Download, X } from "lucide-react"
 import { useCallback, useRef } from "react"
 
 interface QRCodeDisplayProps {
-  roomCode: string
+  roomCode: string | null
   open: boolean
   onOpenChange: (open: boolean) => void
 }
 
 export function QRCodeDisplay({ roomCode, open, onOpenChange }: QRCodeDisplayProps) {
   const qrRef = useRef<HTMLDivElement>(null)
+  const safeRoomCode = roomCode ?? ""
   
   // Generate the URL for the room
-  const roomUrl = typeof window !== "undefined" 
-    ? `${window.location.origin}?join=${roomCode}`
+  const roomUrl = typeof window !== "undefined" && safeRoomCode
+    ? `${window.location.origin}?join=${safeRoomCode}`
     : ""
 
   const handleDownload = useCallback(() => {
+    if (!safeRoomCode) return
     if (!qrRef.current) return
     
     const svg = qrRef.current.querySelector("svg")
@@ -47,13 +49,13 @@ export function QRCodeDisplay({ roomCode, open, onOpenChange }: QRCodeDisplayPro
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
       
       const link = document.createElement("a")
-      link.download = `toss-room-${roomCode}.png`
+      link.download = `toss-room-${safeRoomCode}.png`
       link.href = canvas.toDataURL("image/png")
       link.click()
     }
     
     img.src = "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(svgData)))
-  }, [roomCode])
+  }, [safeRoomCode])
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -67,18 +69,24 @@ export function QRCodeDisplay({ roomCode, open, onOpenChange }: QRCodeDisplayPro
             ref={qrRef}
             className="bg-white p-4 rounded-xl"
           >
-            <QRCodeSVG
-              value={roomUrl}
-              size={200}
-              level="M"
-              marginSize={0}
-            />
+            {safeRoomCode ? (
+              <QRCodeSVG
+                value={roomUrl}
+                size={200}
+                level="M"
+                marginSize={0}
+              />
+            ) : (
+              <div className="w-[200px] h-[200px] flex items-center justify-center text-xs text-muted-foreground">
+                暂无房间码
+              </div>
+            )}
           </div>
           
           <div className="text-center">
             <p className="text-sm text-muted-foreground mb-1">房间代码</p>
             <p className="text-2xl font-mono font-bold tracking-[0.2em]">
-              {roomCode.slice(0, 3)} {roomCode.slice(3)}
+              {safeRoomCode ? `${safeRoomCode.slice(0, 3)} ${safeRoomCode.slice(3)}` : "--"}
             </p>
           </div>
           
@@ -86,7 +94,7 @@ export function QRCodeDisplay({ roomCode, open, onOpenChange }: QRCodeDisplayPro
             使用其他设备扫描二维码即可加入房间
           </p>
           
-          <Button variant="secondary" size="sm" onClick={handleDownload}>
+          <Button variant="secondary" size="sm" onClick={handleDownload} disabled={!safeRoomCode}>
             <Download className="w-4 h-4 mr-2" />
             保存二维码
           </Button>
