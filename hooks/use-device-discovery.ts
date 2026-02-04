@@ -94,7 +94,7 @@ export function useDeviceDiscovery({ enabled, isHost, roomCode, peerId }: Discov
   }, [profile])
 
   const register = useCallback(async () => {
-    if (!profile || !isHost || !roomCode || !peerId) return
+    if (!profile || !peerId) return
     try {
       await fetch("/discovery", {
         method: "POST",
@@ -103,8 +103,8 @@ export function useDeviceDiscovery({ enabled, isHost, roomCode, peerId }: Discov
           deviceId: profile.deviceId,
           name: profile.name,
           peerId,
-          roomCode,
-          isHost: true,
+          roomCode: roomCode ?? "",
+          isHost,
           deviceType: profile.deviceType,
         }),
       })
@@ -114,7 +114,7 @@ export function useDeviceDiscovery({ enabled, isHost, roomCode, peerId }: Discov
   }, [profile, isHost, roomCode, peerId])
 
   useEffect(() => {
-    if (!profile || !isHost || !roomCode || !peerId) {
+    if (!profile || !peerId) {
       return
     }
 
