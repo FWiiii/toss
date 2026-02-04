@@ -79,13 +79,7 @@ export function createDataTransfer(
         transferredBytes: 0,
       })
 
-      const arrayBuffer = await file.arrayBuffer()
-      const uint8Array = new Uint8Array(arrayBuffer)
-      const totalSize = uint8Array.length
-      
-      let lastTime = Date.now()
-      let lastBytes = 0
-      let smoothedSpeed = 0
+      const totalSize = file.size
 
       for (const [peerId, conn] of refs.connectionsRef.current.entries()) {
         if (!conn.open) continue
@@ -117,7 +111,11 @@ export function createDataTransfer(
         }
 
         let offset = 0
-        while (offset < uint8Array.length) {
+        let chunkIndex = 0
+        let lastTime = Date.now()
+        let lastBytes = 0
+        let smoothedSpeed = 0
+        while (offset < totalSize) {
           if (refs.cancelledTransfersRef.current.has(itemId)) {
             cancelled = true
             try {
@@ -139,8 +137,9 @@ export function createDataTransfer(
             break
           }
           
-          const end = Math.min(offset + FILE_CHUNK_SIZE, uint8Array.length)
-          const chunk = uint8Array.subarray(offset, end)
+          const end = Math.min(offset + FILE_CHUNK_SIZE, totalSize)
+          const chunkBuffer = await file.slice(offset, end).arrayBuffer()
+          const chunk = new Uint8Array(chunkBuffer)
           
           try {
             if (isEncrypted) {
@@ -193,7 +192,8 @@ export function createDataTransfer(
           
           // 优化批量处理：使用 requestIdleCallback 或 setTimeout 给 UI 让路
           // 每处理 3 个块就让出控制权，避免阻塞主线程
-          if ((offset / FILE_CHUNK_SIZE) % 3 === 0) {
+          chunkIndex += 1
+          if (chunkIndex % 3 === 0) {
             // 优先使用 requestIdleCallback，如果不支持则使用 setTimeout
             if (typeof requestIdleCallback !== 'undefined') {
               await new Promise(resolve => {
