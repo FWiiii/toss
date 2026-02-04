@@ -32,6 +32,7 @@ type TransferContextType = {
   isJoiningRoom: boolean
   sendingCount: number
   isEncrypted: boolean
+  selfPeerId: string | null
   notificationSettings: {
     soundEnabled: boolean
     browserNotificationEnabled: boolean
@@ -72,6 +73,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
   const [sendingCount, setSendingCount] = useState(0)
   const [isEncrypted, setIsEncrypted] = useState(false)
   const [encryptionPerformance, setEncryptionPerformance] = useState<EncryptionPerformance | null>(null)
+  const [selfPeerId, setSelfPeerId] = useState<string | null>(null)
   
   // ============ Custom Hooks ============
   const {
@@ -305,6 +307,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     broadcastToConnections,
     setConnectionInfo,
     setPeerCount,
+    setSelfPeerId,
   }
 
   const { createRoom, joinRoom, leaveRoom: leaveRoomFn } = createRoomManagement(
@@ -476,6 +479,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
         isJoiningRoom,
         sendingCount,
         isEncrypted,
+        selfPeerId,
         notificationSettings,
         notificationPermission,
         updateNotificationSettings,
