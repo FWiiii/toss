@@ -80,25 +80,31 @@ export function createDataTransfer(
       })
 
       const totalSize = file.size
+      const peers = Array.from(refs.connectionsRef.current.entries())
+        .filter(([, conn]) => conn.open)
+        .map(([peerId, conn]) => {
+          const encryptor = encryptorsRef.current.get(peerId)
+          const isEncrypted = encryptor?.isReady() ?? false
+          return { peerId, conn, encryptor, isEncrypted, active: true }
+        })
 
-      for (const [peerId, conn] of refs.connectionsRef.current.entries()) {
-        if (!conn.open) continue
+      for (const peer of peers) {
+        if (!peer.conn.open) {
+          peer.active = false
+          continue
+        }
 
-        const encryptor = encryptorsRef.current.get(peerId)
-        const isEncrypted = encryptor?.isReady() ?? false
-
-        // 发送文件开始消息
         try {
-          if (isEncrypted) {
-            const encrypted = await encryptJSON(encryptor, {
+          if (peer.isEncrypted && peer.encryptor) {
+            const encrypted = await encryptJSON(peer.encryptor, {
               type: "file-start",
               name: file.name,
               size: file.size,
               itemId,
             })
-            conn.send({ type: "encrypted", encrypted })
+            peer.conn.send({ type: "encrypted", encrypted })
           } else {
-            conn.send({
+            peer.conn.send({
               type: "file-start",
               name: file.name,
               size: file.size,
@@ -106,114 +112,126 @@ export function createDataTransfer(
             })
           }
         } catch (error) {
+          peer.active = false
           console.error("Failed to send file-start:", error)
-          continue
         }
+      }
 
-        let offset = 0
-        let chunkIndex = 0
-        let lastTime = Date.now()
-        let lastBytes = 0
-        let smoothedSpeed = 0
-        while (offset < totalSize) {
-          if (refs.cancelledTransfersRef.current.has(itemId)) {
-            cancelled = true
+      let offset = 0
+      let chunkIndex = 0
+      let lastTime = Date.now()
+      let lastBytes = 0
+      let smoothedSpeed = 0
+
+      while (offset < totalSize) {
+        if (refs.cancelledTransfersRef.current.has(itemId)) {
+          cancelled = true
+          for (const peer of peers) {
+            if (!peer.active || !peer.conn.open) continue
             try {
-              if (isEncrypted) {
-                const encrypted = await encryptJSON(encryptor, {
+              if (peer.isEncrypted && peer.encryptor) {
+                const encrypted = await encryptJSON(peer.encryptor, {
                   type: "file-cancel",
                   itemId,
                 })
-                conn.send({ type: "encrypted", encrypted })
+                peer.conn.send({ type: "encrypted", encrypted })
               } else {
-                conn.send({
+                peer.conn.send({
                   type: "file-cancel",
                   itemId,
                 })
               }
             } catch (error) {
+              peer.active = false
               console.error("Failed to send file-cancel:", error)
             }
-            break
           }
-          
-          const end = Math.min(offset + FILE_CHUNK_SIZE, totalSize)
-          const chunkBuffer = await file.slice(offset, end).arrayBuffer()
-          const chunk = new Uint8Array(chunkBuffer)
-          
+          break
+        }
+        
+        const end = Math.min(offset + FILE_CHUNK_SIZE, totalSize)
+        const chunkBuffer = await file.slice(offset, end).arrayBuffer()
+        const chunk = new Uint8Array(chunkBuffer)
+        
+        for (const peer of peers) {
+          if (!peer.active || !peer.conn.open) continue
           try {
-            if (isEncrypted) {
+            if (peer.isEncrypted && peer.encryptor) {
               // 简化：只加密文件块，JSON 元数据不加密（减少双重加密）
-              const encryptedChunk = await encryptBytes(encryptor, chunk)
-              conn.send({
+              const encryptedChunk = await encryptBytes(peer.encryptor, chunk)
+              peer.conn.send({
                 type: "file-chunk",
                 itemId,
                 encrypted: encryptedChunk, // 直接发送加密后的 base64，不再次加密 JSON
               })
             } else {
-              conn.send({
+              peer.conn.send({
                 type: "file-chunk",
                 itemId,
                 data: uint8ToBase64(chunk),
               })
             }
           } catch (error) {
+            peer.active = false
             console.error("Failed to send file-chunk:", error)
-            break
-          }
-          
-          offset = end
-          
-          const now = Date.now()
-          if (now - lastTime >= 500 || offset >= totalSize) {
-            const timeDiff = (now - lastTime) / 1000
-            const bytesDiff = offset - lastBytes
-            const instantSpeed = timeDiff > 0 ? Math.round(bytesDiff / timeDiff) : 0
-            
-            // EMA smoothing (alpha = 0.2)
-            smoothedSpeed = smoothedSpeed === 0 
-              ? instantSpeed 
-              : Math.round(smoothedSpeed * 0.8 + instantSpeed * 0.2)
-            
-            const speed = smoothedSpeed
-            const remainingBytes = totalSize - offset
-            const remainingTime = speed > 0 ? Math.ceil(remainingBytes / speed) : undefined
-            
-            updateItemProgress(itemId, {
-              progress: Math.round((offset / totalSize) * 100),
-              transferredBytes: offset,
-              speed,
-              remainingTime,
-            })
-            
-            lastTime = now
-            lastBytes = offset
-          }
-          
-          // 优化批量处理：使用 requestIdleCallback 或 setTimeout 给 UI 让路
-          // 每处理 3 个块就让出控制权，避免阻塞主线程
-          chunkIndex += 1
-          if (chunkIndex % 3 === 0) {
-            // 优先使用 requestIdleCallback，如果不支持则使用 setTimeout
-            if (typeof requestIdleCallback !== 'undefined') {
-              await new Promise(resolve => {
-                requestIdleCallback(() => resolve(undefined), { timeout: 5 })
-              })
-            } else {
-              await new Promise(resolve => setTimeout(resolve, 0))
-            }
           }
         }
+        
+        offset = end
+        
+        const now = Date.now()
+        if (now - lastTime >= 500 || offset >= totalSize) {
+          const timeDiff = (now - lastTime) / 1000
+          const bytesDiff = offset - lastBytes
+          const instantSpeed = timeDiff > 0 ? Math.round(bytesDiff / timeDiff) : 0
+          
+          // EMA smoothing (alpha = 0.2)
+          smoothedSpeed = smoothedSpeed === 0 
+            ? instantSpeed 
+            : Math.round(smoothedSpeed * 0.8 + instantSpeed * 0.2)
+          
+          const speed = smoothedSpeed
+          const remainingBytes = totalSize - offset
+          const remainingTime = speed > 0 ? Math.ceil(remainingBytes / speed) : undefined
+          
+          updateItemProgress(itemId, {
+            progress: Math.round((offset / totalSize) * 100),
+            transferredBytes: offset,
+            speed,
+            remainingTime,
+          })
+          
+          lastTime = now
+          lastBytes = offset
+        }
+        
+        // 优化批量处理：使用 requestIdleCallback 或 setTimeout 给 UI 让路
+        // 每处理 3 个块就让出控制权，避免阻塞主线程
+        chunkIndex += 1
+        if (chunkIndex % 3 === 0) {
+          // 优先使用 requestIdleCallback，如果不支持则使用 setTimeout
+          if (typeof requestIdleCallback !== 'undefined') {
+            await new Promise(resolve => {
+              requestIdleCallback(() => resolve(undefined), { timeout: 5 })
+            })
+          } else {
+            await new Promise(resolve => setTimeout(resolve, 0))
+          }
+        }
+      }
 
-        if (!cancelled) {
+      if (!cancelled) {
+        for (const peer of peers) {
+          if (!peer.active || !peer.conn.open) continue
           try {
-            if (isEncrypted) {
-              const encrypted = await encryptJSON(encryptor, { type: "file-end", itemId })
-              conn.send({ type: "encrypted", encrypted })
+            if (peer.isEncrypted && peer.encryptor) {
+              const encrypted = await encryptJSON(peer.encryptor, { type: "file-end", itemId })
+              peer.conn.send({ type: "encrypted", encrypted })
             } else {
-              conn.send({ type: "file-end", itemId })
+              peer.conn.send({ type: "file-end", itemId })
             }
           } catch (error) {
+            peer.active = false
             console.error("Failed to send file-end:", error)
           }
         }
