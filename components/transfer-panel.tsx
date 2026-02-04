@@ -19,6 +19,7 @@ export function TransferPanel() {
   const [pendingShare, setPendingShare] = useState<{ files: File[], text: string } | null>(null)
   const [previewImage, setPreviewImage] = useState<{ url: string; name: string } | null>(null)
   const [showCompleted, setShowCompleted] = useState(false)
+  const [isSendingClipboard, setIsSendingClipboard] = useState(false)
   const listRef = useRef<HTMLDivElement>(null)
   const hasProcessedShareRef = useRef(false)
 
@@ -32,6 +33,46 @@ export function TransferPanel() {
       await sendFile(file)
     }
   }, [sendFile])
+
+  const handleSendClipboard = useCallback(async () => {
+    if (!isConnected || !navigator.clipboard) return
+    setIsSendingClipboard(true)
+
+    try {
+      const files: File[] = []
+      if (navigator.clipboard.read) {
+        try {
+          const items = await navigator.clipboard.read()
+          for (const item of items) {
+            const imageType = item.types.find((type) => type.startsWith("image/"))
+            if (imageType) {
+              const blob = await item.getType(imageType)
+              const ext = imageType.split("/")[1] || "png"
+              files.push(new File([blob], `clipboard-${Date.now()}.${ext}`, { type: imageType }))
+            }
+          }
+        } catch {
+          // Ignore if read permission is not granted
+        }
+      }
+
+      let textData = ""
+      try {
+        textData = await navigator.clipboard.readText()
+      } catch {
+        textData = ""
+      }
+
+      if (files.length > 0) {
+        await sendFiles(files)
+      }
+      if (textData.trim()) {
+        sendText(textData)
+      }
+    } finally {
+      setIsSendingClipboard(false)
+    }
+  }, [isConnected, sendFiles, sendText])
 
   // Handle shared content from Web Share Target
   useEffect(() => {
@@ -267,6 +308,8 @@ export function TransferPanel() {
         onTextChange={setText}
         onSendText={handleSendText}
         onSendFiles={sendFiles}
+        onSendClipboard={handleSendClipboard}
+        isSendingClipboard={isSendingClipboard}
         isConnected={isConnected}
         sendingCount={sendingCount}
       />

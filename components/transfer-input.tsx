@@ -3,13 +3,15 @@
 import { useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
-import { Send, Upload, Loader2 } from "lucide-react"
+import { Send, Upload, Loader2, Clipboard } from "lucide-react"
 
 type TransferInputProps = {
   text: string
   onTextChange: (text: string) => void
   onSendText: () => void
   onSendFiles: (files: File[]) => void
+  onSendClipboard?: () => void
+  isSendingClipboard?: boolean
   isConnected: boolean
   sendingCount?: number
 }
@@ -19,10 +21,13 @@ export function TransferInput({
   onTextChange, 
   onSendText, 
   onSendFiles, 
+  onSendClipboard,
+  isSendingClipboard = false,
   isConnected,
   sendingCount = 0
 }: TransferInputProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const clipboardAvailable = typeof navigator !== "undefined" && !!navigator.clipboard
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const fileList = e.target.files
@@ -69,6 +74,19 @@ export function TransferInput({
         >
           <Upload className="w-4 h-4 mr-2" />
           选择文件
+        </Button>
+        <Button
+          variant="outline"
+          className="flex-1"
+          onClick={() => onSendClipboard?.()}
+          disabled={!isConnected || !clipboardAvailable || isSendingClipboard}
+        >
+          {isSendingClipboard ? (
+            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+          ) : (
+            <Clipboard className="w-4 h-4 mr-2" />
+          )}
+          发送剪贴板
         </Button>
         <Button
           className="flex-1"
