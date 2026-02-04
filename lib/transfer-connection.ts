@@ -143,7 +143,8 @@ export function createSetupConnection(
       keyExchangePendingRef.current.set(conn.peer, { keyPair, isOutgoing })
     } catch (error) {
       console.error("Failed to generate key pair:", error)
-      setError("加密初始化失败")
+      const message = error instanceof Error ? error.message : "加密初始化失败"
+      setError(message)
       return
     }
 

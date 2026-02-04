@@ -19,6 +19,14 @@ const HKDF_ALGORITHM = {
   hash: "SHA-256",
 } as const
 
+function getSubtleCrypto(): SubtleCrypto {
+  const cryptoRef = globalThis.crypto
+  if (!cryptoRef?.subtle) {
+    throw new Error("Web Crypto API 不可用，请使用 HTTPS 或现代浏览器")
+  }
+  return cryptoRef.subtle
+}
+
 /**
  * 加密密钥对
  */
@@ -47,8 +55,9 @@ export class SessionEncryptor {
    * 注意：双方使用相同的密钥进行加密和解密（对称加密）
    */
   async deriveKeys(sharedSecret: ArrayBuffer, role: "initiator" | "responder"): Promise<void> {
+    const subtle = getSubtleCrypto()
     // 将共享密钥导入为原始密钥，用于 HKDF 派生
-    const baseKey = await crypto.subtle.importKey(
+    const baseKey = await subtle.importKey(
       "raw",
       sharedSecret,
       {
@@ -59,7 +68,7 @@ export class SessionEncryptor {
     )
 
     const derive = async (info: string) => {
-      return await crypto.subtle.deriveKey(
+      return await subtle.deriveKey(
         {
           name: "HKDF",
           hash: "SHA-256",
@@ -111,7 +120,8 @@ export class SessionEncryptor {
 
     const startTime = performance.now()
     const iv = this.generateIV()
-    const encrypted = await crypto.subtle.encrypt(
+    const subtle = getSubtleCrypto()
+    const encrypted = await subtle.encrypt(
       {
         name: "AES-GCM",
         iv: iv,
@@ -157,7 +167,8 @@ export class SessionEncryptor {
     const iv = encryptedData.slice(0, 12)
     const ciphertext = encryptedData.slice(12)
 
-    const decrypted = await crypto.subtle.decrypt(
+    const subtle = getSubtleCrypto()
+    const decrypted = await subtle.decrypt(
       {
         name: "AES-GCM",
         iv: iv,
@@ -236,7 +247,8 @@ export class SessionEncryptor {
  * 生成 ECDH 密钥对
  */
 export async function generateKeyPair(): Promise<EncryptionKeyPair> {
-  const keyPair = await crypto.subtle.generateKey(
+  const subtle = getSubtleCrypto()
+  const keyPair = await subtle.generateKey(
     ECDH_ALGORITHM,
     true, // 可导出（用于序列化公钥）
     ["deriveBits"] // 私钥只需要 deriveBits 来派生共享密钥
@@ -252,15 +264,17 @@ export async function generateKeyPair(): Promise<EncryptionKeyPair> {
  * 导出公钥为 ArrayBuffer（用于传输）
  */
 export async function exportPublicKey(publicKey: CryptoKey): Promise<ArrayBuffer> {
-  return await crypto.subtle.exportKey("raw", publicKey)
+  const subtle = getSubtleCrypto()
+  return await subtle.exportKey("raw", publicKey)
 }
 
 /**
  * 导入公钥（从接收到的数据）
  */
 export async function importPublicKey(publicKeyData: ArrayBuffer): Promise<CryptoKey> {
+  const subtle = getSubtleCrypto()
   // ECDH 公钥导入时不需要指定用途，它只作为 deriveBits 的参数使用
-  return await crypto.subtle.importKey(
+  return await subtle.importKey(
     "raw",
     publicKeyData,
     ECDH_ALGORITHM,
@@ -276,7 +290,8 @@ export async function deriveSharedSecret(
   privateKey: CryptoKey,
   peerPublicKey: CryptoKey
 ): Promise<ArrayBuffer> {
-  return await crypto.subtle.deriveBits(
+  const subtle = getSubtleCrypto()
+  return await subtle.deriveBits(
     {
       name: "ECDH",
       public: peerPublicKey,
