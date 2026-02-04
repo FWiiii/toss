@@ -94,12 +94,12 @@ export async function POST(request: NextRequest) {
   const ipGroup = getIpGroup(ip)
   const entryKey = `${ipGroup}:${body.deviceId}`
 
-  if (body.action === "unregister" || !body.isHost) {
+  if (body.action === "unregister") {
     discoveryStorage.delete(entryKey)
     return NextResponse.json({ ok: true })
   }
 
-  if (!body.peerId || !body.roomCode || !body.name) {
+  if (!body.peerId || !body.name) {
     return NextResponse.json({ ok: false }, { status: 400 })
   }
 
@@ -107,8 +107,8 @@ export async function POST(request: NextRequest) {
     deviceId: body.deviceId,
     name: body.name,
     peerId: body.peerId,
-    roomCode: body.roomCode,
-    isHost: true,
+    roomCode: body.roomCode ?? "",
+    isHost: Boolean(body.isHost),
     deviceType: body.deviceType ?? "unknown",
     lastSeen: now,
     ipGroup,
@@ -132,14 +132,15 @@ export async function GET(request: NextRequest) {
 
   const devices = Array.from(discoveryStorage.values())
     .filter((entry) => entry.ipGroup === ipGroup)
-    .filter((entry) => entry.isHost && entry.roomCode)
+    .filter((entry) => entry.peerId)
     .filter((entry) => (deviceId ? entry.deviceId !== deviceId : true))
     .sort((a, b) => b.lastSeen - a.lastSeen)
     .map((entry) => ({
       deviceId: entry.deviceId,
       name: entry.name,
       peerId: entry.peerId,
-      roomCode: entry.roomCode,
+      roomCode: entry.roomCode || "",
+      isHost: entry.isHost,
       deviceType: entry.deviceType,
       lastSeen: entry.lastSeen,
     }))
