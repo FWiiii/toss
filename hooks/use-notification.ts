@@ -13,6 +13,7 @@ const DEFAULT_SETTINGS: NotificationSettings = {
 }
 
 const STORAGE_KEY = "toss-notification-settings"
+const DEBUG_LOGS = process.env.NODE_ENV !== "production"
 
 export function useNotification() {
   const [settings, setSettings] = useState<NotificationSettings>(() => {
@@ -115,17 +116,25 @@ export function useNotification() {
     }
 
     let permission = Notification.permission
-    console.log("Current notification permission:", permission)
+    if (DEBUG_LOGS) {
+      console.log("Current notification permission:", permission)
+    }
 
     if (permission === "default") {
-      console.log("Requesting notification permission...")
+      if (DEBUG_LOGS) {
+        console.log("Requesting notification permission...")
+      }
       permission = await requestNotificationPermission()
-      console.log("Permission after request:", permission)
+      if (DEBUG_LOGS) {
+        console.log("Permission after request:", permission)
+      }
     }
 
     if (permission === "granted") {
       try {
-        console.log("Creating notification:", title)
+        if (DEBUG_LOGS) {
+          console.log("Creating notification:", title)
+        }
         const notification = new Notification(title, {
           icon: "/logo-rounded.svg",
           badge: "/logo-rounded.svg",
@@ -140,12 +149,16 @@ export function useNotification() {
           window.focus()
           notification.close()
         }
-        console.log("Notification created successfully")
+        if (DEBUG_LOGS) {
+          console.log("Notification created successfully")
+        }
       } catch (error) {
         console.error("Failed to show notification:", error)
       }
     } else {
-      console.log("Notification permission denied or not granted:", permission)
+      if (DEBUG_LOGS) {
+        console.log("Notification permission denied or not granted:", permission)
+      }
     }
   }, [settings.browserNotificationEnabled, requestNotificationPermission])
 
