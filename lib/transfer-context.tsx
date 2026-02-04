@@ -5,7 +5,7 @@ import type { TransferItem, ConnectionStatus, ConnectionType, ConnectionInfo, Co
 import { useNotification } from "@/hooks/use-notification"
 import { useTransferItems } from "@/hooks/use-transfer-items"
 import { useConnectionQuality } from "@/hooks/use-connection-quality"
-import { SessionEncryptor, generateKeyPair } from "./crypto"
+import { SessionEncryptor, generateKeyPair, encryptJSON } from "./crypto"
 import { PEER_OPTIONS } from "./peer-config"
 import { createSetupConnection, createAttemptReconnect, type ConnectionRefs, type ConnectionCallbacks } from "./transfer-connection"
 import { createRoomManagement, type RoomCallbacks } from "./transfer-room"
