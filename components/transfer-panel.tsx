@@ -18,10 +18,14 @@ export function TransferPanel() {
   const [isDragging, setIsDragging] = useState(false)
   const [pendingShare, setPendingShare] = useState<{ files: File[], text: string } | null>(null)
   const [previewImage, setPreviewImage] = useState<{ url: string; name: string } | null>(null)
+  const [showCompleted, setShowCompleted] = useState(false)
   const listRef = useRef<HTMLDivElement>(null)
   const hasProcessedShareRef = useRef(false)
 
   const isConnected = connectionStatus === "connected" && peerCount > 0
+  const activeItems = items.filter((item) => item.status === "transferring" || item.status === "pending")
+  const completedItems = items.filter((item) => !(item.status === "transferring" || item.status === "pending"))
+  const hasItems = activeItems.length > 0 || completedItems.length > 0
 
   // Handle shared content from Web Share Target
   useEffect(() => {
@@ -198,22 +202,60 @@ export function TransferPanel() {
         className="flex-1 lg:overflow-y-auto p-4 space-y-2 min-h-[300px] lg:min-h-0"
         style={{ willChange: 'scroll-position' }}
       >
-        {items.length === 0 && !pendingShare ? (
+        {!hasItems && !pendingShare ? (
           <EmptyState
             icon={Send}
             description={isConnected ? "发送文本或文件开始传输" : "连接设备后开始传输"}
             containerClassName="h-full"
           />
         ) : (
-          items.map((item) => (
-            <TransferItemComponent
-              key={item.id}
-              item={item}
-              onPreviewImage={handlePreviewImage}
-              onDownload={handleDownload}
-              onCancel={cancelTransfer}
-            />
-          ))
+          <div className="space-y-3">
+            {activeItems.length > 0 && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <span>进行中</span>
+                  <span>{activeItems.length}</span>
+                </div>
+                <div className="space-y-2">
+                  {activeItems.map((item) => (
+                    <TransferItemComponent
+                      key={item.id}
+                      item={item}
+                      onPreviewImage={handlePreviewImage}
+                      onDownload={handleDownload}
+                      onCancel={cancelTransfer}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {completedItems.length > 0 && (
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  onClick={() => setShowCompleted((prev) => !prev)}
+                  className="w-full flex items-center justify-between text-xs text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  <span>已完成</span>
+                  <span>{showCompleted ? "收起" : `展开 ${completedItems.length}`}</span>
+                </button>
+                {showCompleted && (
+                  <div className="space-y-2">
+                    {completedItems.map((item) => (
+                      <TransferItemComponent
+                        key={item.id}
+                        item={item}
+                        onPreviewImage={handlePreviewImage}
+                        onDownload={handleDownload}
+                        onCancel={cancelTransfer}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         )}
       </div>
 
