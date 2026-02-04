@@ -13,7 +13,7 @@ import { ConnectionStatusDisplay } from "@/components/connection-status"
 import { Copy, Check, LogOut, Loader2, AlertCircle, QrCode, ScanLine, Laptop, Smartphone, Tablet } from "lucide-react"
 
 // Common card style to reduce duplication
-const CARD_CLASS = "rounded-xl border border-border bg-card p-6"
+const CARD_CLASS = "relative overflow-hidden rounded-xl border border-border bg-card p-6"
 
 export function RoomPanel() {
   const { 
@@ -44,6 +44,7 @@ export function RoomPanel() {
   const [copied, setCopied] = useState(false)
   const [showQRCode, setShowQRCode] = useState(false)
   const [showScanner, setShowScanner] = useState(false)
+  const [connectingDevice, setConnectingDevice] = useState<string | null>(null)
 
   // Auto-join when code is provided via URL
   useEffect(() => {
@@ -58,6 +59,13 @@ export function RoomPanel() {
     setInputCode(code)
     joinRoom(code)
   }
+
+  useEffect(() => {
+    if (!connectingDevice) return
+    if (connectionStatus !== "connecting" && !isJoiningRoom) {
+      setConnectingDevice(null)
+    }
+  }, [connectingDevice, connectionStatus, isJoiningRoom])
 
   const handleCopyCode = async () => {
     if (roomCode) {
@@ -119,6 +127,7 @@ export function RoomPanel() {
   }
 
   const isConnected = connectionStatus === "connected" && peerCount > 0
+  const showConnectOverlay = Boolean(connectingDevice && (connectionStatus === "connecting" || isJoiningRoom))
 
   if (roomCode || isConnected) {
     return (
@@ -185,6 +194,17 @@ export function RoomPanel() {
 
   return (
     <div className={CARD_CLASS}>
+      <div
+        className={`absolute inset-0 z-10 flex items-center justify-center bg-card/80 backdrop-blur-sm transition-all duration-200 ${
+          showConnectOverlay ? "opacity-100 scale-100" : "opacity-0 scale-95 pointer-events-none"
+        }`}
+        aria-hidden={!showConnectOverlay}
+      >
+        <div className="flex items-center gap-2 text-sm text-foreground">
+          <Loader2 className="w-4 h-4 animate-spin" />
+          <span>{connectingDevice ? `正在连接 ${connectingDevice}` : "正在连接..."}</span>
+        </div>
+      </div>
       <div className="space-y-6">
         <div>
           <Button
@@ -296,7 +316,10 @@ export function RoomPanel() {
                     </div>
                     <Button
                       size="sm"
-                      onClick={() => connectToPeer(device.peerId)}
+                      onClick={() => {
+                        setConnectingDevice(device.name || "设备")
+                        connectToPeer(device.peerId)
+                      }}
                       disabled={isCreatingRoom || isJoiningRoom}
                     >
                       连接
