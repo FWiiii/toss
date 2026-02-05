@@ -21,11 +21,25 @@ type DiscoveryEntry = {
 const DISCOVERY_TTL_SEC = 25
 const GROUP_TTL_SEC = 90
 const REDIS_PREFIX = "toss:discovery"
+const REDIS_TIMEOUT_MS = 4000
 
 function jsonNoStore(data: unknown, init?: Parameters<typeof NextResponse.json>[1]) {
   const response = NextResponse.json(data, init)
   response.headers.set("Cache-Control", "no-store")
   return response
+}
+
+async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: NodeJS.Timeout
+  const timeout = new Promise<T>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label} timeout`)), ms)
+  })
+
+  try {
+    return await Promise.race([promise, timeout])
+  } finally {
+    clearTimeout(timer!)
+  }
 }
 
 function normalizeIp(raw: string): string | null {
@@ -151,6 +165,11 @@ export async function POST(request: NextRequest) {
     return jsonNoStore({ ok: false }, { status: 400 })
   }
 
+  const { searchParams } = new URL(request.url)
+  if (searchParams.get("health") === "1") {
+    return jsonNoStore({ ok: true, now })
+  }
+
   let body: {
     deviceId?: string
     name?: string
@@ -176,11 +195,11 @@ export async function POST(request: NextRequest) {
 
   if (body.action === "unregister") {
     try {
-      const client = await getRedisClient()
+      const client = await withTimeout(getRedisClient(), REDIS_TIMEOUT_MS, "redis-connect")
       const pipeline = client.multi()
       entryKeys.forEach((key) => pipeline.del(key))
       groupKeys.forEach((key) => pipeline.sRem(key, body.deviceId))
-      await pipeline.exec()
+      await withTimeout(pipeline.exec(), REDIS_TIMEOUT_MS, "redis-exec")
     } catch {
       // Ignore cleanup errors
     }
@@ -202,7 +221,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const client = await getRedisClient()
+    const client = await withTimeout(getRedisClient(), REDIS_TIMEOUT_MS, "redis-connect")
     const pipeline = client.multi()
     ipGroups.forEach((group) => {
       const payload = JSON.stringify({ ...entryBase, ipGroup: group })
@@ -210,7 +229,7 @@ export async function POST(request: NextRequest) {
       pipeline.sAdd(groupKey(group), body.deviceId)
       pipeline.expire(groupKey(group), GROUP_TTL_SEC)
     })
-    await pipeline.exec()
+    await withTimeout(pipeline.exec(), REDIS_TIMEOUT_MS, "redis-exec")
   } catch {
     return jsonNoStore({ ok: false }, { status: 500 })
   }
@@ -230,22 +249,25 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const deviceId = searchParams.get("deviceId")
   const debug = searchParams.get("debug") === "1"
+  if (searchParams.get("health") === "1") {
+    return jsonNoStore({ ok: true, now })
+  }
 
   const devicesById = new Map<string, DiscoveryEntry>()
   const groupSizes: Record<string, number> = {}
 
   try {
-    const client = await getRedisClient()
+    const client = await withTimeout(getRedisClient(), REDIS_TIMEOUT_MS, "redis-connect")
     for (const group of ipGroups) {
       const groupRedisKey = groupKey(group)
-      const ids = await client.sMembers(groupRedisKey)
+      const ids = await withTimeout(client.sMembers(groupRedisKey), REDIS_TIMEOUT_MS, "redis-smembers")
       groupSizes[group] = ids.length
       if (ids.length === 0) {
         continue
       }
 
       const keys = ids.map((id) => deviceKey(group, id))
-      const values = await client.mGet(keys)
+      const values = await withTimeout(client.mGet(keys), REDIS_TIMEOUT_MS, "redis-mget")
       const staleIds: string[] = []
 
       values.forEach((value, index) => {
@@ -267,7 +289,7 @@ export async function GET(request: NextRequest) {
       })
 
       if (staleIds.length > 0) {
-        await client.sRem(groupRedisKey, ...staleIds)
+        await withTimeout(client.sRem(groupRedisKey, ...staleIds), REDIS_TIMEOUT_MS, "redis-srem")
       }
     }
   } catch {
