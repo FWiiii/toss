@@ -182,8 +182,19 @@ export async function POST(request: NextRequest) {
   } | null = null
 
   try {
-    body = await request.json()
-  } catch {
+    const text = await withTimeout(request.text(), 2000, "body")
+    body = text ? (JSON.parse(text) as typeof body) : null
+  } catch (error) {
+    if (debug) {
+      return jsonNoStore(
+        {
+          ok: false,
+          error: error instanceof Error ? error.message : "body parse error",
+          now,
+        },
+        { status: 400 }
+      )
+    }
     body = null
   }
 
