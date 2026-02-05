@@ -28,17 +28,81 @@ function jsonNoStore(data: unknown, init?: Parameters<typeof NextResponse.json>[
   return response
 }
 
-function getClientIp(request: NextRequest): string | null {
-  const forwarded = request.headers.get("x-forwarded-for")
-  if (forwarded) {
-    const ip = forwarded.split(",")[0]?.trim()
-    if (ip) return ip
+function normalizeIp(raw: string): string | null {
+  let ip = raw.trim()
+  if (!ip) return null
+
+  if (ip.startsWith("for=")) {
+    ip = ip.slice(4)
   }
-  const realIp = request.headers.get("x-real-ip")
-  if (realIp) return realIp
+
+  if (ip.startsWith("\"") && ip.endsWith("\"")) {
+    ip = ip.slice(1, -1)
+  }
+
+  if (ip.startsWith("[")) {
+    const end = ip.indexOf("]")
+    if (end > 0) {
+      ip = ip.slice(1, end)
+    }
+  }
+
+  if (ip.includes("%")) {
+    ip = ip.split("%")[0]
+  }
+
+  const ipv4PortMatch = ip.match(/^(\d{1,3}(?:\.\d{1,3}){3}):\d+$/)
+  if (ipv4PortMatch) {
+    ip = ipv4PortMatch[1]
+  }
+
+  return ip || null
+}
+
+function parseForwardedFor(value: string | null): string[] {
+  if (!value) return []
+  return value
+    .split(",")
+    .map((entry) => normalizeIp(entry))
+    .filter((entry): entry is string => Boolean(entry))
+}
+
+function parseForwardedHeader(value: string | null): string[] {
+  if (!value) return []
+  const entries = value.split(";").map((entry) => entry.trim())
+  const ips: string[] = []
+  entries.forEach((entry) => {
+    if (entry.startsWith("for=")) {
+      const ip = normalizeIp(entry)
+      if (ip) ips.push(ip)
+    }
+  })
+  return ips
+}
+
+function getClientIps(request: NextRequest): string[] {
+  const ips = new Set<string>()
+
+  parseForwardedFor(request.headers.get("x-forwarded-for")).forEach((ip) => ips.add(ip))
+  parseForwardedHeader(request.headers.get("forwarded")).forEach((ip) => ips.add(ip))
+
+  const headerCandidates = [
+    request.headers.get("x-real-ip"),
+    request.headers.get("cf-connecting-ip"),
+    request.headers.get("x-client-ip"),
+  ]
+
+  headerCandidates.forEach((value) => {
+    if (!value) return
+    const ip = normalizeIp(value)
+    if (ip) ips.add(ip)
+  })
 
   const reqIp = (request as unknown as { ip?: string }).ip
-  if (reqIp) return reqIp
+  if (reqIp) {
+    const ip = normalizeIp(reqIp)
+    if (ip) ips.add(ip)
+  }
 
   const host = request.headers.get("host") || ""
   if (
@@ -46,10 +110,10 @@ function getClientIp(request: NextRequest): string | null {
     host.startsWith("127.0.0.1") ||
     host.startsWith("[::1]")
   ) {
-    return "127.0.0.1"
+    ips.add("127.0.0.1")
   }
 
-  return null
+  return Array.from(ips)
 }
 
 function getIpGroup(ip: string): string {
@@ -74,11 +138,16 @@ function groupKey(ipGroup: string) {
   return `${REDIS_PREFIX}:group:${ipGroup}`
 }
 
+function uniqueGroups(ips: string[]) {
+  return Array.from(new Set(ips.map(getIpGroup)))
+}
+
 export async function POST(request: NextRequest) {
   const now = Date.now()
 
-  const ip = getClientIp(request)
-  if (!ip) {
+  const ips = getClientIps(request)
+  const ipGroups = uniqueGroups(ips)
+  if (ipGroups.length === 0) {
     return jsonNoStore({ ok: false }, { status: 400 })
   }
 
@@ -102,14 +171,16 @@ export async function POST(request: NextRequest) {
     return jsonNoStore({ ok: false }, { status: 400 })
   }
 
-  const ipGroup = getIpGroup(ip)
-  const entryKey = deviceKey(ipGroup, body.deviceId)
-  const group = groupKey(ipGroup)
+  const entryKeys = ipGroups.map((group) => deviceKey(group, body.deviceId))
+  const groupKeys = ipGroups.map((group) => groupKey(group))
 
   if (body.action === "unregister") {
     try {
       const client = await getRedisClient()
-      await client.multi().del(entryKey).sRem(group, body.deviceId).exec()
+      const pipeline = client.multi()
+      entryKeys.forEach((key) => pipeline.del(key))
+      groupKeys.forEach((key) => pipeline.sRem(key, body.deviceId))
+      await pipeline.exec()
     } catch {
       // Ignore cleanup errors
     }
@@ -120,7 +191,7 @@ export async function POST(request: NextRequest) {
     return jsonNoStore({ ok: false }, { status: 400 })
   }
 
-  const entry: DiscoveryEntry = {
+  const entryBase: Omit<DiscoveryEntry, "ipGroup"> = {
     deviceId: body.deviceId,
     name: body.name,
     peerId: body.peerId,
@@ -128,18 +199,18 @@ export async function POST(request: NextRequest) {
     isHost: Boolean(body.isHost),
     deviceType: body.deviceType ?? "unknown",
     lastSeen: now,
-    ipGroup,
   }
 
   try {
     const client = await getRedisClient()
-    const payload = JSON.stringify(entry)
-    await client
-      .multi()
-      .set(entryKey, payload, { EX: DISCOVERY_TTL_SEC })
-      .sAdd(group, body.deviceId)
-      .expire(group, GROUP_TTL_SEC)
-      .exec()
+    const pipeline = client.multi()
+    ipGroups.forEach((group) => {
+      const payload = JSON.stringify({ ...entryBase, ipGroup: group })
+      pipeline.set(deviceKey(group, body.deviceId), payload, { EX: DISCOVERY_TTL_SEC })
+      pipeline.sAdd(groupKey(group), body.deviceId)
+      pipeline.expire(groupKey(group), GROUP_TTL_SEC)
+    })
+    await pipeline.exec()
   } catch {
     return jsonNoStore({ ok: false }, { status: 500 })
   }
@@ -150,52 +221,60 @@ export async function POST(request: NextRequest) {
 export async function GET(request: NextRequest) {
   const now = Date.now()
 
-  const ip = getClientIp(request)
-  if (!ip) {
+  const ips = getClientIps(request)
+  const ipGroups = uniqueGroups(ips)
+  if (ipGroups.length === 0) {
     return jsonNoStore({ devices: [] })
   }
 
-  const ipGroup = getIpGroup(ip)
   const { searchParams } = new URL(request.url)
   const deviceId = searchParams.get("deviceId")
+  const debug = searchParams.get("debug") === "1"
 
-  let devices: DiscoveryEntry[] = []
+  const devicesById = new Map<string, DiscoveryEntry>()
+  const groupSizes: Record<string, number> = {}
 
   try {
     const client = await getRedisClient()
-    const group = groupKey(ipGroup)
-    const ids = await client.sMembers(group)
-    if (ids.length === 0) {
-      return jsonNoStore({ devices: [] })
-    }
-
-    const keys = ids.map((id) => deviceKey(ipGroup, id))
-    const values = await client.mGet(keys)
-    const staleIds: string[] = []
-
-    values.forEach((value, index) => {
-      if (!value) {
-        staleIds.push(ids[index])
-        return
+    for (const group of ipGroups) {
+      const groupRedisKey = groupKey(group)
+      const ids = await client.sMembers(groupRedisKey)
+      groupSizes[group] = ids.length
+      if (ids.length === 0) {
+        continue
       }
-      try {
-        const entry = JSON.parse(value) as DiscoveryEntry
-        if (entry.peerId) {
-          devices.push(entry)
+
+      const keys = ids.map((id) => deviceKey(group, id))
+      const values = await client.mGet(keys)
+      const staleIds: string[] = []
+
+      values.forEach((value, index) => {
+        if (!value) {
+          staleIds.push(ids[index])
+          return
         }
-      } catch {
-        staleIds.push(ids[index])
-      }
-    })
+        try {
+          const entry = JSON.parse(value) as DiscoveryEntry
+          if (!entry.peerId) return
 
-    if (staleIds.length > 0) {
-      await client.sRem(group, ...staleIds)
+          const existing = devicesById.get(entry.deviceId)
+          if (!existing || existing.lastSeen < entry.lastSeen) {
+            devicesById.set(entry.deviceId, entry)
+          }
+        } catch {
+          staleIds.push(ids[index])
+        }
+      })
+
+      if (staleIds.length > 0) {
+        await client.sRem(groupRedisKey, ...staleIds)
+      }
     }
   } catch {
     return jsonNoStore({ devices: [] })
   }
 
-  const payload = devices
+  const payload = Array.from(devicesById.values())
     .filter((entry) => (deviceId ? entry.deviceId !== deviceId : true))
     .sort((a, b) => b.lastSeen - a.lastSeen)
     .map((entry) => ({
@@ -207,6 +286,19 @@ export async function GET(request: NextRequest) {
       deviceType: entry.deviceType,
       lastSeen: entry.lastSeen,
     }))
+
+  if (debug) {
+    return jsonNoStore({
+      devices: payload,
+      debug: {
+        ipCandidates: ips,
+        ipGroups,
+        groupSizes,
+        deviceId,
+        now,
+      },
+    })
+  }
 
   return jsonNoStore({ devices: payload })
 }
