@@ -114,7 +114,10 @@ export function useDeviceDiscovery({ enabled, isHost, roomCode, peerId }: Discov
   }, [profile, isHost, roomCode, peerId])
 
   useEffect(() => {
-    if (!profile || !peerId) {
+    if (!enabled || !profile || !peerId) {
+      if (!enabled && profile) {
+        unregister()
+      }
       return
     }
 
@@ -125,7 +128,7 @@ export function useDeviceDiscovery({ enabled, isHost, roomCode, peerId }: Discov
       clearInterval(interval)
       unregister()
     }
-  }, [profile, isHost, roomCode, peerId, register, unregister])
+  }, [enabled, profile, isHost, roomCode, peerId, register, unregister])
 
   const refresh = useCallback(async () => {
     if (!profile) return

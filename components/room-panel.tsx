@@ -34,8 +34,9 @@ export function RoomPanel() {
     selfPeerId
   } = useTransfer()
   const { joinCode, clearJoinCode } = useJoinCode()
+  const discoveryEnabled = !roomCode && (connectionStatus === "disconnected" || connectionStatus === "error" || connectionStatus === "dissolved")
   const { devices: nearbyDevices, isLoading: isDiscoveryLoading } = useDeviceDiscovery({
-    enabled: true,
+    enabled: discoveryEnabled,
     isHost,
     roomCode,
     peerId: selfPeerId,
