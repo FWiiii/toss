@@ -166,6 +166,7 @@ export async function POST(request: NextRequest) {
   }
 
   const { searchParams } = new URL(request.url)
+  const debug = searchParams.get("debug") === "1"
   if (searchParams.get("health") === "1") {
     return jsonNoStore({ ok: true, now })
   }
@@ -230,7 +231,18 @@ export async function POST(request: NextRequest) {
       pipeline.expire(groupKey(group), GROUP_TTL_SEC)
     })
     await withTimeout(pipeline.exec(), REDIS_TIMEOUT_MS, "redis-exec")
-  } catch {
+  } catch (error) {
+    if (debug) {
+      return jsonNoStore(
+        {
+          ok: false,
+          error: error instanceof Error ? error.message : "redis error",
+          now,
+          ipGroups,
+        },
+        { status: 500 }
+      )
+    }
     return jsonNoStore({ ok: false }, { status: 500 })
   }
 
@@ -292,7 +304,23 @@ export async function GET(request: NextRequest) {
         await withTimeout(client.sRem(groupRedisKey, ...staleIds), REDIS_TIMEOUT_MS, "redis-srem")
       }
     }
-  } catch {
+  } catch (error) {
+    if (debug) {
+      return jsonNoStore(
+        {
+          devices: [],
+          debug: {
+            ipCandidates: ips,
+            ipGroups,
+            groupSizes,
+            deviceId,
+            now,
+            error: error instanceof Error ? error.message : "redis error",
+          },
+        },
+        { status: 500 }
+      )
+    }
     return jsonNoStore({ devices: [] })
   }
 
