@@ -18,7 +18,6 @@ export type RoomCallbacks = {
   broadcastToConnections: (data: any) => Promise<void>
   setConnectionInfo: (info: any) => void
   setPeerCount: (count: number) => void
-  setSelfPeerId: (peerId: string | null) => void
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -40,7 +39,6 @@ export function createRoomManagement(
     broadcastToConnections,
     setConnectionInfo,
     setPeerCount,
-    setSelfPeerId,
   } = callbacks
 
   const createRoom = async () => {
@@ -68,10 +66,9 @@ export function createRoomManagement(
 
       const peer = new Peer(peerId, getPeerOptions(forceRelay))
 
-      peer.on("open", (id) => {
+      peer.on("open", () => {
         setIsCreatingRoom(false)
         setConnectionStatus("connecting")
-        setSelfPeerId(id)
       })
 
       peer.on("connection", (conn) => {
@@ -136,9 +133,8 @@ export function createRoomManagement(
 
       const peer = new Peer(getPeerOptions(forceRelay))
 
-      peer.on("open", (id) => {
+      peer.on("open", () => {
         setIsJoiningRoom(false)
-        setSelfPeerId(id)
         const conn = peer.connect(hostPeerId, { reliable: true })
         if (conn) {
           setupConnection(conn, true)
@@ -199,7 +195,6 @@ export function createRoomManagement(
       setErrorMessage(null)
       setPeerCount(0)
       setIsHost(false)
-      setSelfPeerId(null)
       
       refs.shouldReconnectRef.current = true
     }, 100)

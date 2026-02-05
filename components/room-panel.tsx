@@ -3,14 +3,13 @@
 import { useState, useEffect } from "react"
 import { useTransfer } from "@/lib/transfer-context"
 import { useJoinCode } from "@/hooks/use-join-code"
-import { useDeviceDiscovery } from "@/hooks/use-device-discovery"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { EmptyState } from "@/components/ui/empty-state"
 import { QRCodeDisplay } from "@/components/qr-code-display"
 import { QRCodeScanner } from "@/components/qr-code-scanner"
 import { ConnectionStatusDisplay } from "@/components/connection-status"
-import { Copy, Check, LogOut, Loader2, AlertCircle, QrCode, ScanLine, Laptop, Smartphone, Tablet } from "lucide-react"
+import { Copy, Check, LogOut, Loader2, AlertCircle, QrCode, ScanLine } from "lucide-react"
 
 // Common card style to reduce duplication
 const CARD_CLASS = "relative overflow-hidden rounded-xl border border-border bg-card p-6"
@@ -24,28 +23,18 @@ export function RoomPanel() {
     errorMessage, 
     createRoom, 
     joinRoom, 
-    connectToPeer,
     leaveRoom, 
     peerCount, 
     isHost,
     isCreatingRoom,
     isJoiningRoom,
-    isEncrypted,
-    selfPeerId
+    isEncrypted
   } = useTransfer()
   const { joinCode, clearJoinCode } = useJoinCode()
-  const discoveryEnabled = !roomCode && (connectionStatus === "disconnected" || connectionStatus === "error" || connectionStatus === "dissolved")
-  const { devices: nearbyDevices, isLoading: isDiscoveryLoading } = useDeviceDiscovery({
-    enabled: discoveryEnabled,
-    isHost,
-    roomCode,
-    peerId: selfPeerId,
-  })
   const [inputCode, setInputCode] = useState("")
   const [copied, setCopied] = useState(false)
   const [showQRCode, setShowQRCode] = useState(false)
   const [showScanner, setShowScanner] = useState(false)
-  const [connectingDevice, setConnectingDevice] = useState<string | null>(null)
 
   // Auto-join when code is provided via URL
   useEffect(() => {
@@ -60,13 +49,6 @@ export function RoomPanel() {
     setInputCode(code)
     joinRoom(code)
   }
-
-  useEffect(() => {
-    if (!connectingDevice) return
-    if (connectionStatus !== "connecting" && !isJoiningRoom) {
-      setConnectingDevice(null)
-    }
-  }, [connectingDevice, connectionStatus, isJoiningRoom])
 
   const handleCopyCode = async () => {
     if (roomCode) {
@@ -104,12 +86,6 @@ export function RoomPanel() {
     return code.slice(0, 3) + " " + code.slice(3)
   }
 
-  const getDeviceIcon = (deviceType: "mobile" | "desktop" | "tablet" | "unknown") => {
-    if (deviceType === "mobile") return Smartphone
-    if (deviceType === "tablet") return Tablet
-    return Laptop
-  }
-
   // Room dissolved state - show return button
   if (connectionStatus === "dissolved") {
     return (
@@ -128,13 +104,11 @@ export function RoomPanel() {
   }
 
   const isConnected = connectionStatus === "connected" && peerCount > 0
-  const showConnectOverlay = Boolean(connectingDevice && (connectionStatus === "connecting" || isJoiningRoom))
-
   if (roomCode || isConnected) {
     return (
       <div className={CARD_CLASS}>
         {/* Room Code Display */}
-        {roomCode ? (
+        {roomCode && (
           <div className="text-center mb-5">
             <p className="text-xs text-muted-foreground mb-2 uppercase tracking-wider">房间代码</p>
             <div className="flex items-center justify-center gap-2">
@@ -145,11 +119,6 @@ export function RoomPanel() {
                 {copied ? <Check className="w-5 h-5 text-green-500" /> : <Copy className="w-5 h-5" />}
               </Button>
             </div>
-          </div>
-        ) : (
-          <div className="text-center mb-5">
-            <p className="text-xs text-muted-foreground mb-2 uppercase tracking-wider">直连模式</p>
-            <div className="text-lg font-semibold text-foreground">已连接附近设备</div>
           </div>
         )}
 
@@ -195,17 +164,6 @@ export function RoomPanel() {
 
   return (
     <div className={CARD_CLASS}>
-      <div
-        className={`absolute inset-0 z-10 flex items-center justify-center bg-card/80 backdrop-blur-sm transition-all duration-200 ${
-          showConnectOverlay ? "opacity-100 scale-100" : "opacity-0 scale-95 pointer-events-none"
-        }`}
-        aria-hidden={!showConnectOverlay}
-      >
-        <div className="flex items-center gap-2 text-sm text-foreground">
-          <Loader2 className="w-4 h-4 animate-spin" />
-          <span>{connectingDevice ? `正在连接 ${connectingDevice}` : "正在连接..."}</span>
-        </div>
-      </div>
       <div className="space-y-6">
         <div>
           <Button
@@ -284,53 +242,6 @@ export function RoomPanel() {
           )}
         </div>
 
-        <div className="relative">
-          <div className="absolute inset-0 flex items-center">
-            <span className="w-full border-t border-border" />
-          </div>
-          <div className="relative flex justify-center text-xs uppercase">
-            <span className="bg-card px-2 text-muted-foreground">附近设备</span>
-          </div>
-        </div>
-
-        <div>
-          {nearbyDevices.length === 0 ? (
-            <div className="text-center text-xs text-muted-foreground">
-              {isDiscoveryLoading ? "正在搜索设备..." : "未发现可连接设备"}
-              <p className="mt-1">基于同公网 IP 自动发现</p>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {nearbyDevices.map((device) => {
-                const Icon = getDeviceIcon(device.deviceType)
-                return (
-                  <div
-                    key={device.deviceId}
-                    className="flex items-center justify-between rounded-lg border border-border bg-card px-3 py-2"
-                  >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <Icon className="h-4 w-4 text-muted-foreground shrink-0" />
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium text-foreground truncate">{device.name}</p>
-                        <p className="text-xs text-muted-foreground">可直接连接</p>
-                      </div>
-                    </div>
-                    <Button
-                      size="sm"
-                      onClick={() => {
-                        setConnectingDevice(device.name || "设备")
-                        connectToPeer(device.peerId)
-                      }}
-                      disabled={isCreatingRoom || isJoiningRoom}
-                    >
-                      连接
-                    </Button>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-        </div>
       </div>
 
       {/* QR Code Scanner Dialog */}
