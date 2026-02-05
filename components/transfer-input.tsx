@@ -68,7 +68,7 @@ export function TransferInput({
         />
         <Button
           variant="outline"
-          className="flex-1 sm:flex-auto sm:min-w-[120px]"
+          className="flex-1 sm:flex-auto"
           onClick={() => fileInputRef.current?.click()}
           disabled={!isConnected}
         >
@@ -77,7 +77,7 @@ export function TransferInput({
         </Button>
         <Button
           variant="outline"
-          className="flex-1 sm:flex-auto sm:min-w-[120px]"
+          className="flex-1 sm:flex-auto hidden sm:flex"
           onClick={() => onSendClipboard?.()}
           disabled={!isConnected || !clipboardAvailable || isSendingClipboard}
         >
@@ -89,7 +89,7 @@ export function TransferInput({
           发送剪贴板
         </Button>
         <Button
-          className="flex-1 sm:flex-auto sm:min-w-[120px]"
+          className="flex-1 sm:flex-auto"
           onClick={onSendText}
           disabled={!isConnected || !text.trim()}
         >
