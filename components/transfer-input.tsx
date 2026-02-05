@@ -58,7 +58,7 @@ export function TransferInput({
           onKeyDown={handleKeyDown}
         />
       </div>
-      <div className="flex gap-2">
+      <div className="flex flex-col sm:flex-row gap-2">
         <input
           type="file"
           ref={fileInputRef}
@@ -68,7 +68,7 @@ export function TransferInput({
         />
         <Button
           variant="outline"
-          className="flex-1"
+          className="flex-1 sm:flex-auto sm:min-w-[120px]"
           onClick={() => fileInputRef.current?.click()}
           disabled={!isConnected}
         >
@@ -77,7 +77,7 @@ export function TransferInput({
         </Button>
         <Button
           variant="outline"
-          className="flex-1"
+          className="flex-1 sm:flex-auto sm:min-w-[120px]"
           onClick={() => onSendClipboard?.()}
           disabled={!isConnected || !clipboardAvailable || isSendingClipboard}
         >
@@ -89,7 +89,7 @@ export function TransferInput({
           发送剪贴板
         </Button>
         <Button
-          className="flex-1"
+          className="flex-1 sm:flex-auto sm:min-w-[120px]"
           onClick={onSendText}
           disabled={!isConnected || !text.trim()}
         >
