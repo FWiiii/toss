@@ -1,6 +1,7 @@
 import { createClient } from "redis"
 
 const REDIS_URL = process.env.REDIS_URL
+const CONNECT_TIMEOUT_MS = 5000
 
 type RedisClient = ReturnType<typeof createClient>
 
@@ -21,17 +22,28 @@ export async function getRedisClient() {
   }
 
   if (!globalThis.__tossRedisClient) {
-    globalThis.__tossRedisClient = createClient({ url: REDIS_URL })
+    const url = REDIS_URL
+    const useTls = url.startsWith("rediss://")
+    globalThis.__tossRedisClient = createClient({
+      url,
+      socket: {
+        connectTimeout: CONNECT_TIMEOUT_MS,
+        tls: useTls,
+      },
+    })
   }
 
   if (!globalThis.__tossRedisConnecting) {
-    globalThis.__tossRedisConnecting = globalThis.__tossRedisClient
-      .connect()
-      .then(() => globalThis.__tossRedisClient as RedisClient)
-      .catch((error) => {
-        globalThis.__tossRedisConnecting = undefined
-        throw error
-      })
+    const client = globalThis.__tossRedisClient
+    globalThis.__tossRedisConnecting = Promise.race([
+      client.connect().then(() => client as RedisClient),
+      new Promise<RedisClient>((_, reject) => {
+        setTimeout(() => reject(new Error("Redis connection timeout")), CONNECT_TIMEOUT_MS)
+      }),
+    ]).catch((error) => {
+      globalThis.__tossRedisConnecting = undefined
+      throw error
+    })
   }
 
   return globalThis.__tossRedisConnecting

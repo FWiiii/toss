@@ -3,6 +3,7 @@ import { getRedisClient } from "@/lib/redis"
 
 export const dynamic = "force-dynamic"
 export const revalidate = 0
+export const runtime = "nodejs"
 
 type DeviceType = "mobile" | "desktop" | "tablet" | "unknown"
 
