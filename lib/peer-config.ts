@@ -63,13 +63,20 @@ export const ICE_SERVERS = {
 /**
  * PeerJS connection options
  */
-export const PEER_OPTIONS = {
-  debug: 0,
-  config: ICE_SERVERS,
-  secure: true,
-  host: "0.peerjs.com",
-  port: 443,
+export function getPeerOptions(forceRelay = false) {
+  return {
+    debug: 0,
+    config: {
+      ...ICE_SERVERS,
+      iceTransportPolicy: forceRelay ? "relay" : "all",
+    },
+    secure: true,
+    host: "0.peerjs.com",
+    port: 443,
+  }
 }
+
+export const PEER_OPTIONS = getPeerOptions(false)
 
 /**
  * Detect connection type from RTCPeerConnection stats

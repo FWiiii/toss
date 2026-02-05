@@ -3,10 +3,11 @@
 import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from "react"
 import type { TransferItem, ConnectionStatus, ConnectionType, ConnectionInfo, ConnectionQuality, EncryptionPerformance } from "./types"
 import { useNotification } from "@/hooks/use-notification"
+import { useConnectionSettings } from "@/hooks/use-connection-settings"
 import { useTransferItems } from "@/hooks/use-transfer-items"
 import { useConnectionQuality } from "@/hooks/use-connection-quality"
 import { SessionEncryptor, generateKeyPair, encryptJSON } from "./crypto"
-import { PEER_OPTIONS } from "./peer-config"
+import { getPeerOptions } from "./peer-config"
 import { createSetupConnection, createAttemptReconnect, type ConnectionRefs, type ConnectionCallbacks } from "./transfer-connection"
 import { createRoomManagement, type RoomCallbacks } from "./transfer-room"
 import { createDataTransfer, type DataTransferCallbacks } from "./transfer-data"
@@ -48,6 +49,12 @@ type TransferContextType = {
   }>) => void
   requestNotificationPermission: () => Promise<NotificationPermission>
   testNotification: () => void
+  connectionSettings: {
+    forceRelay: boolean
+  }
+  updateConnectionSettings: (settings: Partial<{
+    forceRelay: boolean
+  }>) => void
   encryptionPerformance: EncryptionPerformance | null
   getEncryptionPerformance: () => EncryptionPerformance | null
 }
@@ -86,6 +93,11 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     notifyReceived,
     testNotification,
   } = useNotification()
+
+  const {
+    settings: connectionSettings,
+    updateSettings: updateConnectionSettings,
+  } = useConnectionSettings()
   
   const {
     items,
@@ -145,6 +157,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
   const joinRoomRef = useRef<((code: string) => Promise<void>) | null>(null)
   const startQualityMonitoringRef = useRef<(() => void) | null>(null)
   const stopQualityMonitoringRef = useRef<(() => void) | null>(null)
+  const forceRelayRef = useRef(connectionSettings.forceRelay)
   
   // Transfer cancellation tracking
   const cancelledTransfersRef = useRef<Set<string>>(new Set())
@@ -188,6 +201,44 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     cleanupConnections()
     destroyPeer()
   }, [cleanupConnections, destroyPeer])
+
+  useEffect(() => {
+    if (forceRelayRef.current === connectionSettings.forceRelay) {
+      return
+    }
+
+    forceRelayRef.current = connectionSettings.forceRelay
+    shouldReconnectRef.current = false
+    cleanupAll()
+
+    setRoomCode(null)
+    setConnectionStatus("disconnected")
+    setConnectionInfo({ type: "unknown" })
+    setErrorMessage(null)
+    setPeerCount(0)
+    setIsHost(false)
+    setSelfPeerId(null)
+    setIsEncrypted(false)
+
+    if (stopQualityMonitoringRef.current) {
+      stopQualityMonitoringRef.current()
+    }
+
+    addSystemMessage("已切换连接模式，请重新连接", true)
+    shouldReconnectRef.current = true
+  }, [
+    addSystemMessage,
+    cleanupAll,
+    connectionSettings.forceRelay,
+    setConnectionInfo,
+    setConnectionStatus,
+    setErrorMessage,
+    setIsEncrypted,
+    setIsHost,
+    setPeerCount,
+    setRoomCode,
+    setSelfPeerId,
+  ])
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const broadcastToConnections = useCallback(async (data: any, excludePeer?: string) => {
@@ -290,7 +341,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     }
 
     const { default: Peer } = await import("peerjs")
-    const peer = new Peer(PEER_OPTIONS)
+    const peer = new Peer(getPeerOptions(connectionSettings.forceRelay))
 
     peer.on("open", (id: string) => {
       setSelfPeerId(id)
@@ -312,7 +363,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
 
     peerRef.current = peer
     return peer
-  }, [setupConnection])
+  }, [connectionSettings.forceRelay, setupConnection])
 
   // ============ Reconnection Logic ============
   const attemptReconnect = useCallback(() => {
@@ -386,7 +437,8 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
   const { createRoom, joinRoom, leaveRoom: leaveRoomFn } = createRoomManagement(
     connectionRefs,
     roomCallbacks,
-    setupConnection
+    setupConnection,
+    connectionSettings.forceRelay
   )
 
   const leaveRoom = useCallback(async () => {
@@ -584,6 +636,8 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
         updateNotificationSettings,
         requestNotificationPermission,
         testNotification,
+        connectionSettings,
+        updateConnectionSettings,
         encryptionPerformance,
         getEncryptionPerformance,
       }}

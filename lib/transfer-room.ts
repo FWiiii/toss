@@ -3,7 +3,7 @@
  * 处理房间创建、加入、离开等逻辑
  */
 
-import { PEER_PREFIX, PEER_OPTIONS, generateRoomCode } from "./peer-config"
+import { PEER_PREFIX, generateRoomCode, getPeerOptions } from "./peer-config"
 import type { ConnectionRefs } from "./transfer-connection"
 
 export type RoomCallbacks = {
@@ -25,7 +25,8 @@ export type RoomCallbacks = {
 export function createRoomManagement(
   refs: ConnectionRefs,
   callbacks: RoomCallbacks,
-  setupConnection: (conn: any, isOutgoing?: boolean) => void
+  setupConnection: (conn: any, isOutgoing?: boolean) => void,
+  forceRelay: boolean
 ) {
   const {
     setIsCreatingRoom,
@@ -65,7 +66,7 @@ export function createRoomManagement(
       setErrorMessage(null)
       setIsHost(true)
 
-      const peer = new Peer(peerId, PEER_OPTIONS)
+      const peer = new Peer(peerId, getPeerOptions(forceRelay))
 
       peer.on("open", (id) => {
         setIsCreatingRoom(false)
@@ -133,7 +134,7 @@ export function createRoomManagement(
       setErrorMessage(null)
       setIsHost(false)
 
-      const peer = new Peer(PEER_OPTIONS)
+      const peer = new Peer(getPeerOptions(forceRelay))
 
       peer.on("open", (id) => {
         setIsJoiningRoom(false)

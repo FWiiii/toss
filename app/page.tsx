@@ -16,6 +16,8 @@ function AppHeader() {
     updateNotificationSettings,
     requestNotificationPermission,
     testNotification,
+    connectionSettings,
+    updateConnectionSettings,
   } = useTransfer()
 
   return (
@@ -44,6 +46,8 @@ function AppHeader() {
             onUpdateSettings={updateNotificationSettings}
             onRequestPermission={requestNotificationPermission}
             onTestNotification={testNotification}
+            connectionSettings={connectionSettings}
+            onUpdateConnectionSettings={updateConnectionSettings}
           />
           <ThemeToggle />
         </div>

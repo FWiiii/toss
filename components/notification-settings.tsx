@@ -1,6 +1,6 @@
 "use client"
 
-import { Bell, Volume2, Smartphone, Settings, Check } from "lucide-react"
+import { Bell, Volume2, Smartphone, Settings, Check, Server } from "lucide-react"
 import { Button } from "./ui/button"
 import {
   DropdownMenu,
@@ -16,11 +16,17 @@ interface NotificationSettingsProps {
     browserNotificationEnabled: boolean
     vibrationEnabled: boolean
   }
+  connectionSettings: {
+    forceRelay: boolean
+  }
   notificationPermission: NotificationPermission
   onUpdateSettings: (settings: Partial<{
     soundEnabled: boolean
     browserNotificationEnabled: boolean
     vibrationEnabled: boolean
+  }>) => void
+  onUpdateConnectionSettings: (settings: Partial<{
+    forceRelay: boolean
   }>) => void
   onRequestPermission: () => void
   onTestNotification: () => void
@@ -28,13 +34,20 @@ interface NotificationSettingsProps {
 
 export function NotificationSettings({
   settings,
+  connectionSettings,
   notificationPermission,
   onUpdateSettings,
+  onUpdateConnectionSettings,
   onRequestPermission,
   onTestNotification,
 }: NotificationSettingsProps) {
   const hasVibrationSupport = typeof navigator !== "undefined" && "vibrate" in navigator
   const hasNotificationSupport = typeof window !== "undefined" && "Notification" in window
+  const hasTurnConfig = Boolean(
+    (process.env.NEXT_PUBLIC_TURN_URL || process.env.NEXT_PUBLIC_TURNS_URL || process.env.NEXT_PUBLIC_TURN_URL_443) &&
+    process.env.NEXT_PUBLIC_TURN_USERNAME &&
+    process.env.NEXT_PUBLIC_TURN_CREDENTIAL
+  )
 
   const handleNotificationToggle = async () => {
     if (notificationPermission === "default") {
@@ -88,6 +101,19 @@ export function NotificationSettings({
         )}
 
         <DropdownMenuSeparator />
+
+        <DropdownMenuItem
+          onClick={() => onUpdateConnectionSettings({ forceRelay: !connectionSettings.forceRelay })}
+          disabled={!hasTurnConfig}
+          className="gap-2 cursor-pointer"
+        >
+          <Server className="h-4 w-4" />
+          <span>强制中继</span>
+          {!hasTurnConfig && (
+            <span className="ml-auto text-xs text-muted-foreground">需 TURN</span>
+          )}
+          {connectionSettings.forceRelay && <Check className="ml-auto h-4 w-4 text-accent" />}
+        </DropdownMenuItem>
 
         {/* Test */}
         <DropdownMenuItem 
