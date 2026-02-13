@@ -31,7 +31,9 @@ export function TransferInput({
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const fileList = e.target.files
-    if (fileList && fileList.length > 0 && isConnected) {
+    // On mobile, selecting a file may briefly drop the connection.
+    // Always pass selected files upward so the panel can queue and retry.
+    if (fileList && fileList.length > 0) {
       onSendFiles(Array.from(fileList))
     }
     if (fileInputRef.current) {

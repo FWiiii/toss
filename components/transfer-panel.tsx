@@ -45,10 +45,20 @@ export function TransferPanel() {
   const hasItems = activeItems.length > 0 || completedItems.length > 0
 
   const sendFiles = useCallback(async (files: File[]) => {
+    if (files.length === 0) return
+
+    if (!isConnected) {
+      setPendingShare((prev) => ({
+        files: [...(prev?.files ?? []), ...files],
+        text: prev?.text ?? "",
+      }))
+      return
+    }
+
     for (const file of files) {
       await sendFile(file)
     }
-  }, [sendFile])
+  }, [isConnected, sendFile])
 
   const handleSendClipboard = useCallback(async () => {
     if (!isConnected || !navigator.clipboard) return
@@ -118,18 +128,24 @@ export function TransferPanel() {
 
   // Send pending share when connected
   useEffect(() => {
-    if (!isConnected || !pendingShare || pendingShare.files.length === 0) {
+    if (!isConnected || !pendingShare) {
       return
     }
 
     const filesToSend = [...pendingShare.files]
+    const textToSend = pendingShare.text
     setPendingShare(null)
-    
+
     const timer = setTimeout(async () => {
-      await sendFiles(filesToSend)
+      if (textToSend.trim()) {
+        sendText(textToSend)
+      }
+      if (filesToSend.length > 0) {
+        await sendFiles(filesToSend)
+      }
     }, 500)
     return () => clearTimeout(timer)
-  }, [isConnected, pendingShare, sendFiles])
+  }, [isConnected, pendingShare, sendFiles, sendText])
 
   // Auto scroll to bottom when new items arrive
   useEffect(() => {
