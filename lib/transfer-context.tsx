@@ -54,6 +54,7 @@ type TransferContextType = {
   }>) => void
   encryptionPerformance: EncryptionPerformance | null
   getEncryptionPerformance: () => EncryptionPerformance | null
+  suspendAutoReconnect: (durationMs?: number) => void
 }
 
 const TransferContext = createContext<TransferContextType | null>(null)
@@ -154,6 +155,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
   const startQualityMonitoringRef = useRef<(() => void) | null>(null)
   const stopQualityMonitoringRef = useRef<(() => void) | null>(null)
   const forceRelayRef = useRef(connectionSettings.forceRelay)
+  const suppressReconnectUntilRef = useRef(0)
   
   // Transfer cancellation tracking
   const cancelledTransfersRef = useRef<Set<string>>(new Set())
@@ -197,6 +199,11 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     cleanupConnections()
     destroyPeer()
   }, [cleanupConnections, destroyPeer])
+
+  const suspendAutoReconnect = useCallback((durationMs = 15000) => {
+    const safeDuration = Number.isFinite(durationMs) ? Math.max(0, durationMs) : 0
+    suppressReconnectUntilRef.current = Date.now() + safeDuration
+  }, [])
 
   useEffect(() => {
     if (forceRelayRef.current === connectionSettings.forceRelay) {
@@ -346,6 +353,18 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     if (typeof window === "undefined") return
 
     const tryReconnect = () => {
+      if (Date.now() < suppressReconnectUntilRef.current) {
+        return
+      }
+
+      const hasOpenConnections = Array.from(connectionsRef.current.values()).some((conn) => conn?.open)
+      const peerIsDisconnected = !!peerRef.current?.disconnected
+
+      // Avoid forcing reconnection when an existing connection is still healthy.
+      if (hasOpenConnections && !peerIsDisconnected) {
+        return
+      }
+
       if (peerRef.current && peerRef.current.disconnected) {
         try {
           peerRef.current.reconnect()
@@ -569,6 +588,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
         updateConnectionSettings,
         encryptionPerformance,
         getEncryptionPerformance,
+        suspendAutoReconnect,
       }}
     >
       {children}

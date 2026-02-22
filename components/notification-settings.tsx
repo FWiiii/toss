@@ -1,5 +1,6 @@
 "use client"
 
+import { useEffect, useState } from "react"
 import { Bell, Volume2, Smartphone, Settings, Check, Server } from "lucide-react"
 import { Button } from "./ui/button"
 import {
@@ -41,8 +42,14 @@ export function NotificationSettings({
   onRequestPermission,
   onTestNotification,
 }: NotificationSettingsProps) {
-  const hasVibrationSupport = typeof navigator !== "undefined" && "vibrate" in navigator
-  const hasNotificationSupport = typeof window !== "undefined" && "Notification" in window
+  const [isMounted, setIsMounted] = useState(false)
+
+  useEffect(() => {
+    setIsMounted(true)
+  }, [])
+
+  const hasVibrationSupport = isMounted && typeof navigator !== "undefined" && "vibrate" in navigator
+  const hasNotificationSupport = isMounted && typeof window !== "undefined" && "Notification" in window
   const hasTurnConfig = Boolean(
     (process.env.NEXT_PUBLIC_TURN_URL || process.env.NEXT_PUBLIC_TURNS_URL || process.env.NEXT_PUBLIC_TURN_URL_443) &&
     process.env.NEXT_PUBLIC_TURN_USERNAME &&

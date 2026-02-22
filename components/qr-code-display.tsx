@@ -9,7 +9,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Download, X } from "lucide-react"
-import { useCallback, useRef } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 
 interface QRCodeDisplayProps {
   roomCode: string | null
@@ -19,11 +19,18 @@ interface QRCodeDisplayProps {
 
 export function QRCodeDisplay({ roomCode, open, onOpenChange }: QRCodeDisplayProps) {
   const qrRef = useRef<HTMLDivElement>(null)
+  const [origin, setOrigin] = useState("")
   const safeRoomCode = roomCode ?? ""
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      setOrigin(window.location.origin)
+    }
+  }, [])
   
   // Generate the URL for the room
-  const roomUrl = typeof window !== "undefined" && safeRoomCode
-    ? `${window.location.origin}?join=${safeRoomCode}`
+  const roomUrl = origin && safeRoomCode
+    ? `${origin}?join=${safeRoomCode}`
     : ""
 
   const handleDownload = useCallback(() => {

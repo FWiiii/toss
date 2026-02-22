@@ -12,7 +12,17 @@ import { Send, Trash2, Share2, Upload } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 export function TransferPanel() {
-  const { connectionStatus, items, sendText, sendFile, cancelTransfer, clearHistory, peerCount, sendingCount } = useTransfer()
+  const {
+    connectionStatus,
+    items,
+    sendText,
+    sendFile,
+    cancelTransfer,
+    clearHistory,
+    peerCount,
+    sendingCount,
+    suspendAutoReconnect,
+  } = useTransfer()
   const { sharedFiles, sharedText, hasSharedContent, clearSharedData } = useShareTarget()
   const [text, setText] = useState("")
   const [isDragging, setIsDragging] = useState(false)
@@ -190,6 +200,12 @@ export function TransferPanel() {
     }
   }, [text, isConnected, sendText])
 
+  const handleBeforeFilePick = useCallback(() => {
+    // On some mobile browsers, opening the file picker can trigger visibility
+    // transitions. Suspend auto-reconnect briefly to avoid state flapping.
+    suspendAutoReconnect(20000)
+  }, [suspendAutoReconnect])
+
   const handleDownload = useCallback((url: string, name?: string) => {
     const a = document.createElement("a")
     a.href = url
@@ -340,6 +356,7 @@ export function TransferPanel() {
         onTextChange={setText}
         onSendText={handleSendText}
         onSendFiles={sendFiles}
+        onBeforeFilePick={handleBeforeFilePick}
         onSendClipboard={handleSendClipboard}
         isSendingClipboard={isSendingClipboard}
         isConnected={isConnected}

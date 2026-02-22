@@ -487,6 +487,18 @@ export function createAttemptReconnect(
       return
     }
 
+    // Avoid stacking multiple reconnect timers from close/error/visibility events.
+    if (refs.reconnectTimeoutRef.current) {
+      return
+    }
+
+    // Let the browser online event trigger the next reconnect attempt.
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      callbacks.setConnectionStatus("reconnecting")
+      callbacks.setErrorMessage("Network is offline. Waiting to reconnect...")
+      return
+    }
+
     if (refs.reconnectAttemptsRef.current >= MAX_RECONNECT_ATTEMPTS) {
       callbacks.setConnectionStatus("error")
       callbacks.setErrorMessage("重连失败，请手动重新加入房间")
@@ -495,13 +507,17 @@ export function createAttemptReconnect(
     }
 
     refs.reconnectAttemptsRef.current += 1
-    const delay = Math.min(1000 * Math.pow(2, refs.reconnectAttemptsRef.current - 1), 10000)
+    const baseDelay = Math.min(1000 * Math.pow(2, refs.reconnectAttemptsRef.current - 1), 10000)
+    const jitter = Math.floor(Math.random() * 500)
+    const delay = baseDelay + jitter
     
     callbacks.setConnectionStatus("reconnecting")
     callbacks.setErrorMessage(`正在尝试重新连接... (${refs.reconnectAttemptsRef.current}/${MAX_RECONNECT_ATTEMPTS})`)
     
     refs.reconnectTimeoutRef.current = setTimeout(() => {
+      refs.reconnectTimeoutRef.current = null
       if (!refs.shouldReconnectRef.current) return
+      if (refs.connectionsRef.current.size > 0) return
       
       // 简化：只在第一次重连时显示消息
       if (refs.reconnectAttemptsRef.current === 1) {

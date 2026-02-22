@@ -8,6 +8,10 @@ export const metadata: Metadata = {
   title: 'Toss - 跨设备传输',
   description: '简单快速的跨设备文件和文本传输工具',
   generator: 'H',
+  other: {
+    // Prevent Dark Reader from mutating SSR DOM before hydration.
+    "darkreader-lock": "",
+  },
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,
