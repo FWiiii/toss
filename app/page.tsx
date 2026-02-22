@@ -92,7 +92,7 @@ export default function Home() {
               <span className="text-border">·</span>
               <span>全平台兼容</span>
               <span className="text-border">·</span>
-              <span>支持 PWA 离线使用</span>
+              <span>支持 PWA 使用</span>
             </div>
           </div>
         </footer>
