@@ -105,10 +105,20 @@ export function createSetupConnection(
     notifyReceived,
   } = callbacks
 
-  const removeBuffersForPeer = (peerId: string) => {
+  const markBuffersPendingForPeer = (peerId: string) => {
     for (const [bufferKey, buffer] of fileBuffersRef.current.entries()) {
       if (buffer.peerId === peerId) {
-        fileBuffersRef.current.delete(bufferKey)
+        fileBuffersRef.current.set(bufferKey, {
+          ...buffer,
+          lastTime: Date.now(),
+          lastBytes: buffer.received,
+          smoothedSpeed: 0,
+        })
+        updateItemProgress(buffer.localItemId, {
+          status: "pending",
+          speed: undefined,
+          remainingTime: undefined,
+        })
       }
     }
   }
@@ -241,7 +251,7 @@ export function createSetupConnection(
       if (connectionTimeout) clearTimeout(connectionTimeout)
       if (disconnectedTimer) clearTimeout(disconnectedTimer)
       connectionsRef.current.delete(conn.peer)
-      removeBuffersForPeer(conn.peer)
+      markBuffersPendingForPeer(conn.peer)
       encryptorsRef.current.delete(conn.peer)
       keyExchangePendingRef.current.delete(conn.peer)
       
@@ -257,7 +267,7 @@ export function createSetupConnection(
       if (connectionTimeout) clearTimeout(connectionTimeout)
       if (disconnectedTimer) clearTimeout(disconnectedTimer)
       connectionsRef.current.delete(conn.peer)
-      removeBuffersForPeer(conn.peer)
+      markBuffersPendingForPeer(conn.peer)
       encryptorsRef.current.delete(conn.peer)
       keyExchangePendingRef.current.delete(conn.peer)
       
@@ -322,11 +332,22 @@ export function createSetupConnection(
         const bufferKey = data.itemId ?? findBufferKeyByPeer(conn.peer)
         const buffer = bufferKey ? fileBuffersRef.current.get(bufferKey) : undefined
         if (buffer) {
+          const expectedOffset = buffer.received
+          if (typeof data.offset === "number") {
+            if (data.offset < expectedOffset) {
+              return
+            }
+            if (data.offset > expectedOffset) {
+              return
+            }
+          }
+
           let bytes: Uint8Array
           if (isEncrypted && data.encrypted) {
             // 直接解密文件块（不再需要解密 JSON）
             try {
-              bytes = await decryptBytes(encryptor!, data.encrypted)
+              if (!encryptor) return
+              bytes = await decryptBytes(encryptor, data.encrypted)
             } catch (error) {
               console.error("File chunk decryption error:", error)
               return
@@ -354,6 +375,7 @@ export function createSetupConnection(
             const remainingTime = speed > 0 ? Math.ceil(remainingBytes / speed) : undefined
             
             updateItemProgress(buffer.localItemId, {
+              status: "transferring",
               progress: Math.round((buffer.received / buffer.size) * 100),
               transferredBytes: buffer.received,
               speed,
@@ -373,6 +395,7 @@ export function createSetupConnection(
       let decryptedData: any = data
       if (isEncrypted && data.encrypted) {
         try {
+          if (!encryptor) return
           decryptedData = await decryptJSON(encryptor, data.encrypted)
         } catch (error) {
           console.error("Decryption error:", error)
@@ -388,34 +411,66 @@ export function createSetupConnection(
         })
         notifyReceived("text")
       } else if (decryptedData.type === "file-start") {
-        const localItemId = addItemWithId({
-          type: "file",
-          name: decryptedData.name,
-          content: "",
-          size: decryptedData.size,
-          direction: "received",
-          status: "transferring",
-          progress: 0,
-          transferredBytes: 0,
-        })
+        const remoteItemId = decryptedData.itemId || ""
+        const hasRemoteId = typeof remoteItemId === "string" && remoteItemId.length > 0
+        const existing = hasRemoteId ? fileBuffersRef.current.get(remoteItemId) : undefined
+        const isResume = Boolean(decryptedData.resume) && Boolean(existing)
 
-        const remoteItemId = decryptedData.itemId || localItemId
-        fileBuffersRef.current.set(remoteItemId, {
-          peerId: conn.peer,
-          name: decryptedData.name,
-          size: decryptedData.size,
-          chunks: [],
-          received: 0,
-          localItemId,
-          remoteItemId,
-          lastTime: Date.now(),
-          lastBytes: 0,
-          smoothedSpeed: 0,
-        })
+        if (isResume && existing) {
+          existing.peerId = conn.peer
+          existing.lastTime = Date.now()
+          existing.lastBytes = existing.received
+          existing.smoothedSpeed = 0
+          fileBuffersRef.current.set(existing.remoteItemId, existing)
+
+          updateItemProgress(existing.localItemId, {
+            status: "transferring",
+            progress: Math.round((existing.received / existing.size) * 100),
+            transferredBytes: existing.received,
+            speed: undefined,
+            remainingTime: undefined,
+          })
+        } else {
+          const localItemId = addItemWithId({
+            type: "file",
+            name: decryptedData.name,
+            content: "",
+            size: decryptedData.size,
+            direction: "received",
+            status: "transferring",
+            progress: 0,
+            transferredBytes: 0,
+          })
+
+          const newRemoteItemId = hasRemoteId ? remoteItemId : localItemId
+          fileBuffersRef.current.set(newRemoteItemId, {
+            peerId: conn.peer,
+            name: decryptedData.name,
+            size: decryptedData.size,
+            chunks: [],
+            received: 0,
+            localItemId,
+            remoteItemId: newRemoteItemId,
+            lastTime: Date.now(),
+            lastBytes: 0,
+            smoothedSpeed: 0,
+          })
+        }
       } else if (decryptedData.type === "file-end") {
         const bufferKey = decryptedData.itemId || findBufferKeyByPeer(conn.peer)
         const buffer = bufferKey ? fileBuffersRef.current.get(bufferKey) : undefined
         if (buffer) {
+          if (buffer.received < buffer.size) {
+            updateItemProgress(buffer.localItemId, {
+              status: "error",
+              speed: undefined,
+              remainingTime: undefined,
+            })
+            buffer.chunks = []
+            fileBuffersRef.current.delete(buffer.remoteItemId)
+            return
+          }
+
           const blob = new Blob(buffer.chunks as unknown as BlobPart[])
           const url = createTrackedBlobUrl(blob)
           
@@ -444,7 +499,8 @@ export function createSetupConnection(
         try {
           const pongData = { type: "pong", id: decryptedData.id }
           if (isEncrypted) {
-            const encrypted = await encryptJSON(encryptor!, pongData)
+            if (!encryptor) return
+            const encrypted = await encryptJSON(encryptor, pongData)
             conn.send({ type: "encrypted", encrypted })
           } else {
             conn.send(pongData)

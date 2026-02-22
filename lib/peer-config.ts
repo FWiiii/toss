@@ -153,6 +153,13 @@ export async function detectConnectionType(pc: RTCPeerConnection): Promise<Conne
  * Chunk size for file transfers (16KB)
  */
 export const FILE_CHUNK_SIZE = 16384
+export const FILE_CHUNK_MIN_SIZE = 8192
+export const FILE_CHUNK_MAX_SIZE = 131072
+
+/**
+ * Wait timeout for transfer resume after temporary disconnection.
+ */
+export const FILE_RESUME_WAIT_TIMEOUT = 30000
 
 /**
  * Maximum reconnection attempts
