@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useId, useState } from "react"
+import { useEffect, useId, useRef, useState } from "react"
 import { useTransfer } from "@/lib/transfer-context"
 import { useJoinCode } from "@/hooks/use-join-code"
 import { Button } from "@/components/ui/button"
@@ -34,12 +34,21 @@ export function RoomPanel() {
   } = useTransfer()
   const { joinCode, clearJoinCode } = useJoinCode()
   const [inputCode, setInputCode] = useState("")
-  const [copied, setCopied] = useState(false)
+  const [copyState, setCopyState] = useState<"idle" | "success" | "error">("idle")
   const [showQRCode, setShowQRCode] = useState(false)
   const [showScanner, setShowScanner] = useState(false)
+  const copyResetTimerRef = useRef<number | null>(null)
   const joinInputId = useId()
   const joinHintId = useId()
   const joinErrorId = useId()
+
+  useEffect(() => {
+    return () => {
+      if (copyResetTimerRef.current) {
+        window.clearTimeout(copyResetTimerRef.current)
+      }
+    }
+  }, [])
 
   // Auto-join when code is provided via URL
   useEffect(() => {
@@ -57,6 +66,10 @@ export function RoomPanel() {
 
   const handleCopyCode = async () => {
     if (roomCode) {
+      if (copyResetTimerRef.current) {
+        window.clearTimeout(copyResetTimerRef.current)
+      }
+
       try {
         // Try modern clipboard API first
         if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -72,11 +85,11 @@ export function RoomPanel() {
           document.execCommand('copy')
           document.body.removeChild(textArea)
         }
-        setCopied(true)
-        setTimeout(() => setCopied(false), 2000)
+        setCopyState("success")
+        copyResetTimerRef.current = window.setTimeout(() => setCopyState("idle"), 2000)
       } catch {
-        // If all else fails, show the code for manual copy
-        console.error('Failed to copy to clipboard')
+        setCopyState("error")
+        copyResetTimerRef.current = window.setTimeout(() => setCopyState("idle"), 2500)
       }
     }
   }
@@ -92,6 +105,8 @@ export function RoomPanel() {
   }
 
   const joinHasError = connectionStatus === "error" && Boolean(errorMessage)
+  const roomCodeCopied = copyState === "success"
+  const roomCodeCopyFailed = copyState === "error"
 
   // Room dissolved state - show return button
   if (connectionStatus === "dissolved") {
@@ -117,32 +132,36 @@ export function RoomPanel() {
         {/* Room Code Display */}
         {roomCode && (
           <div className="text-center mb-5">
-            <p className="text-xs text-muted-foreground mb-2 uppercase tracking-wider">房间代码</p>
+            <p className="mb-2 text-xs tracking-[0.18em] text-muted-foreground">房间代码</p>
             <div className="relative overflow-hidden rounded-xl">
-              {copied && <div className="pointer-events-none absolute inset-0 delight-sweep-overlay" aria-hidden="true" />}
-              <div className="relative flex items-center justify-center gap-2 rounded-xl px-2 py-1">
-              <span className="text-4xl font-mono font-bold tracking-[0.3em] text-foreground sm:text-[2.6rem]">
-                {formatCode(roomCode)}
-              </span>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                onClick={handleCopyCode}
-                aria-label={copied ? "房间代码已复制" : "复制房间代码"}
-                title={copied ? "房间代码已复制" : "复制房间代码"}
-              >
-                {copied ? <Check className={`h-5 w-5 ${STATUS_TONES.success.inline}`} /> : <Copy className="h-5 w-5" />}
-              </Button>
+              {roomCodeCopied && <div className="pointer-events-none absolute inset-0 delight-sweep-overlay" aria-hidden="true" />}
+              <div className="relative rounded-xl px-12 py-1 sm:px-14">
+                <span className="block text-center text-4xl font-mono font-bold tracking-[0.3em] text-foreground sm:text-[2.6rem]">
+                  {formatCode(roomCode)}
+                </span>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="absolute right-1 top-1/2 -translate-y-1/2"
+                  onClick={handleCopyCode}
+                  aria-label={roomCodeCopied ? "房间代码已复制" : "复制房间代码"}
+                  title={roomCodeCopied ? "房间代码已复制" : "复制房间代码"}
+                >
+                  {roomCodeCopied ? <Check className={`h-5 w-5 ${STATUS_TONES.success.inline}`} /> : <Copy className="h-5 w-5" />}
+                </Button>
               </div>
             </div>
             <p
               className={cn(
-                "mt-2 min-h-[1rem] text-xs text-muted-foreground transition-all duration-200",
-                copied ? "translate-y-0 opacity-100" : "translate-y-1 opacity-0"
+                "mt-2 min-h-[1rem] text-xs transition-all duration-200",
+                roomCodeCopied || roomCodeCopyFailed ? "translate-y-0 opacity-100" : "translate-y-1 opacity-0",
+                roomCodeCopyFailed ? STATUS_TONES.danger.inline : "text-muted-foreground"
               )}
               aria-live="polite"
             >
-              已复制，可在另一台设备粘贴{isHost ? " · 或直接让对方扫码" : ""}
+              {roomCodeCopyFailed
+                ? "复制失败，请手动输入房间代码"
+                : `已复制，可在另一台设备粘贴${isHost ? " · 或直接让对方扫码" : ""}`}
             </p>
           </div>
         )}

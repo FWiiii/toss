@@ -82,7 +82,7 @@ export function NotificationSettings({
           <span className="sr-only">设置</span>
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="min-w-[180px]">
+      <DropdownMenuContent align="end" className="min-w-[220px]">
         <DropdownMenuLabel>界面</DropdownMenuLabel>
         <DropdownMenuRadioGroup
           value={isMounted ? theme ?? "system" : "system"}
@@ -125,6 +125,11 @@ export function NotificationSettings({
             <span>浏览器通知</span>
           </DropdownMenuCheckboxItem>
         )}
+        {hasNotificationSupport && notificationPermission === "denied" && (
+          <p className="px-2 pb-1 text-xs text-muted-foreground">
+            浏览器已拒绝通知，可在站点权限里重新开启。
+          </p>
+        )}
 
         {/* Vibration */}
         {hasVibrationSupport && (
@@ -152,6 +157,11 @@ export function NotificationSettings({
             <span className="ml-auto text-xs text-muted-foreground">需 TURN</span>
           )}
         </DropdownMenuCheckboxItem>
+        {!hasTurnConfig && (
+          <p className="px-2 pb-1 text-xs text-muted-foreground">
+            未检测到 TURN 配置，当前仅使用直连与穿透。
+          </p>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   )

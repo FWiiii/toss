@@ -316,6 +316,10 @@ export function TransferPanel() {
 
   const handleDragLeave = useCallback((e: React.DragEvent) => {
     e.preventDefault()
+    const nextTarget = e.relatedTarget
+    if (nextTarget instanceof Node && e.currentTarget.contains(nextTarget)) {
+      return
+    }
     setIsDragging(false)
   }, [])
 
@@ -393,6 +397,11 @@ export function TransferPanel() {
           {pendingShare.files.length > 0 && (
             <p className="text-xs text-muted-foreground mt-1">
               {pendingShare.files.length} 个文件待发送
+            </p>
+          )}
+          {pendingShare.text.trim() && (
+            <p className="text-xs text-muted-foreground mt-1">
+              1 段文本待发送
             </p>
           )}
         </div>
