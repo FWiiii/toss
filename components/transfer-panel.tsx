@@ -11,6 +11,10 @@ import { TransferInput } from "@/components/transfer-input"
 import { Send, Trash2, Share2, Upload } from "lucide-react"
 import { cn } from "@/lib/utils"
 
+const PANEL_CLASS = "panel-surface relative flex flex-col lg:h-full lg:min-h-0 transition-colors"
+const PANEL_HEADER_CLASS = "flex items-center justify-between border-b border-border/70 px-4 py-3"
+const SCROLL_AREA_CLASS = "flex-1 min-h-[300px] space-y-2 p-4 lg:min-h-0 lg:overflow-y-auto"
+
 export function TransferPanel() {
   const {
     connectionStatus,
@@ -244,15 +248,15 @@ export function TransferPanel() {
   return (
     <div 
       className={cn(
-        "rounded-xl border bg-card flex flex-col lg:h-full lg:min-h-0 transition-colors relative",
-        isDragging ? "border-accent border-2 bg-accent/5" : "border-border"
+        PANEL_CLASS,
+        isDragging ? "border-accent bg-accent/5 ring-2 ring-accent/30" : "border-border/80"
       )}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+      <div className={PANEL_HEADER_CLASS}>
         <h3 className="text-sm font-medium text-foreground">传输记录</h3>
         {items.length > 0 && (
           <Button variant="ghost" size="sm" onClick={clearHistory}>
@@ -264,7 +268,7 @@ export function TransferPanel() {
 
       {/* Drag Overlay */}
       {isDragging && (
-        <div className="absolute inset-0 bg-accent/10 backdrop-blur-sm rounded-xl flex items-center justify-center z-10">
+        <div className="absolute inset-0 z-10 flex items-center justify-center rounded-xl bg-accent/10 backdrop-blur-sm">
           <div className="text-center">
             <Upload className="w-12 h-12 text-accent mx-auto mb-2" />
             <p className="text-accent font-medium">释放以上传文件</p>
@@ -274,7 +278,7 @@ export function TransferPanel() {
 
       {/* Pending Share Notice */}
       {pendingShare && !isConnected && (
-        <div className="mx-4 mt-4 p-3 rounded-lg bg-accent/10 border border-accent/20">
+        <div className="mx-4 mt-4 rounded-lg border border-accent/25 bg-accent/10 p-3">
           <div className="flex items-center gap-2 text-sm text-accent">
             <Share2 className="w-4 h-4" />
             <span>有待发送的分享内容，请先连接设备</span>
@@ -290,7 +294,7 @@ export function TransferPanel() {
       {/* Items List */}
       <div
         ref={listRef}
-        className="flex-1 lg:overflow-y-auto p-4 space-y-2 min-h-[300px] lg:min-h-0"
+        className={SCROLL_AREA_CLASS}
         style={{ willChange: 'scroll-position' }}
       >
         {!hasItems && !pendingShare ? (

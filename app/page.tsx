@@ -9,6 +9,9 @@ import { NotificationSettings } from "@/components/notification-settings"
 import { RoomErrorBoundary, TransferErrorBoundary } from "@/components/error-boundary"
 import { ArrowLeftRight, Smartphone, Laptop, Tablet } from "lucide-react"
 
+const SHELL_CONTAINER = "mx-auto w-full max-w-[1200px] px-4 sm:px-6"
+const FOOTER_FEATURES = ["端到端加密传输", "局域网高速直连", "全平台兼容", "支持 PWA 使用"]
+
 function AppHeader() {
   const {
     notificationSettings,
@@ -21,19 +24,19 @@ function AppHeader() {
   } = useTransfer()
 
   return (
-    <header className="fixed top-0 left-0 right-0 z-50 lg:relative lg:z-auto border-b border-border bg-card/95 backdrop-blur-sm shrink-0">
-      <div className="container mx-auto px-4 h-14 lg:h-16 flex items-center justify-between">
+    <header className="fixed inset-x-0 top-0 z-50 border-b border-border/70 bg-card/90 backdrop-blur-md lg:relative lg:z-auto shrink-0">
+      <div className={`${SHELL_CONTAINER} flex h-14 items-center justify-between lg:h-16`}>
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 lg:w-12 lg:h-12 rounded-xl flex items-center justify-center">
-            <img src="/logo.svg" alt="Toss" className="rounded-full"/>
-          </div>  
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-accent/25 to-transparent ring-1 ring-border/80 lg:h-11 lg:w-11">
+            <img src="/logo.svg" alt="Toss" className="h-8 w-8 rounded-full lg:h-9 lg:w-9" />
+          </div>
           <div>
-            <h1 className="text-base lg:text-lg font-semibold text-foreground">Toss</h1>
+            <h1 className="text-base font-semibold tracking-tight text-foreground lg:text-lg">Toss</h1>
             <p className="text-xs text-muted-foreground">跨设备传输</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <div className="hidden sm:flex items-center gap-1 text-muted-foreground mr-1">
+          <div className="mr-1 hidden items-center gap-1 text-muted-foreground sm:flex">
             <Smartphone className="w-4 h-4" />
             <ArrowLeftRight className="w-3 h-3" />
             <Laptop className="w-4 h-4" />
@@ -59,22 +62,18 @@ function AppHeader() {
 export default function Home() {
   return (
     <TransferProvider>
-      <div className="min-h-screen lg:h-screen bg-background flex flex-col lg:overflow-hidden">
-        {/* Header - Fixed on mobile, normal on desktop */}
+      <div className="relative flex min-h-screen flex-col bg-background lg:h-screen lg:overflow-hidden">
+        <div className="pointer-events-none absolute inset-0 -z-0 bg-[radial-gradient(120%_60%_at_50%_0%,color-mix(in_oklch,var(--color-accent)_16%,transparent)_0%,transparent_72%)]" />
         <AppHeader />
-        {/* Spacer for fixed header on mobile */}
         <div className="h-14 lg:hidden shrink-0" />
 
-        {/* Main Content */}
-        <main className="flex-1 container mx-auto px-4 py-6 flex flex-col lg:flex-row gap-6 lg:min-h-0 lg:overflow-hidden">
-          {/* Left Panel - Room */}
-          <div className="lg:w-[360px] shrink-0 overflow-y-auto">
+        <main className={`${SHELL_CONTAINER} flex flex-1 flex-col gap-6 py-5 sm:py-6 lg:min-h-0 lg:flex-row lg:overflow-hidden`}>
+          <div className="shrink-0 lg:w-[360px] lg:overflow-y-auto">
             <RoomErrorBoundary>
               <RoomPanel />
             </RoomErrorBoundary>
           </div>
 
-          {/* Right Panel - Transfer */}
           <div className="flex-1 lg:min-h-0 lg:overflow-hidden">
             <TransferErrorBoundary>
               <TransferPanel />
@@ -82,17 +81,14 @@ export default function Home() {
           </div>
         </main>
 
-        {/* Footer */}
-        <footer className="border-t border-border py-4 shrink-0">
-          <div className="container mx-auto px-4">
-            <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs text-muted-foreground">
-              <span>端到端加密传输</span>
-              <span className="text-border">·</span>
-              <span>局域网高速直连</span>
-              <span className="text-border">·</span>
-              <span>全平台兼容</span>
-              <span className="text-border">·</span>
-              <span>支持 PWA 使用</span>
+        <footer className="shrink-0 border-t border-border/70 bg-card/45 py-4">
+          <div className={SHELL_CONTAINER}>
+            <div className="flex flex-wrap items-center justify-center gap-2 text-xs text-muted-foreground">
+              {FOOTER_FEATURES.map((feature) => (
+                <span key={feature} className="rounded-full border border-border/80 bg-background/70 px-2.5 py-1">
+                  {feature}
+                </span>
+              ))}
             </div>
           </div>
         </footer>

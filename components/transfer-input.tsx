@@ -55,14 +55,14 @@ export function TransferInput({
   }
 
   return (
-    <div className="p-4 border-t border-border" data-transfer-input>
+    <div className="border-t border-border/70 p-4" data-transfer-input>
       <div className="flex gap-2 mb-2">
         <Textarea
           placeholder={isConnected ? "输入要发送的文本..." : "连接设备后可发送内容"}
           value={text}
           onChange={(e) => onTextChange(e.target.value)}
           disabled={!isConnected}
-          className="min-h-[80px] resize-none bg-input border-border focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:border-border"
+          className="min-h-[84px] resize-none border-border bg-input focus-visible:border-border focus-visible:ring-0 focus-visible:ring-offset-0"
           onKeyDown={handleKeyDown}
         />
       </div>

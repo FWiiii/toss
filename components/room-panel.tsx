@@ -11,8 +11,8 @@ import { QRCodeScanner } from "@/components/qr-code-scanner"
 import { ConnectionStatusDisplay } from "@/components/connection-status"
 import { Copy, Check, LogOut, Loader2, AlertCircle, QrCode, ScanLine } from "lucide-react"
 
-// Common card style to reduce duplication
-const CARD_CLASS = "relative overflow-hidden rounded-xl border border-border bg-card p-6"
+const CARD_CLASS = "panel-surface relative overflow-hidden p-6"
+const SECTION_HINT_CLASS = "mt-2 text-center text-xs text-muted-foreground"
 
 export function RoomPanel() {
   const { 
@@ -112,7 +112,7 @@ export function RoomPanel() {
           <div className="text-center mb-5">
             <p className="text-xs text-muted-foreground mb-2 uppercase tracking-wider">房间代码</p>
             <div className="flex items-center justify-center gap-2">
-              <span className="text-4xl font-mono font-bold tracking-[0.3em] text-foreground">
+              <span className="text-4xl font-mono font-bold tracking-[0.3em] text-foreground sm:text-[2.6rem]">
                 {formatCode(roomCode)}
               </span>
               <Button variant="ghost" size="icon-sm" onClick={handleCopyCode}>
@@ -181,7 +181,7 @@ export function RoomPanel() {
               "创建房间"
             )}
           </Button>
-          <p className="text-xs text-muted-foreground text-center mt-2">
+          <p className={SECTION_HINT_CLASS}>
             生成一个房间代码，分享给其他设备
           </p>
         </div>
@@ -201,7 +201,7 @@ export function RoomPanel() {
               placeholder="输入房间代码"
               value={inputCode}
               onChange={(e) => setInputCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6))}
-              className="h-14 text-center text-xl font-mono tracking-[0.2em] uppercase bg-input border-border focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:border-border"
+              className="h-14 border-border bg-input text-center text-xl font-mono uppercase tracking-[0.2em] focus-visible:border-border focus-visible:ring-0 focus-visible:ring-offset-0"
               maxLength={6}
               disabled={isCreatingRoom || isJoiningRoom}
               onKeyDown={(e) => {
@@ -234,7 +234,7 @@ export function RoomPanel() {
             扫描二维码加入
           </Button>
           
-          <p className="text-xs text-muted-foreground text-center mt-2">
+          <p className={SECTION_HINT_CLASS}>
             输入房间代码或扫描二维码加入
           </p>
           {errorMessage && connectionStatus === "error" && (
