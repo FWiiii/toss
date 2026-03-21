@@ -193,7 +193,6 @@ export function useNotification() {
     showNotification("Toss - 新内容", {
       body: messages[type],
       tag: "toss-received",
-      renotify: false,
     })
   }, [playSound, vibrate, showNotification])
 
@@ -209,7 +208,6 @@ export function useNotification() {
     showNotification("Toss - 测试通知", {
       body: "通知功能正常工作 ✓",
       tag: "toss-test",
-      renotify: true,
     }, true) // force = true
   }, [playSound, vibrate, showNotification])
 

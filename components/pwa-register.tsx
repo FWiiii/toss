@@ -68,6 +68,8 @@ export function PWARegister() {
           size="icon-sm"
           className="flex-shrink-0 -mt-1 -mr-1"
           onClick={() => setShowInstallPrompt(false)}
+          aria-label="关闭安装提示"
+          title="关闭安装提示"
         >
           <X className="w-4 h-4" />
         </Button>

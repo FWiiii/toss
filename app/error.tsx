@@ -3,6 +3,7 @@
 import { useEffect } from "react"
 import { AlertTriangle, RefreshCw, Home } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { DEV_ERROR_DETAILS, STATUS_TONES } from "@/lib/design-tokens"
 
 export default function Error({
   error,
@@ -19,8 +20,8 @@ export default function Error({
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <div className="max-w-md w-full text-center">
-        <div className="w-20 h-20 rounded-full bg-destructive/10 flex items-center justify-center mx-auto mb-6">
-          <AlertTriangle className="w-10 h-10 text-destructive" />
+        <div className={`mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full ${STATUS_TONES.danger.iconSurface}`}>
+          <AlertTriangle className={`h-10 w-10 ${STATUS_TONES.danger.icon}`} />
         </div>
         
         <h1 className="text-2xl font-bold text-foreground mb-2">页面加载出错</h1>
@@ -33,7 +34,7 @@ export default function Error({
             <summary className="text-sm text-muted-foreground cursor-pointer hover:text-foreground mb-2">
               错误详情
             </summary>
-            <pre className="p-4 bg-muted rounded-lg text-xs overflow-auto max-h-40 text-destructive">
+            <pre className={`${DEV_ERROR_DETAILS.standard} ${STATUS_TONES.danger.inline}`}>
               {error.message}
               {error.stack && (
                 <>

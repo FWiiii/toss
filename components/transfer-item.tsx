@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { ImageThumbnail } from "@/components/image-thumbnail"
 import { LinkPreview } from "@/components/link-preview"
@@ -8,6 +8,7 @@ import { Download, FileText, File as FileIcon, ImageIcon, ZoomIn, Copy, Check, L
 import { cn, formatFileSize, isImageFile } from "@/lib/utils"
 import { parseTextWithLinks } from "@/lib/link-utils"
 import type { TransferItem } from "@/lib/types"
+import { INTERACTIVE_TONES, STATUS_TONES } from "@/lib/design-tokens"
 
 function formatTime(date: Date) {
   return date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })
@@ -43,8 +44,27 @@ function getFileIcon(name?: string) {
 // Progress bar component - optimized for GPU acceleration
 function ProgressBar({ progress, className }: { progress: number; className?: string }) {
   const clampedProgress = Math.min(100, Math.max(0, progress))
+  const [showFinishPulse, setShowFinishPulse] = useState(false)
+  const previousProgressRef = useRef(clampedProgress)
+
+  useEffect(() => {
+    const previousProgress = previousProgressRef.current
+    previousProgressRef.current = clampedProgress
+
+    if (clampedProgress === 100 && previousProgress < 100) {
+      setShowFinishPulse(true)
+      const timeoutId = window.setTimeout(() => {
+        setShowFinishPulse(false)
+      }, 540)
+
+      return () => {
+        window.clearTimeout(timeoutId)
+      }
+    }
+  }, [clampedProgress])
+
   return (
-    <div className={cn("w-full h-1 bg-muted rounded-full overflow-hidden", className)}>
+    <div className={cn("w-full h-1 bg-muted rounded-full overflow-hidden", showFinishPulse && "delight-progress-finish", className)}>
       <div 
         className="h-full bg-foreground/70 rounded-full will-change-transform transform-gpu"
         style={{ 
@@ -68,7 +88,7 @@ type TransferItemProps = {
 // System message component
 function SystemMessage({ content }: { content: string }) {
   return (
-    <div className="flex justify-center">
+    <div className="flex justify-center delight-fade-up">
       <div className="px-3 py-1 rounded-full bg-muted text-xs text-muted-foreground">
         {content}
       </div>
@@ -93,6 +113,7 @@ function ImageItem({
   const progress = item.progress ?? 100
   const transferredBytes = item.transferredBytes ?? item.size ?? 0
   const totalSize = item.size ?? 0
+  const imageName = item.name || "图片"
 
   // Show cancelled state
   if (isCancelled) {
@@ -102,7 +123,7 @@ function ImageItem({
           <Ban className="w-5 h-5 text-muted-foreground" />
         </div>
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-foreground truncate">{item.name}</p>
+          <p className="text-sm font-medium text-foreground truncate">{imageName}</p>
           <p className="text-xs text-muted-foreground mt-1">
             已取消 · {formatFileSize(transferredBytes)} / {formatFileSize(totalSize)}
           </p>
@@ -119,7 +140,7 @@ function ImageItem({
           <Loader2 className="w-5 h-5 text-accent animate-spin" />
         </div>
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-foreground truncate">{item.name}</p>
+          <p className="text-sm font-medium text-foreground truncate">{imageName}</p>
           
           {/* Progress bar */}
           <ProgressBar progress={progress} className="mt-2" />
@@ -151,7 +172,8 @@ function ImageItem({
             variant="ghost"
             size="icon-sm"
             onClick={() => onCancel(item.id)}
-            className="shrink-0 hover:text-destructive"
+            className={cn("shrink-0", INTERACTIVE_TONES.dangerHover)}
+            aria-label={`取消传输 ${imageName}`}
             title="取消传输"
           >
             <X className="w-4 h-4" />
@@ -163,23 +185,25 @@ function ImageItem({
 
   return (
     <div className="space-y-2">
-      <div 
-        className="relative group"
-        onClick={() => onPreviewImage(item.content, item.name || "image")}
+      <button
+        type="button"
+        className="group relative block w-full overflow-hidden rounded-lg text-left focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+        onClick={() => onPreviewImage(item.content, imageName)}
+        aria-label={`预览图片 ${imageName}`}
       >
         <ImageThumbnail
           src={item.content}
-          alt={item.name || "image"}
+          alt={imageName}
           className="bg-background"
           thumbnailSize={300}
         />
-        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors rounded-lg flex items-center justify-center cursor-pointer">
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-lg bg-black/0 transition-colors group-hover:bg-black/20">
           <ZoomIn className="w-8 h-8 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
         </div>
-      </div>
+      </button>
       <div className="flex items-center justify-between">
         <div className="min-w-0 flex-1">
-          <p className="text-xs text-muted-foreground truncate">{item.name}</p>
+          <p className="text-xs text-muted-foreground truncate">{imageName}</p>
           <p className="text-xs text-muted-foreground">
             {formatFileSize(item.size || 0)} · {formatTime(item.timestamp)} · {item.direction === "sent" ? "已发送" : "已接收"}
           </p>
@@ -192,7 +216,9 @@ function ImageItem({
               e.stopPropagation()
               onDownload(item.content, item.name)
             }}
-            className="shrink-0"
+            className="shrink-0 bg-background/80 text-foreground/80 hover:bg-background hover:text-foreground"
+            aria-label={`下载图片 ${imageName}`}
+            title={`下载图片 ${imageName}`}
           >
             <Download className="w-4 h-4" />
           </Button>
@@ -218,6 +244,7 @@ function FileItem({
   const progress = item.progress ?? 100
   const transferredBytes = item.transferredBytes ?? item.size ?? 0
   const totalSize = item.size ?? 0
+  const fileName = item.name || "文件"
 
   // Show cancelled state
   if (isCancelled) {
@@ -227,7 +254,7 @@ function FileItem({
           <Ban className="w-5 h-5 text-muted-foreground" />
         </div>
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-foreground truncate">{item.name}</p>
+          <p className="text-sm font-medium text-foreground truncate">{fileName}</p>
           <p className="text-xs text-muted-foreground mt-1">
             已取消 · {formatFileSize(transferredBytes)} / {formatFileSize(totalSize)}
           </p>
@@ -246,7 +273,7 @@ function FileItem({
         )}
       </div>
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium text-foreground truncate">{item.name}</p>
+        <p className="text-sm font-medium text-foreground truncate">{fileName}</p>
         
         {isTransferring ? (
           <>
@@ -289,7 +316,8 @@ function FileItem({
           variant="ghost"
           size="icon-sm"
           onClick={() => onCancel(item.id)}
-          className="shrink-0 hover:text-destructive"
+          className={cn("shrink-0", INTERACTIVE_TONES.dangerHover)}
+          aria-label={`取消传输 ${fileName}`}
           title="取消传输"
         >
           <X className="w-4 h-4" />
@@ -301,7 +329,9 @@ function FileItem({
           variant="ghost"
           size="icon-sm"
           onClick={() => onDownload(item.content, item.name)}
-          className="shrink-0"
+          className="shrink-0 bg-background/80 text-foreground/80 hover:bg-background hover:text-foreground"
+          aria-label={`下载文件 ${fileName}`}
+          title={`下载文件 ${fileName}`}
         >
           <Download className="w-4 h-4" />
         </Button>
@@ -359,12 +389,13 @@ function TextItem({ item }: { item: TransferItem }) {
         size="icon-sm"
         onClick={handleCopy}
         className="shrink-0"
+        aria-label={copied ? "文本已复制" : "复制文本"}
         title={copied ? "已复制" : "复制文本"}
       >
         {copied ? (
-          <Check className="w-4 h-4 text-green-500" />
+          <Check className={cn("h-4 w-4", STATUS_TONES.success.inline)} />
         ) : (
-          <Copy className="w-4 h-4" />
+          <Copy className="h-4 w-4" />
         )}
       </Button>
     </div>
@@ -372,6 +403,21 @@ function TextItem({ item }: { item: TransferItem }) {
 }
 
 export function TransferItemComponent({ item, onPreviewImage, onDownload, onCancel }: TransferItemProps) {
+  const [showSettleIn, setShowSettleIn] = useState(false)
+
+  useEffect(() => {
+    if (item.type === "system" || item.status === "completed") {
+      setShowSettleIn(true)
+      const timeoutId = window.setTimeout(() => {
+        setShowSettleIn(false)
+      }, 260)
+
+      return () => {
+        window.clearTimeout(timeoutId)
+      }
+    }
+  }, [item.id, item.status, item.type])
+
   // System messages
   if (item.type === "system") {
     return <SystemMessage content={item.content} />
@@ -383,7 +429,8 @@ export function TransferItemComponent({ item, onPreviewImage, onDownload, onCanc
     <div
       className={cn(
         "rounded-md border border-border/60 bg-card/50 px-3 py-2 hover:bg-card transition-colors",
-        directionClass
+        directionClass,
+        showSettleIn && "delight-rise-in"
       )}
     >
       {isImage ? (

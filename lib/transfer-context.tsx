@@ -27,6 +27,7 @@ type TransferContextType = {
   sendFile: (file: File) => Promise<void>
   cancelTransfer: (itemId: string) => void
   clearHistory: () => void
+  addSystemMessage: (message: string, force?: boolean) => void
   peerCount: number
   isHost: boolean
   isCreatingRoom: boolean
@@ -573,6 +574,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
         sendFile,
         cancelTransfer,
         clearHistory,
+        addSystemMessage,
         peerCount,
         isHost,
         isCreatingRoom,

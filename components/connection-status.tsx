@@ -1,16 +1,14 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useEffect, useRef, useState } from "react"
 import { ConnectionStatus, ConnectionInfo, ConnectionType, ConnectionQuality } from "@/lib/types"
 import { 
   Wifi, 
   WifiOff, 
   Loader2, 
   AlertCircle, 
-  Users, 
   Crown, 
   User,
-  Clock,
   Signal,
   Zap,
   Radio,
@@ -19,8 +17,10 @@ import {
   Gauge,
   Lock
 } from "lucide-react"
+import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { formatFileSize } from "@/lib/utils"
+import { STATUS_TONES, type StatusTone } from "@/lib/design-tokens"
 
 interface ConnectionStatusDisplayProps {
   status: ConnectionStatus
@@ -41,59 +41,45 @@ function getConnectionTypeDisplay(type: ConnectionType) {
         label: "局域网直连",
         description: "设备间直接通信，最快速度",
         icon: Zap,
-        color: "text-emerald-500"
+        tone: "success" as const
       }
     case "stun":
       return {
         label: "P2P 穿透",
         description: "NAT 穿透后直连",
         icon: Radio,
-        color: "text-blue-500"
+        tone: "info" as const
       }
     case "relay":
       return {
         label: "服务器中转",
         description: "通过 TURN 服务器转发",
         icon: Server,
-        color: "text-amber-500"
+        tone: "warning" as const
       }
     default:
       return {
         label: "检测中...",
         description: "正在检测连接类型",
         icon: Loader2,
-        color: "text-muted-foreground"
+        tone: "neutral" as const
       }
   }
 }
 
-// Format duration in human readable format
-function formatDuration(seconds: number): string {
-  if (seconds < 60) {
-    return `${seconds}秒`
-  } else if (seconds < 3600) {
-    const mins = Math.floor(seconds / 60)
-    return `${mins}分钟`
-  } else {
-    const hours = Math.floor(seconds / 3600)
-    const mins = Math.floor((seconds % 3600) / 60)
-    return mins > 0 ? `${hours}小时${mins}分钟` : `${hours}小时`
-  }
-}
-
 // Get quality indicator color
-function getQualityColor(quality: string) {
+function getQualityTone(quality: string): StatusTone {
   switch (quality) {
     case "excellent":
-      return "text-emerald-500"
+      return "success"
     case "good":
-      return "text-green-500"
+      return "success"
     case "fair":
-      return "text-amber-500"
+      return "warning"
     case "poor":
-      return "text-red-500"
+      return "danger"
     default:
-      return "text-muted-foreground"
+      return "neutral"
   }
 }
 
@@ -109,59 +95,45 @@ export function ConnectionStatusDisplay({
 }: ConnectionStatusDisplayProps) {
   const connectionTypeDisplay = getConnectionTypeDisplay(connectionInfo?.type || "unknown")
   const ConnectionTypeIcon = connectionTypeDisplay.icon
-  const [connectedTime, setConnectedTime] = useState(0)
-  const [connectionStartTime, setConnectionStartTime] = useState<Date | null>(null)
+  const [showDiagnostics, setShowDiagnostics] = useState(false)
+  const [showConnectionFlash, setShowConnectionFlash] = useState(false)
+  const wasReadyRef = useRef(false)
 
-  // Track connection time
   useEffect(() => {
-    if (status === "connected" && peerCount > 0) {
-      if (!connectionStartTime) {
-        setConnectionStartTime(new Date())
+    if (status !== "connected" || peerCount === 0) {
+      setShowDiagnostics(false)
+    }
+  }, [peerCount, status])
+
+  useEffect(() => {
+    const isReady = status === "connected" && peerCount > 0
+    let timeoutId: number | undefined
+
+    if (isReady && !wasReadyRef.current) {
+      setShowConnectionFlash(true)
+      timeoutId = window.setTimeout(() => {
+        setShowConnectionFlash(false)
+      }, 760)
+    }
+
+    if (!isReady) {
+      setShowConnectionFlash(false)
+    }
+
+    wasReadyRef.current = isReady
+
+    return () => {
+      if (timeoutId) {
+        window.clearTimeout(timeoutId)
       }
-      
-      const interval = setInterval(() => {
-        if (connectionStartTime) {
-          const elapsed = Math.floor((Date.now() - connectionStartTime.getTime()) / 1000)
-          setConnectedTime(elapsed)
-        }
-      }, 1000)
-      
-      return () => clearInterval(interval)
-    } else if (status !== "connected" || peerCount === 0) {
-      setConnectionStartTime(null)
-      setConnectedTime(0)
     }
-  }, [status, peerCount, connectionStartTime])
-
-  // Reset timer when first connected
-  useEffect(() => {
-    if (status === "connected" && peerCount > 0 && !connectionStartTime) {
-      setConnectionStartTime(new Date())
-    }
-  }, [status, peerCount, connectionStartTime])
+  }, [peerCount, status])
 
   // Generate dynamic description based on connection quality
   const getConnectionDescription = () => {
-    if (peerCount === 0) return "等待其他设备..."
-    if (isHost) return `${peerCount} 台设备已连接`
-    
-    // For guests, show dynamic quality description
-    if (connectionQuality && connectionQuality.quality !== "unknown") {
-      const qualityDescriptions = {
-        excellent: "连接优秀，传输极快",
-        good: "连接良好，传输顺畅",
-        fair: "连接一般，可正常传输",
-        poor: "连接较慢，传输受限"
-      }
-      return qualityDescriptions[connectionQuality.quality]
-    }
-    
-    // Fallback based on connection type
-    if (connectionInfo?.type === "direct") return "局域网直连，传输极快"
-    if (connectionInfo?.type === "stun") return "P2P 连接，传输顺畅"
-    if (connectionInfo?.type === "relay") return "服务器中转，传输较慢"
-    
-    return "连接稳定，可以传输"
+    if (peerCount === 0) return "等待其他设备加入"
+    if (isHost) return `${peerCount} 台设备已连上，可开始发送`
+    return "已连上，可开始发送文本或文件"
   }
 
   const getStatusConfig = () => {
@@ -171,10 +143,7 @@ export function ConnectionStatusDisplay({
           icon: Wifi,
           label: "已连接",
           description: getConnectionDescription(),
-          bgColor: "bg-emerald-500/10",
-          borderColor: "border-emerald-500/20",
-          iconColor: "text-emerald-500",
-          dotColor: "bg-emerald-500",
+          tone: "success" as const,
           showPulse: peerCount === 0
         }
       case "connecting":
@@ -184,10 +153,7 @@ export function ConnectionStatusDisplay({
           description: isHost 
             ? "房间已创建，等待其他设备加入..." 
             : "正在建立 P2P 连接...",
-          bgColor: "bg-amber-500/10",
-          borderColor: "border-amber-500/20",
-          iconColor: "text-amber-500",
-          dotColor: "bg-amber-500",
+          tone: "warning" as const,
           showPulse: true,
           animate: true
         }
@@ -196,10 +162,7 @@ export function ConnectionStatusDisplay({
           icon: Loader2,
           label: "正在重连",
           description: errorMessage || "连接已断开，正在尝试重新连接...",
-          bgColor: "bg-blue-500/10",
-          borderColor: "border-blue-500/20",
-          iconColor: "text-blue-500",
-          dotColor: "bg-blue-500",
+          tone: "info" as const,
           showPulse: true,
           animate: true
         }
@@ -208,10 +171,7 @@ export function ConnectionStatusDisplay({
           icon: AlertCircle,
           label: "连接失败",
           description: errorMessage || "无法建立连接，请检查网络",
-          bgColor: "bg-destructive/10",
-          borderColor: "border-destructive/20",
-          iconColor: "text-destructive",
-          dotColor: "bg-destructive",
+          tone: "danger" as const,
           showPulse: false
         }
       case "dissolved":
@@ -219,10 +179,7 @@ export function ConnectionStatusDisplay({
           icon: WifiOff,
           label: "房间已解散",
           description: "房主已关闭房间",
-          bgColor: "bg-muted/50",
-          borderColor: "border-border",
-          iconColor: "text-muted-foreground",
-          dotColor: "bg-muted-foreground",
+          tone: "neutral" as const,
           showPulse: false
         }
       default:
@@ -230,10 +187,7 @@ export function ConnectionStatusDisplay({
           icon: WifiOff,
           label: "未连接",
           description: "等待建立连接",
-          bgColor: "bg-muted/50",
-          borderColor: "border-border",
-          iconColor: "text-muted-foreground",
-          dotColor: "bg-muted-foreground",
+          tone: "neutral" as const,
           showPulse: false
         }
     }
@@ -241,38 +195,58 @@ export function ConnectionStatusDisplay({
 
   const config = getStatusConfig()
   const StatusIcon = config.icon
+  const tone = STATUS_TONES[config.tone]
+  const connectionTone = STATUS_TONES[connectionTypeDisplay.tone]
+  const qualityTone =
+    connectionQuality && connectionQuality.latency !== null
+      ? STATUS_TONES[getQualityTone(connectionQuality.quality)]
+      : null
+  const hasDiagnostics =
+    status === "connected" &&
+    peerCount > 0 &&
+    (
+      connectionInfo?.type !== "unknown" ||
+      connectionQuality?.latency !== null ||
+      connectionQuality?.bandwidth !== null ||
+      isEncrypted
+    )
 
   return (
     <div className={cn("space-y-3", className)}>
       {/* Main status card */}
       <div className={cn(
-        "rounded-lg border p-4 transition-colors",
-        config.bgColor,
-        config.borderColor
+        "relative overflow-hidden rounded-lg border p-4 transition-colors",
+        tone.surface,
+        showConnectionFlash && "delight-connected-flash"
       )}>
-        <div className="flex items-start gap-3">
+        {showConnectionFlash && (
+          <div
+            className="pointer-events-none absolute inset-0 bg-gradient-to-r from-transparent via-success/10 to-transparent"
+            aria-hidden="true"
+          />
+        )}
+        <div className="relative flex items-start gap-3">
           {/* Status icon with pulse */}
           <div className="relative">
             <div className={cn(
-              "w-10 h-10 rounded-full flex items-center justify-center",
-              config.bgColor
+              "flex h-10 w-10 items-center justify-center rounded-full",
+              tone.iconSurface
             )}>
               <StatusIcon className={cn(
-                "w-5 h-5",
-                config.iconColor,
+                "h-5 w-5",
+                tone.icon,
                 config.animate && "animate-spin"
               )} />
             </div>
-            {/* Pulse indicator */}
             {config.showPulse && (
               <span className="absolute top-0 right-0 flex h-3 w-3 will-change-transform">
                 <span className={cn(
-                  "animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 transform-gpu",
-                  config.dotColor
+                  "absolute inline-flex h-full w-full animate-ping rounded-full opacity-75 transform-gpu",
+                  tone.dot
                 )} />
                 <span className={cn(
-                  "relative inline-flex rounded-full h-3 w-3",
-                  config.dotColor
+                  "relative inline-flex h-3 w-3 rounded-full",
+                  tone.dot
                 )} />
               </span>
             )}
@@ -286,8 +260,8 @@ export function ConnectionStatusDisplay({
               <span className={cn(
                 "inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full",
                 isHost 
-                  ? "bg-amber-500/10 text-amber-600 dark:text-amber-400" 
-                  : "bg-blue-500/10 text-blue-600 dark:text-blue-400"
+                  ? STATUS_TONES.warning.badge
+                  : STATUS_TONES.info.badge
               )}>
                 {isHost ? (
                   <>
@@ -305,88 +279,108 @@ export function ConnectionStatusDisplay({
             <p className="text-sm text-muted-foreground mt-0.5">
               {config.description}
             </p>
+            {status === "connected" && peerCount > 0 && (
+              <p className={cn(
+                "mt-2 text-xs text-muted-foreground",
+                showConnectionFlash && "delight-fade-up"
+              )}>
+                下一步：在下方发送文本，或选择文件与剪贴板内容。
+              </p>
+            )}
           </div>
         </div>
 
-        {/* Connection details when connected */}
-        {status === "connected" && peerCount > 0 && (
+        {hasDiagnostics && (
           <div className="mt-3 pt-2 border-t border-border/50">
-            {/* Compact single-row layout with all metrics */}
-            <div className="flex items-center gap-4 text-xs text-muted-foreground flex-wrap">
-              {/* Peer count */}
-              <div className="flex items-center gap-1.5" title="连接设备数">
-                <Users className="w-3.5 h-3.5" />
-                <span className="font-medium text-foreground">{peerCount}</span>
-              </div>
-              
-              {/* Connection time */}
-              <div className="flex items-center gap-1.5" title="连接时长">
-                <Clock className="w-3.5 h-3.5" />
-                <span className="font-medium text-foreground">{formatDuration(connectedTime)}</span>
-              </div>
-              
-              {/* Connection type */}
-              <div className="flex items-center gap-1.5" title={connectionTypeDisplay.description}>
-                <ConnectionTypeIcon className={cn(
-                  "w-3.5 h-3.5",
-                  connectionTypeDisplay.color,
-                  connectionInfo?.type === "unknown" && "animate-spin"
-                )} />
-                <span className={cn("font-medium", connectionTypeDisplay.color)}>
-                  {connectionTypeDisplay.label}
-                </span>
-              </div>
-              
-              {/* Latency */}
-              {connectionQuality && connectionQuality.latency !== null && (
-                <div className="flex items-center gap-1.5" title="网络延迟">
-                  <Activity className={cn("w-3.5 h-3.5", getQualityColor(connectionQuality.quality))} />
-                  <span className={cn("font-medium", getQualityColor(connectionQuality.quality))}>
-                    {connectionQuality.latency}ms
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-auto px-0 text-xs text-muted-foreground hover:bg-transparent hover:text-foreground"
+              onClick={() => setShowDiagnostics((prev) => !prev)}
+            >
+              {showDiagnostics ? "收起连接详情" : "查看连接详情"}
+            </Button>
+
+            {showDiagnostics && (
+              <div className="mt-2 flex items-center gap-4 text-xs text-muted-foreground flex-wrap">
+                <div className="flex items-center gap-1.5" title={connectionTypeDisplay.description} aria-label={`连接方式 ${connectionTypeDisplay.label}`}>
+                  <ConnectionTypeIcon className={cn(
+                    "w-3.5 h-3.5",
+                    connectionTone.inline,
+                    connectionInfo?.type === "unknown" && "animate-spin"
+                  )} />
+                  <span className={cn("font-medium", connectionTone.inline)}>
+                    {connectionTypeDisplay.label}
                   </span>
                 </div>
-              )}
-              
-              {/* Bandwidth */}
-              {connectionQuality && connectionQuality.bandwidth !== null && (
-                <div className="flex items-center gap-1.5" title="传输速度">
-                  <Gauge className="w-3.5 h-3.5" />
-                  <span className="font-medium text-foreground">
-                    {formatFileSize(connectionQuality.bandwidth)}/s
-                  </span>
-                </div>
-              )}
-              
-              {/* Encryption status */}
-              {isEncrypted && (
-                <div className="flex items-center gap-1.5" title="端到端加密已启用">
-                  <Lock className="w-3.5 h-3.5 text-green-500 dark:text-green-400" />
-                  <span className="font-medium text-green-600 dark:text-green-400">已加密</span>
-                </div>
-              )}
-            </div>
+
+                {connectionQuality && connectionQuality.latency !== null && (
+                  <div className="flex items-center gap-1.5" title="网络延迟" aria-label={`网络延迟 ${connectionQuality.latency} 毫秒`}>
+                    <Activity className={cn("h-3.5 w-3.5", qualityTone?.inline)} />
+                    <span className={cn("font-medium", qualityTone?.inline)}>
+                      {connectionQuality.latency}ms
+                    </span>
+                  </div>
+                )}
+
+                {connectionQuality && connectionQuality.bandwidth !== null && (
+                  <div className="flex items-center gap-1.5" title="传输速度" aria-label={`传输速度 ${formatFileSize(connectionQuality.bandwidth)} 每秒`}>
+                    <Gauge className="w-3.5 h-3.5" />
+                    <span className="font-medium text-foreground">
+                      {formatFileSize(connectionQuality.bandwidth)}/s
+                    </span>
+                  </div>
+                )}
+
+                {isEncrypted && (
+                  <div className="flex items-center gap-1.5" title="端到端加密已启用" aria-label="端到端加密已启用">
+                    <Lock className={cn("w-3.5 h-3.5", STATUS_TONES.success.inline)} />
+                    <span className={cn("font-medium", STATUS_TONES.success.inline)}>已加密</span>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>
 
       {/* Tips based on status */}
       {status === "connecting" && isHost && (
-        <div className="flex items-start gap-2 text-xs text-muted-foreground bg-muted/30 rounded-lg p-3">
-          <Signal className="w-4 h-4 shrink-0 mt-0.5" />
+        <div className={cn(
+          "flex items-start gap-2 p-3 text-xs",
+          STATUS_TONES.neutral.calloutSurface,
+          STATUS_TONES.neutral.calloutText
+        )}>
+          <Signal className="mt-0.5 h-4 w-4 shrink-0" />
           <p>提示：在其他设备上输入房间代码或扫描二维码即可加入</p>
         </div>
       )}
       
       {status === "reconnecting" && (
-        <div className="flex items-start gap-2 text-xs text-blue-600 dark:text-blue-400 bg-blue-500/10 rounded-lg p-3">
-          <Loader2 className="w-4 h-4 shrink-0 mt-0.5 animate-spin" />
+        <div
+          className={cn(
+            "flex items-start gap-2 p-3 text-xs",
+            STATUS_TONES.info.calloutSurface,
+            STATUS_TONES.info.calloutText
+          )}
+          role="status"
+          aria-live="polite"
+        >
+          <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin" />
           <p>连接意外断开，正在自动尝试重新连接，请稍候...</p>
         </div>
       )}
       
       {status === "error" && (
-        <div className="flex items-start gap-2 text-xs text-muted-foreground bg-muted/30 rounded-lg p-3">
-          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+        <div
+          className={cn(
+            "flex items-start gap-2 p-3 text-xs",
+            STATUS_TONES.neutral.calloutSurface,
+            STATUS_TONES.neutral.calloutText
+          )}
+          role="alert"
+        >
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
           <p>请检查：1) 两设备是否在同一网络 2) 浏览器是否允许 WebRTC 连接 3) 防火墙设置</p>
         </div>
       )}

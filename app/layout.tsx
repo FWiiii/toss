@@ -2,6 +2,7 @@ import React from "react"
 import type { Metadata, Viewport } from 'next'
 import { Analytics } from '@vercel/analytics/next'
 import { ThemeProvider } from '@/components/theme-provider'
+import { VIEWPORT_THEME_COLORS } from '@/lib/design-tokens'
 import './globals.css'
 
 export const metadata: Metadata = {
@@ -28,11 +29,9 @@ export const metadata: Metadata = {
 }
 
 export const viewport: Viewport = {
-  themeColor: '#171717',
+  themeColor: [...VIEWPORT_THEME_COLORS],
   width: 'device-width',
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
 }
 
 export default function RootLayout({

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useEffect, useId, useState } from "react"
 import { useTransfer } from "@/lib/transfer-context"
 import { useJoinCode } from "@/hooks/use-join-code"
 import { Button } from "@/components/ui/button"
@@ -10,6 +10,8 @@ import { QRCodeDisplay } from "@/components/qr-code-display"
 import { QRCodeScanner } from "@/components/qr-code-scanner"
 import { ConnectionStatusDisplay } from "@/components/connection-status"
 import { Copy, Check, LogOut, Loader2, AlertCircle, QrCode, ScanLine } from "lucide-react"
+import { STATUS_TONES } from "@/lib/design-tokens"
+import { cn } from "@/lib/utils"
 
 const CARD_CLASS = "panel-surface relative overflow-hidden p-6"
 const SECTION_HINT_CLASS = "mt-2 text-center text-xs text-muted-foreground"
@@ -35,6 +37,9 @@ export function RoomPanel() {
   const [copied, setCopied] = useState(false)
   const [showQRCode, setShowQRCode] = useState(false)
   const [showScanner, setShowScanner] = useState(false)
+  const joinInputId = useId()
+  const joinHintId = useId()
+  const joinErrorId = useId()
 
   // Auto-join when code is provided via URL
   useEffect(() => {
@@ -86,6 +91,8 @@ export function RoomPanel() {
     return code.slice(0, 3) + " " + code.slice(3)
   }
 
+  const joinHasError = connectionStatus === "error" && Boolean(errorMessage)
+
   // Room dissolved state - show return button
   if (connectionStatus === "dissolved") {
     return (
@@ -94,7 +101,7 @@ export function RoomPanel() {
           icon={AlertCircle}
           title="房间已解散"
           description="房主已关闭房间，连接已断开"
-          iconClassName="bg-destructive/10 text-destructive"
+          iconClassName={`${STATUS_TONES.danger.iconSurface} ${STATUS_TONES.danger.icon}`}
         />
         <Button className="w-full mt-2" onClick={leaveRoom}>
           返回首页
@@ -111,14 +118,32 @@ export function RoomPanel() {
         {roomCode && (
           <div className="text-center mb-5">
             <p className="text-xs text-muted-foreground mb-2 uppercase tracking-wider">房间代码</p>
-            <div className="flex items-center justify-center gap-2">
+            <div className="relative overflow-hidden rounded-xl">
+              {copied && <div className="pointer-events-none absolute inset-0 delight-sweep-overlay" aria-hidden="true" />}
+              <div className="relative flex items-center justify-center gap-2 rounded-xl px-2 py-1">
               <span className="text-4xl font-mono font-bold tracking-[0.3em] text-foreground sm:text-[2.6rem]">
                 {formatCode(roomCode)}
               </span>
-              <Button variant="ghost" size="icon-sm" onClick={handleCopyCode}>
-                {copied ? <Check className="w-5 h-5 text-green-500" /> : <Copy className="w-5 h-5" />}
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={handleCopyCode}
+                aria-label={copied ? "房间代码已复制" : "复制房间代码"}
+                title={copied ? "房间代码已复制" : "复制房间代码"}
+              >
+                {copied ? <Check className={`h-5 w-5 ${STATUS_TONES.success.inline}`} /> : <Copy className="h-5 w-5" />}
               </Button>
+              </div>
             </div>
+            <p
+              className={cn(
+                "mt-2 min-h-[1rem] text-xs text-muted-foreground transition-all duration-200",
+                copied ? "translate-y-0 opacity-100" : "translate-y-1 opacity-0"
+              )}
+              aria-live="polite"
+            >
+              已复制，可在另一台设备粘贴{isHost ? " · 或直接让对方扫码" : ""}
+            </p>
           </div>
         )}
 
@@ -182,7 +207,7 @@ export function RoomPanel() {
             )}
           </Button>
           <p className={SECTION_HINT_CLASS}>
-            生成一个房间代码，分享给其他设备
+            生成代码给另一台设备
           </p>
         </div>
 
@@ -197,13 +222,23 @@ export function RoomPanel() {
 
         <div>
           <div className="flex gap-2">
+            <label htmlFor={joinInputId} className="sr-only">
+              房间代码
+            </label>
             <Input
+              id={joinInputId}
               placeholder="输入房间代码"
               value={inputCode}
               onChange={(e) => setInputCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6))}
-              className="h-14 border-border bg-input text-center text-xl font-mono uppercase tracking-[0.2em] focus-visible:border-border focus-visible:ring-0 focus-visible:ring-offset-0"
+              className="h-14 border-border bg-input text-center text-xl font-mono uppercase tracking-[0.2em]"
               maxLength={6}
               disabled={isCreatingRoom || isJoiningRoom}
+              inputMode="text"
+              autoComplete="off"
+              autoCapitalize="characters"
+              spellCheck={false}
+              aria-describedby={joinHasError ? `${joinHintId} ${joinErrorId}` : joinHintId}
+              aria-invalid={joinHasError}
               onKeyDown={(e) => {
                 if (e.key === "Enter") handleJoinRoom()
               }}
@@ -213,6 +248,7 @@ export function RoomPanel() {
               size="xl"
               onClick={handleJoinRoom}
               disabled={inputCode.length < 6 || isCreatingRoom || isJoiningRoom}
+              aria-label={isJoiningRoom ? "正在加入房间" : "加入房间"}
             >
               {isJoiningRoom ? (
                 <Loader2 className="w-5 h-5 animate-spin" />
@@ -234,11 +270,17 @@ export function RoomPanel() {
             扫描二维码加入
           </Button>
           
-          <p className={SECTION_HINT_CLASS}>
-            输入房间代码或扫描二维码加入
+          <p id={joinHintId} className={SECTION_HINT_CLASS}>
+            输入代码或扫码加入
           </p>
-          {errorMessage && connectionStatus === "error" && (
-            <p className="text-xs text-destructive text-center mt-2">{errorMessage}</p>
+          {joinHasError && (
+            <p
+              id={joinErrorId}
+              className={`mt-2 text-center text-xs ${STATUS_TONES.danger.inline}`}
+              aria-live="polite"
+            >
+              {errorMessage}
+            </p>
           )}
         </div>
 

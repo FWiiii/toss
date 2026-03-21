@@ -13,66 +13,9 @@ type ImageThumbnailProps = {
 }
 
 type LoadingState = "idle" | "loading" | "loaded" | "error"
-
-/**
- * Generate a thumbnail from an image URL using Canvas
- */
-async function generateThumbnail(
-  src: string, 
-  maxSize: number = 200
-): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const img = new Image()
-    img.crossOrigin = "anonymous"
-    
-    img.onload = () => {
-      // Calculate thumbnail dimensions while maintaining aspect ratio
-      let width = img.width
-      let height = img.height
-      
-      if (width > height) {
-        if (width > maxSize) {
-          height = Math.round((height * maxSize) / width)
-          width = maxSize
-        }
-      } else {
-        if (height > maxSize) {
-          width = Math.round((width * maxSize) / height)
-          height = maxSize
-        }
-      }
-      
-      // Create canvas and draw thumbnail
-      const canvas = document.createElement("canvas")
-      canvas.width = width
-      canvas.height = height
-      
-      const ctx = canvas.getContext("2d")
-      if (!ctx) {
-        reject(new Error("Failed to get canvas context"))
-        return
-      }
-      
-      // Use better quality scaling
-      ctx.imageSmoothingEnabled = true
-      ctx.imageSmoothingQuality = "high"
-      ctx.drawImage(img, 0, 0, width, height)
-      
-      // Convert to data URL with reduced quality for smaller size
-      const thumbnailUrl = canvas.toDataURL("image/jpeg", 0.7)
-      resolve(thumbnailUrl)
-    }
-    
-    img.onerror = () => {
-      reject(new Error("Failed to load image"))
-    }
-    
-    img.src = src
-  })
-}
-
-// Cache for generated thumbnails
-const thumbnailCache = new Map<string, string>()
+const loadedImageCache = new Set<string>()
+const FRAME_HEIGHT_MIN = 160
+const FRAME_HEIGHT_MAX = 240
 
 export function ImageThumbnail({ 
   src, 
@@ -81,56 +24,47 @@ export function ImageThumbnail({
   thumbnailSize = 200,
   onClick 
 }: ImageThumbnailProps) {
-  const [loadingState, setLoadingState] = useState<LoadingState>("idle")
-  const [thumbnailSrc, setThumbnailSrc] = useState<string | null>(null)
-  const [showFullImage, setShowFullImage] = useState(false)
+  const [shouldLoad, setShouldLoad] = useState(() => loadedImageCache.has(src))
+  const [loadingState, setLoadingState] = useState<LoadingState>(() =>
+    loadedImageCache.has(src) ? "loaded" : "idle"
+  )
   const containerRef = useRef<HTMLDivElement>(null)
-  const hasStartedLoading = useRef(false)
+  const frameHeight = Math.min(FRAME_HEIGHT_MAX, Math.max(FRAME_HEIGHT_MIN, Math.round(thumbnailSize * 0.8)))
 
-  // Generate thumbnail when component mounts or becomes visible
-  const loadThumbnail = useCallback(async () => {
-    if (hasStartedLoading.current) return
-    hasStartedLoading.current = true
-    
-    setLoadingState("loading")
-    
-    // Check cache first
-    const cached = thumbnailCache.get(src)
-    if (cached) {
-      setThumbnailSrc(cached)
-      setLoadingState("loaded")
-      return
-    }
-    
-    try {
-      const thumbnail = await generateThumbnail(src, thumbnailSize)
-      thumbnailCache.set(src, thumbnail)
-      setThumbnailSrc(thumbnail)
-      setLoadingState("loaded")
-    } catch {
-      // If thumbnail generation fails, use original image
-      setThumbnailSrc(src)
-      setLoadingState("loaded")
-    }
-  }, [src, thumbnailSize])
+  const loadImage = useCallback(() => {
+    setShouldLoad(true)
+    setLoadingState((current) => (current === "loaded" ? current : "loading"))
+  }, [])
 
-  // Intersection Observer for lazy loading
   useEffect(() => {
+    const isCached = loadedImageCache.has(src)
+    setShouldLoad(isCached)
+    setLoadingState(isCached ? "loaded" : "idle")
+  }, [src])
+
+  useEffect(() => {
+    if (shouldLoad) return
+
     const container = containerRef.current
     if (!container) return
+
+    if (typeof IntersectionObserver === "undefined") {
+      loadImage()
+      return
+    }
 
     const observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
           if (entry.isIntersecting) {
-            loadThumbnail()
+            loadImage()
             observer.unobserve(entry.target)
           }
         })
       },
       {
-        rootMargin: "100px", // Start loading 100px before entering viewport
-        threshold: 0
+        rootMargin: "240px 0px",
+        threshold: 0,
       }
     )
 
@@ -139,62 +73,51 @@ export function ImageThumbnail({
     return () => {
       observer.disconnect()
     }
-  }, [loadThumbnail])
-
-  // Preload full image when thumbnail is loaded
-  useEffect(() => {
-    if (loadingState !== "loaded" || !thumbnailSrc) return
-    
-    // Preload full image in background
-    const img = new Image()
-    img.onload = () => {
-      setShowFullImage(true)
-    }
-    img.src = src
-  }, [loadingState, thumbnailSrc, src])
+  }, [loadImage, shouldLoad])
 
   return (
     <div 
       ref={containerRef}
       className={cn(
-        "relative overflow-hidden bg-muted/50 rounded-lg",
+        "relative flex w-full items-center justify-center overflow-hidden rounded-lg bg-muted/50",
         onClick && "cursor-pointer",
         className
       )}
+      style={{ height: `${frameHeight}px` }}
       onClick={onClick}
     >
-      {/* Loading placeholder */}
-      {loadingState === "idle" || loadingState === "loading" ? (
-        <div className="flex items-center justify-center w-full h-32 animate-pulse">
+      {(loadingState === "idle" || loadingState === "loading") && (
+        <div className="absolute inset-0 flex items-center justify-center animate-pulse">
           <ImageIcon className="w-8 h-8 text-muted-foreground/50" />
         </div>
-      ) : loadingState === "error" ? (
-        <div className="flex items-center justify-center w-full h-32">
+      )}
+
+      {loadingState === "error" && (
+        <div className="absolute inset-0 flex items-center justify-center">
           <ImageIcon className="w-8 h-8 text-muted-foreground/50" />
         </div>
-      ) : (
-        <>
-          {/* Thumbnail (blurred background) */}
-          {thumbnailSrc && !showFullImage && (
-            <img
-              src={thumbnailSrc}
-              alt={alt}
-              className="max-w-full max-h-48 object-contain transition-opacity duration-300"
-            />
+      )}
+
+      {shouldLoad && loadingState !== "error" && (
+        <img
+          src={src}
+          alt={alt}
+          loading="lazy"
+          decoding="async"
+          fetchPriority="low"
+          draggable={false}
+          className={cn(
+            "max-h-full max-w-full object-contain transition-opacity duration-200",
+            loadingState === "loaded" ? "opacity-100" : "opacity-0"
           )}
-          
-          {/* Full image (fades in over thumbnail) */}
-          {showFullImage && (
-            <img
-              src={src}
-              alt={alt}
-              className={cn(
-                "max-w-full max-h-48 object-contain transition-opacity duration-300",
-                showFullImage ? "opacity-100" : "opacity-0"
-              )}
-            />
-          )}
-        </>
+          onLoad={() => {
+            loadedImageCache.add(src)
+            setLoadingState("loaded")
+          }}
+          onError={() => {
+            setLoadingState("error")
+          }}
+        />
       )}
     </div>
   )

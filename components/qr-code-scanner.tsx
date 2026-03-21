@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState, useCallback } from "react"
+import { useCallback, useEffect, useId, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -10,6 +10,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Camera, AlertCircle, SwitchCamera, ImagePlus, Keyboard } from "lucide-react"
+import { STATUS_TONES } from "@/lib/design-tokens"
 
 interface QRCodeScannerProps {
   open: boolean
@@ -44,6 +45,8 @@ export function QRCodeScanner({ open, onOpenChange, onScan }: QRCodeScannerProps
   const [cameraSupported, setCameraSupported] = useState(true)
   const [manualCode, setManualCode] = useState("")
   const [showManualInput, setShowManualInput] = useState(false)
+  const manualCodeInputId = useId()
+  const manualCodeHintId = useId()
 
   // Check camera support on mount
   useEffect(() => {
@@ -252,18 +255,27 @@ export function QRCodeScanner({ open, onOpenChange, onScan }: QRCodeScannerProps
           /* Manual input mode */
           <div className="p-4 space-y-4">
             <div className="space-y-2">
+              <label htmlFor={manualCodeInputId} className="sr-only">
+                房间代码
+              </label>
               <Input
+                id={manualCodeInputId}
                 placeholder="输入6位房间代码"
                 value={manualCode}
                 onChange={(e) => setManualCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6))}
                 className="h-14 text-center text-2xl font-mono tracking-[0.3em] uppercase"
                 maxLength={6}
                 autoFocus
+                inputMode="text"
+                autoComplete="one-time-code"
+                autoCapitalize="characters"
+                spellCheck={false}
+                aria-describedby={manualCodeHintId}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") handleManualSubmit()
                 }}
               />
-              <p className="text-xs text-muted-foreground text-center">
+              <p id={manualCodeHintId} className="text-xs text-muted-foreground text-center">
                 请输入房间创建者提供的6位代码
               </p>
             </div>
@@ -322,7 +334,7 @@ export function QRCodeScanner({ open, onOpenChange, onScan }: QRCodeScannerProps
               {(error || !cameraSupported) && (
                 <div className="absolute inset-0 flex items-center justify-center bg-black/90">
                   <div className="text-center text-white p-6">
-                    <AlertCircle className="w-12 h-12 mx-auto mb-3 text-amber-500" />
+                    <AlertCircle className={`mx-auto mb-3 h-12 w-12 ${STATUS_TONES.warning.inline}`} />
                     <p className="text-sm mb-4 max-w-[280px]">
                       {error || "当前环境不支持摄像头扫描"}
                     </p>

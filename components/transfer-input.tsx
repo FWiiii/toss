@@ -1,9 +1,10 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useId, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Send, Upload, Loader2, Clipboard } from "lucide-react"
+import { cn } from "@/lib/utils"
 
 type TransferInputProps = {
   text: string
@@ -13,6 +14,7 @@ type TransferInputProps = {
   onBeforeFilePick?: () => void
   onSendClipboard?: () => void
   isSendingClipboard?: boolean
+  highlightComposer?: boolean
   isConnected: boolean
   sendingCount?: number
 }
@@ -25,11 +27,14 @@ export function TransferInput({
   onBeforeFilePick,
   onSendClipboard,
   isSendingClipboard = false,
+  highlightComposer = false,
   isConnected,
   sendingCount = 0
 }: TransferInputProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [clipboardAvailable, setClipboardAvailable] = useState(false)
+  const textInputId = useId()
+  const textHintId = useId()
 
   useEffect(() => {
     setClipboardAvailable(typeof navigator !== "undefined" && !!navigator.clipboard)
@@ -56,17 +61,25 @@ export function TransferInput({
 
   return (
     <div className="border-t border-border/70 p-4" data-transfer-input>
-      <div className="flex gap-2 mb-2">
+      <div className={cn("mb-2 flex gap-2 rounded-xl transition-colors duration-300", highlightComposer && "bg-accent/5")}>
+        <label htmlFor={textInputId} className="sr-only">
+          要发送的文本
+        </label>
         <Textarea
+          id={textInputId}
           placeholder={isConnected ? "输入要发送的文本..." : "连接设备后可发送内容"}
           value={text}
           onChange={(e) => onTextChange(e.target.value)}
           disabled={!isConnected}
-          className="min-h-[84px] resize-none border-border bg-input focus-visible:border-border focus-visible:ring-0 focus-visible:ring-offset-0"
+          className={cn(
+            "min-h-[84px] resize-none",
+            highlightComposer ? "border-accent/30 bg-accent/5" : "border-border bg-input"
+          )}
+          aria-describedby={textHintId}
           onKeyDown={handleKeyDown}
         />
       </div>
-      <div className="flex flex-col sm:flex-row gap-2">
+      <div className="flex flex-wrap gap-2">
         <input
           type="file"
           ref={fileInputRef}
@@ -75,8 +88,8 @@ export function TransferInput({
           className="hidden"
         />
         <Button
-          variant="outline"
-          className="flex-1 sm:flex-auto"
+          variant="secondary"
+          className="min-w-0 flex-1 sm:flex-none"
           onClick={() => {
             onBeforeFilePick?.()
             fileInputRef.current?.click()
@@ -87,8 +100,8 @@ export function TransferInput({
           选择文件
         </Button>
         <Button
-          variant="outline"
-          className="flex-1 sm:flex-auto hidden sm:flex"
+          variant="secondary"
+          className="min-w-0 flex-1 sm:flex-none"
           onClick={() => onSendClipboard?.()}
           disabled={!isConnected || !clipboardAvailable || isSendingClipboard}
         >
@@ -97,10 +110,12 @@ export function TransferInput({
           ) : (
             <Clipboard className="w-4 h-4 mr-2" />
           )}
-          发送剪贴板
+          {isSendingClipboard ? "正在读取…" : "发送剪贴板"}
         </Button>
+      </div>
+      <div className="mt-2">
         <Button
-          className="flex-1 sm:flex-auto"
+          className={cn("w-full", highlightComposer && "delight-ready-pulse")}
           onClick={onSendText}
           disabled={!isConnected || !text.trim()}
         >
@@ -108,7 +123,7 @@ export function TransferInput({
           发送文本
         </Button>
       </div>
-      <p className="text-xs text-muted-foreground text-center mt-2">
+      <p id={textHintId} className="mt-2 text-xs text-muted-foreground" aria-live="polite">
         {sendingCount > 0 ? (
           <>正在发送 {sendingCount} 个文件 · </>
         ) : null}

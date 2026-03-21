@@ -27,6 +27,12 @@ function getSubtleCrypto(): SubtleCrypto {
   return cryptoRef.subtle
 }
 
+function toArrayBufferView(bytes: Uint8Array): Uint8Array<ArrayBuffer> {
+  const view = new Uint8Array(new ArrayBuffer(bytes.byteLength))
+  view.set(bytes)
+  return view
+}
+
 /**
  * 加密密钥对
  */
@@ -98,8 +104,8 @@ export class SessionEncryptor {
    * 生成新的 IV（初始化向量）
    * 使用计数器确保每次加密使用不同的 IV
    */
-  private generateIV(): Uint8Array {
-    const iv = new Uint8Array(12) // AES-GCM 标准 IV 长度
+  private generateIV(): Uint8Array<ArrayBuffer> {
+    const iv = new Uint8Array(new ArrayBuffer(12)) // AES-GCM 标准 IV 长度
     const counter = this.sendIvCounter++
     
     // 将计数器编码到 IV 中（前 8 字节）
@@ -120,6 +126,7 @@ export class SessionEncryptor {
 
     const startTime = performance.now()
     const iv = this.generateIV()
+    const plainData = toArrayBufferView(data)
     const subtle = getSubtleCrypto()
     const encrypted = await subtle.encrypt(
       {
@@ -128,7 +135,7 @@ export class SessionEncryptor {
         tagLength: 128, // 128 位认证标签
       },
       this.sendKey,
-      data
+      plainData
     )
 
     // 将 IV 和加密数据组合：IV (12 bytes) + 加密数据 + 认证标签 (16 bytes)
@@ -139,7 +146,7 @@ export class SessionEncryptor {
     // 性能监控
     const encryptTime = performance.now() - startTime
     this.encryptTimes.push(encryptTime)
-    this.totalEncryptedBytes += data.length
+    this.totalEncryptedBytes += plainData.length
     this.chunkCount++
     
     // 只保留最近 100 次的记录，避免内存泄漏
@@ -164,8 +171,8 @@ export class SessionEncryptor {
 
     const startTime = performance.now()
     // 提取 IV 和加密数据
-    const iv = encryptedData.slice(0, 12)
-    const ciphertext = encryptedData.slice(12)
+    const iv = toArrayBufferView(encryptedData.slice(0, 12))
+    const ciphertext = toArrayBufferView(encryptedData.slice(12))
 
     const subtle = getSubtleCrypto()
     const decrypted = await subtle.decrypt(
@@ -304,7 +311,7 @@ export async function deriveSharedSecret(
 /**
  * 将 ArrayBuffer 转换为 Base64 字符串
  */
-export function arrayBufferToBase64(buffer: ArrayBuffer): string {
+export function arrayBufferToBase64(buffer: ArrayBufferLike): string {
   const bytes = new Uint8Array(buffer)
   let binary = ""
   for (let i = 0; i < bytes.length; i++) {
@@ -318,11 +325,12 @@ export function arrayBufferToBase64(buffer: ArrayBuffer): string {
  */
 export function base64ToArrayBuffer(base64: string): ArrayBuffer {
   const binaryString = atob(base64)
-  const bytes = new Uint8Array(binaryString.length)
+  const buffer = new ArrayBuffer(binaryString.length)
+  const bytes = new Uint8Array(buffer)
   for (let i = 0; i < binaryString.length; i++) {
     bytes[i] = binaryString.charCodeAt(i)
   }
-  return bytes.buffer
+  return buffer
 }
 
 /**

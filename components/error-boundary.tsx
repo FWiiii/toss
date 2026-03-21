@@ -3,6 +3,7 @@
 import React, { Component, ErrorInfo, ReactNode } from "react"
 import { AlertTriangle, RefreshCw } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { DEV_ERROR_DETAILS, STATUS_TONES } from "@/lib/design-tokens"
 
 interface Props {
   children: ReactNode
@@ -72,8 +73,8 @@ export function ErrorFallback({
 }: ErrorFallbackProps) {
   return (
     <div className="flex flex-col items-center justify-center p-8 text-center min-h-[200px]">
-      <div className="w-16 h-16 rounded-full bg-destructive/10 flex items-center justify-center mb-4">
-        <AlertTriangle className="w-8 h-8 text-destructive" />
+      <div className={`mb-4 flex h-16 w-16 items-center justify-center rounded-full ${STATUS_TONES.danger.iconSurface}`}>
+        <AlertTriangle className={`h-8 w-8 ${STATUS_TONES.danger.icon}`} />
       </div>
       <h3 className="text-lg font-semibold text-foreground mb-2">{title}</h3>
       <p className="text-sm text-muted-foreground mb-4 max-w-md">
@@ -84,7 +85,7 @@ export function ErrorFallback({
           <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground">
             查看错误详情
           </summary>
-          <pre className="mt-2 p-3 bg-muted rounded-lg text-xs text-left overflow-auto max-h-32">
+          <pre className={`mt-2 text-left ${DEV_ERROR_DETAILS.compact} ${STATUS_TONES.danger.inline}`}>
             {error.message}
             {error.stack && (
               <>

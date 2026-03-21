@@ -1,12 +1,16 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Bell, Volume2, Smartphone, Settings, Check, Server } from "lucide-react"
+import { useTheme } from "next-themes"
+import { Bell, Volume2, Smartphone, Settings, Server, Sun, Moon, Monitor } from "lucide-react"
 import { Button } from "./ui/button"
 import {
+  DropdownMenuCheckboxItem,
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu"
@@ -29,8 +33,7 @@ interface NotificationSettingsProps {
   onUpdateConnectionSettings: (settings: Partial<{
     forceRelay: boolean
   }>) => void
-  onRequestPermission: () => void
-  onTestNotification: () => void
+  onRequestPermission: () => Promise<NotificationPermission>
 }
 
 export function NotificationSettings({
@@ -40,9 +43,9 @@ export function NotificationSettings({
   onUpdateSettings,
   onUpdateConnectionSettings,
   onRequestPermission,
-  onTestNotification,
 }: NotificationSettingsProps) {
   const [isMounted, setIsMounted] = useState(false)
+  const { theme, setTheme } = useTheme()
 
   useEffect(() => {
     setIsMounted(true)
@@ -56,61 +59,90 @@ export function NotificationSettings({
     process.env.NEXT_PUBLIC_TURN_CREDENTIAL
   )
 
-  const handleNotificationToggle = async () => {
-    if (notificationPermission === "default") {
-      await onRequestPermission()
+  const handleNotificationToggle = async (nextEnabled: boolean) => {
+    if (nextEnabled && notificationPermission === "denied") {
+      return
     }
-    onUpdateSettings({ browserNotificationEnabled: !settings.browserNotificationEnabled })
+
+    if (nextEnabled && notificationPermission === "default") {
+      const permission = await onRequestPermission()
+      if (permission !== "granted") {
+        return
+      }
+    }
+
+    onUpdateSettings({ browserNotificationEnabled: nextEnabled })
   }
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon-sm">
+        <Button variant="ghost" size="icon-sm" aria-label="设置" title="设置">
           <Settings className="h-4 w-4" />
-          <span className="sr-only">通知设置</span>
+          <span className="sr-only">设置</span>
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="min-w-[160px]">
-        {/* Sound */}
-        <DropdownMenuItem 
-          onClick={() => onUpdateSettings({ soundEnabled: !settings.soundEnabled })}
+      <DropdownMenuContent align="end" className="min-w-[180px]">
+        <DropdownMenuLabel>界面</DropdownMenuLabel>
+        <DropdownMenuRadioGroup
+          value={isMounted ? theme ?? "system" : "system"}
+          onValueChange={(value) => setTheme(value)}
+        >
+          <DropdownMenuRadioItem value="light" className="gap-2 cursor-pointer">
+            <Sun className="h-4 w-4" />
+            <span>浅色</span>
+          </DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="dark" className="gap-2 cursor-pointer">
+            <Moon className="h-4 w-4" />
+            <span>深色</span>
+          </DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="system" className="gap-2 cursor-pointer">
+            <Monitor className="h-4 w-4" />
+            <span>跟随系统</span>
+          </DropdownMenuRadioItem>
+        </DropdownMenuRadioGroup>
+
+        <DropdownMenuSeparator />
+        <DropdownMenuLabel>提醒</DropdownMenuLabel>
+        <DropdownMenuCheckboxItem
+          checked={settings.soundEnabled}
+          onCheckedChange={(checked) => onUpdateSettings({ soundEnabled: checked === true })}
           className="gap-2 cursor-pointer"
         >
           <Volume2 className="h-4 w-4" />
           <span>声音提示</span>
-          {settings.soundEnabled && <Check className="ml-auto h-4 w-4 text-accent" />}
-        </DropdownMenuItem>
+        </DropdownMenuCheckboxItem>
 
         {/* Browser Notification */}
         {hasNotificationSupport && (
-          <DropdownMenuItem 
-            onClick={handleNotificationToggle}
+          <DropdownMenuCheckboxItem
+            checked={settings.browserNotificationEnabled}
+            onCheckedChange={(checked) => void handleNotificationToggle(checked === true)}
             disabled={notificationPermission === "denied"}
             className="gap-2 cursor-pointer"
           >
             <Bell className="h-4 w-4" />
             <span>浏览器通知</span>
-            {settings.browserNotificationEnabled && <Check className="ml-auto h-4 w-4 text-accent" />}
-          </DropdownMenuItem>
+          </DropdownMenuCheckboxItem>
         )}
 
         {/* Vibration */}
         {hasVibrationSupport && (
-          <DropdownMenuItem 
-            onClick={() => onUpdateSettings({ vibrationEnabled: !settings.vibrationEnabled })}
+          <DropdownMenuCheckboxItem
+            checked={settings.vibrationEnabled}
+            onCheckedChange={(checked) => onUpdateSettings({ vibrationEnabled: checked === true })}
             className="gap-2 cursor-pointer"
           >
             <Smartphone className="h-4 w-4" />
             <span>震动反馈</span>
-            {settings.vibrationEnabled && <Check className="ml-auto h-4 w-4 text-accent" />}
-          </DropdownMenuItem>
+          </DropdownMenuCheckboxItem>
         )}
 
         <DropdownMenuSeparator />
-
-        <DropdownMenuItem
-          onClick={() => onUpdateConnectionSettings({ forceRelay: !connectionSettings.forceRelay })}
+        <DropdownMenuLabel>连接</DropdownMenuLabel>
+        <DropdownMenuCheckboxItem
+          checked={connectionSettings.forceRelay}
+          onCheckedChange={(checked) => onUpdateConnectionSettings({ forceRelay: checked === true })}
           disabled={!hasTurnConfig}
           className="gap-2 cursor-pointer"
         >
@@ -119,16 +151,7 @@ export function NotificationSettings({
           {!hasTurnConfig && (
             <span className="ml-auto text-xs text-muted-foreground">需 TURN</span>
           )}
-          {connectionSettings.forceRelay && <Check className="ml-auto h-4 w-4 text-accent" />}
-        </DropdownMenuItem>
-
-        {/* Test */}
-        <DropdownMenuItem 
-          onClick={onTestNotification}
-          className="gap-2 cursor-pointer"
-        >
-          <span className="text-sm">测试通知</span>
-        </DropdownMenuItem>
+        </DropdownMenuCheckboxItem>
       </DropdownMenuContent>
     </DropdownMenu>
   )

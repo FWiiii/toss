@@ -13,15 +13,20 @@ type ImagePreviewDialogProps = {
 export function ImagePreviewDialog({ image, onClose, onDownload }: ImagePreviewDialogProps) {
   return (
     <Dialog open={!!image} onOpenChange={() => onClose()}>
-      <DialogContent className="max-w-[90vw] max-h-[90vh] p-0 bg-black/95 border-none overflow-hidden">
+      <DialogContent
+        className="max-w-[90vw] max-h-[90vh] p-0 bg-black/95 border-none overflow-hidden"
+        showCloseButton={false}
+      >
         <DialogTitle className="sr-only">图片预览</DialogTitle>
-        <div className="relative w-full h-full flex items-center justify-center">
+        <div className="relative w-full h-full flex items-center justify-center bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.08),transparent_55%)]">
           {/* Close button */}
           <Button
             variant="ghost"
             size="icon"
-            className="absolute top-2 right-2 z-10 text-white/80 hover:text-white hover:bg-white/20"
+            className="absolute top-3 right-3 z-10 rounded-full bg-black/28 text-white/80 backdrop-blur transition-all duration-200 hover:bg-white/18 hover:text-white"
             onClick={onClose}
+            aria-label="关闭图片预览"
+            title="关闭图片预览"
           >
             <X className="w-5 h-5" />
           </Button>
@@ -31,8 +36,10 @@ export function ImagePreviewDialog({ image, onClose, onDownload }: ImagePreviewD
             <Button
               variant="ghost"
               size="icon"
-              className="absolute top-2 right-14 z-10 text-white/80 hover:text-white hover:bg-white/20"
+              className="absolute top-3 right-16 z-10 rounded-full bg-black/28 text-white/80 backdrop-blur transition-all duration-200 hover:bg-white/18 hover:text-white"
               onClick={() => onDownload(image.url, image.name)}
+              aria-label={`下载图片 ${image.name}`}
+              title={`下载图片 ${image.name}`}
             >
               <Download className="w-5 h-5" />
             </Button>
@@ -41,15 +48,16 @@ export function ImagePreviewDialog({ image, onClose, onDownload }: ImagePreviewD
           {/* Image */}
           {image && (
             <img
+              key={image.url}
               src={image.url}
               alt={image.name}
-              className="max-w-full max-h-[85vh] object-contain"
+              className="max-w-full max-h-[85vh] object-contain delight-preview-in"
             />
           )}
           
           {/* File name */}
           {image && (
-            <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/50 to-transparent">
+            <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/55 to-transparent delight-fade-up">
               <p className="text-white/90 text-sm text-center truncate">
                 {image.name}
               </p>
