@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 
 interface NotificationSettings {
   soundEnabled: boolean
@@ -37,7 +37,10 @@ export function useNotification() {
     return DEFAULT_SETTINGS
   })
 
-  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>('default')
+  const [notificationPermission, setNotificationPermission] = useReducer(
+    (_current: NotificationPermission, next: NotificationPermission) => next,
+    'default',
+  )
   const audioContextRef = useRef<AudioContext | null>(null)
 
   // Check notification permission on mount
@@ -45,7 +48,7 @@ export function useNotification() {
     if (typeof window !== 'undefined' && 'Notification' in window) {
       setNotificationPermission(Notification.permission)
     }
-  }, [])
+  }, [setNotificationPermission])
 
   // Save settings to localStorage
   useEffect(() => {

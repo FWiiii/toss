@@ -1,7 +1,7 @@
 'use client'
 
 import { AlertCircle, Camera, ImagePlus, Keyboard, SwitchCamera } from 'lucide-react'
-import { useCallback, useEffect, useId, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useReducer, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -46,7 +46,10 @@ export function QRCodeScanner({ open, onOpenChange, onScan }: QRCodeScannerProps
   const [error, setError] = useState<string | null>(null)
   const [isStarting, setIsStarting] = useState(false)
   const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment')
-  const [cameraSupported, setCameraSupported] = useState(true)
+  const [cameraSupported, setCameraSupported] = useReducer(
+    (_current: boolean, next: boolean) => next,
+    true,
+  )
   const [manualCode, setManualCode] = useState('')
   const [showManualInput, setShowManualInput] = useState(false)
   const manualCodeInputId = useId()
@@ -55,7 +58,7 @@ export function QRCodeScanner({ open, onOpenChange, onScan }: QRCodeScannerProps
   // Check camera support on mount
   useEffect(() => {
     setCameraSupported(isCameraSupported())
-  }, [])
+  }, [setCameraSupported])
 
   const extractRoomCode = useCallback((text: string): string | null => {
     // Try to extract room code from URL
@@ -227,19 +230,19 @@ export function QRCodeScanner({ open, onOpenChange, onScan }: QRCodeScannerProps
     }
   }, [stopScanner])
 
-  // Reset state when dialog closes
-  useEffect(() => {
-    if (!open) {
-      setError(null)
-      setManualCode('')
-      setShowManualInput(false)
-    }
-  }, [open])
-
   const handleSwitchCamera = useCallback(async () => {
     await stopScanner()
     setFacingMode(prev => prev === 'environment' ? 'user' : 'environment')
   }, [stopScanner])
+
+  const handleOpenChange = useCallback((nextOpen: boolean) => {
+    if (!nextOpen) {
+      setError(null)
+      setManualCode('')
+      setShowManualInput(false)
+    }
+    onOpenChange(nextOpen)
+  }, [onOpenChange])
 
   // Restart scanner when facing mode changes
   useEffect(() => {
@@ -249,7 +252,7 @@ export function QRCodeScanner({ open, onOpenChange, onScan }: QRCodeScannerProps
   }, [facingMode]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-[400px] p-0 overflow-hidden">
         <DialogHeader className="p-4 pb-0">
           <DialogTitle className="text-center">

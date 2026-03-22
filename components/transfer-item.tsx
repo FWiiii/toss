@@ -2,7 +2,7 @@
 
 import type { TransferItem } from '@/lib/types'
 import { Ban, Check, Copy, Download, File as FileIcon, FileText, ImageIcon, Loader2, X, ZoomIn } from 'lucide-react'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import { ImageThumbnail } from '@/components/image-thumbnail'
 import { LinkPreview } from '@/components/link-preview'
 import { Button } from '@/components/ui/button'
@@ -50,7 +50,10 @@ function getFileIcon(name?: string) {
 // Progress bar component - optimized for GPU acceleration
 function ProgressBar({ progress, className }: { progress: number, className?: string }) {
   const clampedProgress = Math.min(100, Math.max(0, progress))
-  const [showFinishPulse, setShowFinishPulse] = useState(false)
+  const [showFinishPulse, setShowFinishPulse] = useReducer(
+    (_current: boolean, next: boolean) => next,
+    false,
+  )
   const previousProgressRef = useRef(clampedProgress)
 
   useEffect(() => {
@@ -67,7 +70,7 @@ function ProgressBar({ progress, className }: { progress: number, className?: st
         window.clearTimeout(timeoutId)
       }
     }
-  }, [clampedProgress])
+  }, [clampedProgress, setShowFinishPulse])
 
   return (
     <div className={cn('w-full h-1 bg-muted rounded-full overflow-hidden', showFinishPulse && 'delight-progress-finish', className)}>
@@ -412,13 +415,13 @@ function TextItem({ item }: { item: TransferItem }) {
     <div className="flex items-start gap-2">
       <div className="flex-1 min-w-0">
         <div className="text-sm text-foreground whitespace-pre-wrap break-words">
-          {segments.map((segment, index) => {
+          {segments.map((segment) => {
             if (segment.type === 'link' && segment.url) {
               return (
-                <LinkPreview key={index} url={segment.url} inline />
+                <LinkPreview key={segment.id} url={segment.url} inline />
               )
             }
-            return <span key={index}>{segment.content}</span>
+            return <span key={segment.id}>{segment.content}</span>
           })}
         </div>
         <p className="text-xs text-muted-foreground mt-1">
@@ -449,7 +452,10 @@ function TextItem({ item }: { item: TransferItem }) {
 }
 
 export function TransferItemComponent({ item, onPreviewImage, onDownload, onCancel }: TransferItemProps) {
-  const [showSettleIn, setShowSettleIn] = useState(false)
+  const [showSettleIn, setShowSettleIn] = useReducer(
+    (_current: boolean, next: boolean) => next,
+    false,
+  )
 
   useEffect(() => {
     if (item.type === 'system' || item.status === 'completed') {
@@ -462,7 +468,7 @@ export function TransferItemComponent({ item, onPreviewImage, onDownload, onCanc
         window.clearTimeout(timeoutId)
       }
     }
-  }, [item.id, item.status, item.type])
+  }, [item.id, item.status, item.type, setShowSettleIn])
 
   // System messages
   if (item.type === 'system') {

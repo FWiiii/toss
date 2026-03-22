@@ -1,6 +1,7 @@
 // URL detection and parsing utilities
 
 export interface LinkSegment {
+  id: string
   type: 'text' | 'link'
   content: string
   url?: string
@@ -32,6 +33,7 @@ export function parseTextWithLinks(text: string): LinkSegment[] {
     // Add text before the URL
     if (startIndex > lastIndex) {
       segments.push({
+        id: `text-${lastIndex}`,
         type: 'text',
         content: text.substring(lastIndex, startIndex),
       })
@@ -39,6 +41,7 @@ export function parseTextWithLinks(text: string): LinkSegment[] {
 
     // Add the URL
     segments.push({
+      id: `link-${startIndex}`,
       type: 'link',
       content: url,
       url,
@@ -50,6 +53,7 @@ export function parseTextWithLinks(text: string): LinkSegment[] {
   // Add remaining text after the last URL
   if (lastIndex < text.length) {
     segments.push({
+      id: `text-${lastIndex}`,
       type: 'text',
       content: text.substring(lastIndex),
     })
@@ -58,6 +62,7 @@ export function parseTextWithLinks(text: string): LinkSegment[] {
   // If no URLs were found, return the entire text as one segment
   if (segments.length === 0) {
     segments.push({
+      id: 'text-0',
       type: 'text',
       content: text,
     })

@@ -1,6 +1,7 @@
 'use client'
 
 import { Download, X } from 'lucide-react'
+import Image from 'next/image'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 
@@ -47,12 +48,17 @@ export function ImagePreviewDialog({ image, onClose, onDownload }: ImagePreviewD
 
           {/* Image */}
           {image && (
-            <img
-              key={image.url}
-              src={image.url}
-              alt={image.name}
-              className="max-w-full max-h-[85vh] object-contain delight-preview-in"
-            />
+            <div className="relative h-[85vh] w-full">
+              <Image
+                key={image.url}
+                src={image.url}
+                alt={image.name}
+                fill
+                unoptimized
+                sizes="90vw"
+                className="object-contain delight-preview-in"
+              />
+            </div>
           )}
 
           {/* File name */}

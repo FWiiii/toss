@@ -1,7 +1,8 @@
 'use client'
 
 import { ImageIcon } from 'lucide-react'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import Image from 'next/image'
+import { useCallback, useEffect, useReducer, useRef } from 'react'
 import { cn } from '@/lib/utils'
 
 interface ImageThumbnailProps {
@@ -13,9 +14,51 @@ interface ImageThumbnailProps {
 }
 
 type LoadingState = 'idle' | 'loading' | 'loaded' | 'error'
+interface ThumbnailState {
+  shouldLoad: boolean
+  loadingState: LoadingState
+}
+
+type ThumbnailAction = { type: 'sync', src: string }
+  | { type: 'start-load' }
+  | { type: 'loaded' }
+  | { type: 'error' }
+
 const loadedImageCache = new Set<string>()
 const FRAME_HEIGHT_MIN = 160
 const FRAME_HEIGHT_MAX = 240
+
+function createThumbnailState(src: string): ThumbnailState {
+  const isCached = loadedImageCache.has(src)
+  return {
+    shouldLoad: isCached,
+    loadingState: isCached ? 'loaded' : 'idle',
+  }
+}
+
+function thumbnailStateReducer(state: ThumbnailState, action: ThumbnailAction): ThumbnailState {
+  switch (action.type) {
+    case 'sync':
+      return createThumbnailState(action.src)
+    case 'start-load':
+      return {
+        shouldLoad: true,
+        loadingState: state.loadingState === 'loaded' ? state.loadingState : 'loading',
+      }
+    case 'loaded':
+      return {
+        ...state,
+        loadingState: 'loaded',
+      }
+    case 'error':
+      return {
+        ...state,
+        loadingState: 'error',
+      }
+    default:
+      return state
+  }
+}
 
 export function ImageThumbnail({
   src,
@@ -24,22 +67,20 @@ export function ImageThumbnail({
   thumbnailSize = 200,
   onClick,
 }: ImageThumbnailProps) {
-  const [shouldLoad, setShouldLoad] = useState(() => loadedImageCache.has(src))
-  const [loadingState, setLoadingState] = useState<LoadingState>(() =>
-    loadedImageCache.has(src) ? 'loaded' : 'idle',
+  const [{ shouldLoad, loadingState }, dispatch] = useReducer(
+    thumbnailStateReducer,
+    src,
+    createThumbnailState,
   )
   const containerRef = useRef<HTMLDivElement>(null)
   const frameHeight = Math.min(FRAME_HEIGHT_MAX, Math.max(FRAME_HEIGHT_MIN, Math.round(thumbnailSize * 0.8)))
 
   const loadImage = useCallback(() => {
-    setShouldLoad(true)
-    setLoadingState(current => (current === 'loaded' ? current : 'loading'))
+    dispatch({ type: 'start-load' })
   }, [])
 
   useEffect(() => {
-    const isCached = loadedImageCache.has(src)
-    setShouldLoad(isCached)
-    setLoadingState(isCached ? 'loaded' : 'idle')
+    dispatch({ type: 'sync', src })
   }, [src])
 
   useEffect(() => {
@@ -101,12 +142,12 @@ export function ImageThumbnail({
       )}
 
       {shouldLoad && loadingState !== 'error' && (
-        <img
+        <Image
           src={src}
           alt={alt}
-          loading="lazy"
-          decoding="async"
-          fetchPriority="low"
+          fill
+          unoptimized
+          sizes={`${thumbnailSize}px`}
           draggable={false}
           className={cn(
             'max-h-full max-w-full object-contain transition-opacity duration-200',
@@ -114,10 +155,10 @@ export function ImageThumbnail({
           )}
           onLoad={() => {
             loadedImageCache.add(src)
-            setLoadingState('loaded')
+            dispatch({ type: 'loaded' })
           }}
           onError={() => {
-            setLoadingState('error')
+            dispatch({ type: 'error' })
           }}
         />
       )}

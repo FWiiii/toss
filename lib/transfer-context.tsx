@@ -6,7 +6,7 @@ import type { DataTransferCallbacks } from './transfer-data'
 import type { RoomCallbacks } from './transfer-room'
 import type { ConnectionInfo, ConnectionQuality, ConnectionStatus, ConnectionType, EncryptionPerformance, TransferItem } from './types'
 import * as React from 'react'
-import { createContext, use, useCallback, useEffect, useRef, useState } from 'react'
+import { createContext, use, useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { useConnectionQuality } from '@/hooks/use-connection-quality'
 import { useConnectionSettings } from '@/hooks/use-connection-settings'
 import { useNotification } from '@/hooks/use-notification'
@@ -64,6 +64,39 @@ interface TransferContextType {
 }
 
 const TransferContext = createContext<TransferContextType | null>(null)
+const DEFAULT_CONNECTION_INFO: ConnectionInfo = { type: 'unknown' }
+
+interface ConnectionState {
+  roomCode: string | null
+  connectionStatus: ConnectionStatus
+  connectionInfo: ConnectionInfo
+  errorMessage: string | null
+  peerCount: number
+  isHost: boolean
+  isEncrypted: boolean
+  encryptionPerformance: EncryptionPerformance | null
+}
+
+const INITIAL_CONNECTION_STATE: ConnectionState = {
+  roomCode: null,
+  connectionStatus: 'disconnected',
+  connectionInfo: DEFAULT_CONNECTION_INFO,
+  errorMessage: null,
+  peerCount: 0,
+  isHost: false,
+  isEncrypted: false,
+  encryptionPerformance: null,
+}
+
+function connectionStateReducer(
+  state: ConnectionState,
+  patch: Partial<ConnectionState>,
+): ConnectionState {
+  return {
+    ...state,
+    ...patch,
+  }
+}
 
 export function useTransfer() {
   const context = use(TransferContext)
@@ -75,17 +108,47 @@ export function useTransfer() {
 
 export function TransferProvider({ children }: { children: React.ReactNode }) {
   // ============ Core State ============
-  const [roomCode, setRoomCode] = useState<string | null>(null)
-  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('disconnected')
-  const [connectionInfo, setConnectionInfo] = useState<ConnectionInfo>({ type: 'unknown' })
-  const [errorMessage, setErrorMessage] = useState<string | null>(null)
-  const [peerCount, setPeerCount] = useState(0)
-  const [isHost, setIsHost] = useState(false)
+  const [connectionState, patchConnectionState] = useReducer(
+    connectionStateReducer,
+    INITIAL_CONNECTION_STATE,
+  )
   const [isCreatingRoom, setIsCreatingRoom] = useState(false)
   const [isJoiningRoom, setIsJoiningRoom] = useState(false)
   const [sendingCount, setSendingCount] = useState(0)
-  const [isEncrypted, setIsEncrypted] = useState(false)
-  const [encryptionPerformance, setEncryptionPerformance] = useState<EncryptionPerformance | null>(null)
+  const {
+    roomCode,
+    connectionStatus,
+    connectionInfo,
+    errorMessage,
+    peerCount,
+    isHost,
+    isEncrypted,
+    encryptionPerformance,
+  } = connectionState
+  const setRoomCode = useCallback((nextRoomCode: string | null) => {
+    patchConnectionState({ roomCode: nextRoomCode })
+  }, [])
+  const setConnectionStatus = useCallback((nextStatus: ConnectionStatus) => {
+    patchConnectionState({ connectionStatus: nextStatus })
+  }, [])
+  const setConnectionInfo = useCallback((nextInfo: ConnectionInfo) => {
+    patchConnectionState({ connectionInfo: nextInfo })
+  }, [])
+  const setErrorMessage = useCallback((nextMessage: string | null) => {
+    patchConnectionState({ errorMessage: nextMessage })
+  }, [])
+  const setPeerCount = useCallback((nextPeerCount: number) => {
+    patchConnectionState({ peerCount: nextPeerCount })
+  }, [])
+  const setIsHost = useCallback((nextIsHost: boolean) => {
+    patchConnectionState({ isHost: nextIsHost })
+  }, [])
+  const setIsEncrypted = useCallback((nextIsEncrypted: boolean) => {
+    patchConnectionState({ isEncrypted: nextIsEncrypted })
+  }, [])
+  const setEncryptionPerformance = useCallback((nextPerformance: EncryptionPerformance | null) => {
+    patchConnectionState({ encryptionPerformance: nextPerformance })
+  }, [])
 
   // ============ Custom Hooks ============
   const {
@@ -175,7 +238,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
   const setError = useCallback((message: string) => {
     setConnectionStatus('error')
     setErrorMessage(message)
-  }, [])
+  }, [setConnectionStatus, setErrorMessage])
 
   const safeClose = (conn: any) => {
     try {
@@ -224,7 +287,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
 
     setRoomCode(null)
     setConnectionStatus('disconnected')
-    setConnectionInfo({ type: 'unknown' })
+    setConnectionInfo(DEFAULT_CONNECTION_INFO)
     setErrorMessage(null)
     setPeerCount(0)
     setIsHost(false)
@@ -300,10 +363,10 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
         stopQualityMonitoringRef.current()
       }
     }
-  }, [roomCode, connectionStatus])
+  }, [connectionStatus, roomCode, setConnectionStatus, setErrorMessage, setIsEncrypted, setPeerCount])
 
   // ============ Connection Refs Setup ============
-  const connectionRefs: ConnectionRefs = {
+  const connectionRefs = useMemo<ConnectionRefs>(() => ({
     connectionsRef,
     encryptorsRef,
     keyExchangePendingRef,
@@ -316,10 +379,10 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     attemptReconnectRef,
     joinRoomRef,
     cancelledTransfersRef,
-  }
+  }), [])
 
   // ============ Connection Callbacks Setup ============
-  const connectionCallbacks: ConnectionCallbacks = {
+  const connectionCallbacks = useMemo<ConnectionCallbacks>(() => ({
     setError,
     setConnectionStatus,
     setConnectionInfo,
@@ -337,14 +400,32 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     handlePong,
     recordBandwidth,
     notifyReceived: (type: string, name?: string) => notifyReceived(type as 'text' | 'image' | 'file', name),
-  }
+  }), [
+    addItem,
+    addItemWithId,
+    addSystemMessage,
+    broadcastToConnections,
+    cleanupAll,
+    createTrackedBlobUrl,
+    handlePong,
+    notifyReceived,
+    recordBandwidth,
+    setConnectionInfo,
+    setConnectionStatus,
+    setError,
+    setErrorMessage,
+    setIsEncrypted,
+    setPeerCount,
+    updateItemProgress,
+    updatePeerCount,
+  ])
 
   // ============ Connection Setup ============
 
   const setupConnection = useCallback(async (conn: any, isOutgoing = false) => {
     const setupFn = createSetupConnection(connectionRefs, connectionCallbacks, roomCode)
     return setupFn(conn, isOutgoing)
-  }, [roomCode])
+  }, [connectionCallbacks, connectionRefs, roomCode])
 
   // ============ Reconnection Logic ============
   const attemptReconnect = useCallback(() => {
@@ -485,6 +566,9 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
 
   // ============ Cleanup ============
   useEffect(() => {
+    const activeConnections = connectionsRef.current
+    const activeFileBuffers = fileBuffersRef.current
+
     return () => {
       shouldReconnectRef.current = false
       if (reconnectTimeoutRef.current) {
@@ -494,9 +578,9 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
 
       cleanupQuality()
 
-      connectionsRef.current.forEach(safeClose)
-      connectionsRef.current.clear()
-      fileBuffersRef.current.clear()
+      activeConnections.forEach(safeClose)
+      activeConnections.clear()
+      activeFileBuffers.clear()
 
       if (peerRef.current) {
         try {
@@ -571,7 +655,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     const interval = setInterval(updatePerformance, 2000) // 每 2 秒更新一次
 
     return () => clearInterval(interval)
-  }, [isEncrypted, getEncryptionPerformance])
+  }, [isEncrypted, getEncryptionPerformance, setEncryptionPerformance])
 
   // ============ Provider ============
   return (

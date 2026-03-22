@@ -1,5 +1,6 @@
 'use client'
 
+import Image from 'next/image'
 import { RoomErrorBoundary, TransferErrorBoundary } from '@/components/error-boundary'
 import { NotificationSettings } from '@/components/notification-settings'
 import { PWARegister } from '@/components/pwa-register'
@@ -25,7 +26,14 @@ function AppHeader() {
       <div className={`${SHELL_CONTAINER} flex h-14 items-center justify-between lg:h-16`}>
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent/10 ring-1 ring-border/80 lg:h-11 lg:w-11">
-            <img src="/logo.svg" alt="Toss" className="h-8 w-8 rounded-full lg:h-9 lg:w-9" />
+            <Image
+              src="/logo.svg"
+              alt="Toss"
+              width={36}
+              height={36}
+              priority
+              className="h-8 w-8 rounded-full lg:h-9 lg:w-9"
+            />
           </div>
           <div>
             <h1 className="text-base font-semibold tracking-tight text-foreground lg:text-lg">Toss</h1>

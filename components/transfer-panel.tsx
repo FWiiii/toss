@@ -1,7 +1,7 @@
 'use client'
 
 import { Send, Share2, Trash2, Upload } from 'lucide-react'
-import { useCallback, useEffect, useId, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useReducer, useRef, useState } from 'react'
 import { ImagePreviewDialog } from '@/components/image-preview-dialog'
 import { TransferInput } from '@/components/transfer-input'
 import { TransferItemComponent } from '@/components/transfer-item'
@@ -14,6 +14,28 @@ import { cn } from '@/lib/utils'
 const PANEL_CLASS = 'panel-surface relative overflow-hidden transition-colors'
 const PANEL_HEADER_CLASS = 'flex items-center justify-between border-b border-border/70 px-4 py-3'
 const SCROLL_AREA_CLASS = 'min-h-[220px] space-y-2 p-4 sm:min-h-[260px]'
+
+interface PendingShareState {
+  files: File[]
+  text: string
+}
+
+type PendingShareAction = { type: 'replace', value: PendingShareState | null }
+  | { type: 'append-files', files: File[] }
+
+function pendingShareReducer(state: PendingShareState | null, action: PendingShareAction): PendingShareState | null {
+  switch (action.type) {
+    case 'replace':
+      return action.value
+    case 'append-files':
+      return {
+        files: [...(state?.files ?? []), ...action.files],
+        text: state?.text ?? '',
+      }
+    default:
+      return state
+  }
+}
 
 export function TransferPanel() {
   const {
@@ -29,13 +51,16 @@ export function TransferPanel() {
     suspendAutoReconnect,
   } = useTransfer()
   const { sharedFiles, sharedText, hasSharedContent, clearSharedData } = useShareTarget()
-  const [text, setText] = useState('')
+  const [text, setText] = useReducer((_current: string, next: string) => next, '')
   const [isDragging, setIsDragging] = useState(false)
-  const [pendingShare, setPendingShare] = useState<{ files: File[], text: string } | null>(null)
+  const [pendingShare, dispatchPendingShare] = useReducer(pendingShareReducer, null)
   const [previewImage, setPreviewImage] = useState<{ url: string, name: string } | null>(null)
   const [showCompleted, setShowCompleted] = useState(false)
   const [isSendingClipboard, setIsSendingClipboard] = useState(false)
-  const [highlightComposer, setHighlightComposer] = useState(false)
+  const [highlightComposer, setHighlightComposer] = useReducer(
+    (_current: boolean, next: boolean) => next,
+    false,
+  )
   const [dropFeedbackLabel, setDropFeedbackLabel] = useState<string | null>(null)
   const hasProcessedShareRef = useRef(false)
   const hasFocusedRef = useRef(false)
@@ -136,10 +161,7 @@ export function TransferPanel() {
       return
 
     if (!isConnected) {
-      setPendingShare(prev => ({
-        files: [...(prev?.files ?? []), ...files],
-        text: prev?.text ?? '',
-      }))
+      dispatchPendingShare({ type: 'append-files', files })
       return
     }
 
@@ -226,13 +248,16 @@ export function TransferPanel() {
     }
     else {
       hasProcessedShareRef.current = true
-      setPendingShare({ files: [...sharedFiles], text: sharedText })
+      dispatchPendingShare({
+        type: 'replace',
+        value: { files: [...sharedFiles], text: sharedText },
+      })
       if (sharedText) {
         setText(sharedText)
       }
       clearSharedData()
     }
-  }, [hasSharedContent, isConnected, sharedFiles, sharedText, sendText, sendFile, clearSharedData])
+  }, [clearSharedData, hasSharedContent, isConnected, sendFiles, sendText, sharedFiles, sharedText])
 
   // Send pending share when connected
   useEffect(() => {
@@ -242,7 +267,7 @@ export function TransferPanel() {
 
     const filesToSend = [...pendingShare.files]
     const textToSend = pendingShare.text
-    setPendingShare(null)
+    dispatchPendingShare({ type: 'replace', value: null })
 
     const timer = setTimeout(async () => {
       if (textToSend.trim()) {

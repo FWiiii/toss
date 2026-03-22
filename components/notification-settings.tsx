@@ -2,7 +2,7 @@
 
 import { Bell, Monitor, Moon, Server, Settings, Smartphone, Sun, Volume2 } from 'lucide-react'
 import { useTheme } from 'next-themes'
-import { useEffect, useState } from 'react'
+import { useEffect, useReducer } from 'react'
 import { Button } from './ui/button'
 import {
   DropdownMenu,
@@ -44,12 +44,12 @@ export function NotificationSettings({
   onUpdateConnectionSettings,
   onRequestPermission,
 }: NotificationSettingsProps) {
-  const [isMounted, setIsMounted] = useState(false)
+  const [isMounted, markMounted] = useReducer(() => true, false)
   const { theme, setTheme } = useTheme()
 
   useEffect(() => {
-    setIsMounted(true)
-  }, [])
+    markMounted()
+  }, [markMounted])
 
   const hasVibrationSupport = isMounted && typeof navigator !== 'undefined' && 'vibrate' in navigator
   const hasNotificationSupport = isMounted && typeof window !== 'undefined' && 'Notification' in window

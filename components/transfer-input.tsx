@@ -1,7 +1,7 @@
 'use client'
 
 import { Clipboard, Loader2, Send, Upload } from 'lucide-react'
-import { useEffect, useId, useRef, useState } from 'react'
+import { useId, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
@@ -32,13 +32,9 @@ export function TransferInput({
   sendingCount = 0,
 }: TransferInputProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const [clipboardAvailable, setClipboardAvailable] = useState(false)
+  const [clipboardAvailable] = useState(() => typeof navigator !== 'undefined' && !!navigator.clipboard)
   const textInputId = useId()
   const textHintId = useId()
-
-  useEffect(() => {
-    setClipboardAvailable(typeof navigator !== 'undefined' && !!navigator.clipboard)
-  }, [])
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const fileList = e.target.files

@@ -2,7 +2,7 @@
 
 import { Check, Download } from 'lucide-react'
 import { QRCodeSVG } from 'qrcode.react'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -20,26 +20,26 @@ interface QRCodeDisplayProps {
 
 export function QRCodeDisplay({ roomCode, open, onOpenChange }: QRCodeDisplayProps) {
   const qrRef = useRef<HTMLDivElement>(null)
-  const [origin, setOrigin] = useState('')
   const [saved, setSaved] = useState(false)
   const safeRoomCode = roomCode ?? ''
-
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      setOrigin(window.location.origin)
-    }
-  }, [])
-
-  useEffect(() => {
-    if (!open) {
-      setSaved(false)
-    }
-  }, [open])
+  const origin = typeof window === 'undefined' ? '' : window.location.origin
 
   // Generate the URL for the room
   const roomUrl = origin && safeRoomCode
     ? `${origin}?join=${safeRoomCode}`
     : ''
+  const formattedCode = safeRoomCode ? `${safeRoomCode.slice(0, 3)} ${safeRoomCode.slice(3)}` : '--'
+  const codeChars = Array.from(formattedCode).map((char, idx) => ({
+    char,
+    id: char === ' ' ? 'separator' : idx < 3 ? `prefix-${idx + 1}` : `suffix-${idx}`,
+  }))
+
+  const handleOpenChange = useCallback((nextOpen: boolean) => {
+    if (!nextOpen) {
+      setSaved(false)
+    }
+    onOpenChange(nextOpen)
+  }, [onOpenChange])
 
   const handleDownload = useCallback(() => {
     if (!safeRoomCode)
@@ -81,7 +81,7 @@ export function QRCodeDisplay({ roomCode, open, onOpenChange }: QRCodeDisplayPro
   }, [safeRoomCode])
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-[340px]">
         <DialogHeader>
           <DialogTitle className="text-center">扫码加入房间</DialogTitle>
@@ -113,16 +113,16 @@ export function QRCodeDisplay({ roomCode, open, onOpenChange }: QRCodeDisplayPro
           <div className="text-center delight-fade-up">
             <p className="text-sm text-muted-foreground mb-1">房间代码</p>
             <p className="text-2xl font-mono font-bold tracking-[0.16em]">
-              {(safeRoomCode ? `${safeRoomCode.slice(0, 3)} ${safeRoomCode.slice(3)}` : '--').split('').map((char, index) => (
+              {codeChars.map(({ char, id }, index) => (
                 char === ' '
                   ? (
-                      <span key={`space-${index}`} className="mx-1" aria-hidden="true">
+                      <span key={id} className="mx-1" aria-hidden="true">
                         {' '}
                       </span>
                     )
                   : (
                       <span
-                        key={`${char}-${index}`}
+                        key={id}
                         className="delight-code-char"
                         style={{ animationDelay: `${index * 40}ms` }}
                       >

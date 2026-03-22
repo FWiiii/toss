@@ -17,7 +17,7 @@ import {
   WifiOff,
   Zap,
 } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useReducer, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { STATUS_TONES } from '@/lib/design-tokens'
 import { cn, formatFileSize } from '@/lib/utils'
@@ -96,14 +96,11 @@ export function ConnectionStatusDisplay({
   const connectionTypeDisplay = getConnectionTypeDisplay(connectionInfo?.type || 'unknown')
   const ConnectionTypeIcon = connectionTypeDisplay.icon
   const [showDiagnostics, setShowDiagnostics] = useState(false)
-  const [showConnectionFlash, setShowConnectionFlash] = useState(false)
+  const [showConnectionFlash, setShowConnectionFlash] = useReducer(
+    (_current: boolean, next: boolean) => next,
+    false,
+  )
   const wasReadyRef = useRef(false)
-
-  useEffect(() => {
-    if (status !== 'connected' || peerCount === 0) {
-      setShowDiagnostics(false)
-    }
-  }, [peerCount, status])
 
   useEffect(() => {
     const isReady = status === 'connected' && peerCount > 0
@@ -212,6 +209,7 @@ export function ConnectionStatusDisplay({
         || connectionQuality?.bandwidth !== null
         || isEncrypted
       )
+  const diagnosticsExpanded = showDiagnostics && hasDiagnostics
 
   return (
     <div className={cn('space-y-3', className)}>
@@ -309,10 +307,10 @@ export function ConnectionStatusDisplay({
               className="h-auto px-0 text-xs text-muted-foreground hover:bg-transparent hover:text-foreground"
               onClick={() => setShowDiagnostics(prev => !prev)}
             >
-              {showDiagnostics ? '收起连接详情' : '查看连接详情'}
+              {diagnosticsExpanded ? '收起连接详情' : '查看连接详情'}
             </Button>
 
-            {showDiagnostics && (
+            {diagnosticsExpanded && (
               <div className="mt-2 flex items-center gap-4 text-xs text-muted-foreground flex-wrap">
                 <div className="flex items-center gap-1.5" title={connectionTypeDisplay.description} aria-label={`连接方式 ${connectionTypeDisplay.label}`}>
                   <ConnectionTypeIcon className={cn(
