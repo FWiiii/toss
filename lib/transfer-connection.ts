@@ -27,6 +27,7 @@ import {
   PEER_PREFIX,
 } from './peer-config'
 import { createReceiveStorage } from './receive-storage'
+import { createSequentialAsyncProcessor } from './serial-async-processor'
 import { readBinaryChunkPayload } from './transfer-chunk'
 
 const IMAGE_FILE_NAME_REGEX = /\.(?:jpg|jpeg|png|gif|webp|svg)$/i
@@ -146,6 +147,8 @@ export function createSetupConnection(
   return async (conn: any, isOutgoing = false) => {
     let connectionTimeout: NodeJS.Timeout | null = null
     let disconnectedTimer: NodeJS.Timeout | null = null
+    // PeerJS does not await async data handlers, so preserve protocol order per connection.
+    const processIncomingData = createSequentialAsyncProcessor()
     const disconnectedGracePeriodMs = Math.min(
       HEARTBEAT_TIMEOUT_MS,
       ICE_DISCONNECTED_GRACE_PERIOD_MS,
@@ -333,9 +336,7 @@ export function createSetupConnection(
       }
     })
 
-    conn.on('data', async (data: any) => {
-      touchPeer(conn.peer)
-
+    const handleIncomingData = async (data: any) => {
       // 处理密钥交换
       if (data.type === 'key-exchange') {
         try {
@@ -645,6 +646,16 @@ export function createSetupConnection(
           refs.cancelledTransfersRef.current.add(decryptedData.itemId)
         }
       }
+    }
+
+    conn.on('data', (data: any) => {
+      touchPeer(conn.peer)
+
+      void processIncomingData(async () => {
+        await handleIncomingData(data)
+      }).catch((error) => {
+        console.error('Failed to process incoming data:', error)
+      })
     })
   }
 }

@@ -69,3 +69,11 @@ test('connection recovery uses relaxed timeouts and single-flight reconnect guar
   assert.match(connectionSource, /connectingPeersRef/)
   assert.match(roomSource, /connectingPeersRef/)
 })
+
+test('incoming connection data is processed sequentially to avoid receive races', async () => {
+  const connectionSource = await readProjectFile('lib/transfer-connection.ts')
+
+  assert.match(connectionSource, /createSequentialAsyncProcessor/)
+  assert.match(connectionSource, /conn\.on\('data',\s*\(data: any\) => \{/)
+  assert.match(connectionSource, /processIncomingData\(\s*async\s*\(\)\s*=>/)
+})
