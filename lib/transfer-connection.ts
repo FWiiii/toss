@@ -3,6 +3,7 @@
  * 处理 WebRTC 连接建立、密钥交换、重连等逻辑
  */
 
+import type { ReceiveStorageHandle } from './receive-storage'
 import type { ConnectionInfo } from './types'
 import {
   arrayBufferToBase64,
@@ -22,7 +23,8 @@ import {
   MAX_RECONNECT_ATTEMPTS,
   PEER_PREFIX,
 } from './peer-config'
-import { base64ToUint8 } from './utils'
+import { createReceiveStorage } from './receive-storage'
+import { readBinaryChunkPayload } from './transfer-chunk'
 
 const IMAGE_FILE_NAME_REGEX = /\.(?:jpg|jpeg|png|gif|webp|svg)$/i
 
@@ -37,13 +39,14 @@ export interface ConnectionRefs {
     peerId: string
     name: string
     size: number
-    chunks: Uint8Array[]
+    type: string
     received: number
     localItemId: string
     remoteItemId: string
     lastTime: number
     lastBytes: number
     smoothedSpeed: number
+    storage: ReceiveStorageHandle
   }>>
   reconnectAttemptsRef: React.MutableRefObject<number>
   reconnectTimeoutRef: React.MutableRefObject<NodeJS.Timeout | null>
@@ -67,11 +70,12 @@ export interface ConnectionCallbacks {
   addItem: (item: any) => void
   addItemWithId: (item: any) => string
   updateItemProgress: (id: string, updates: any) => void
-  createTrackedBlobUrl: (blob: Blob) => string
+  createTrackedBlobUrl: (blob: Blob | File, cleanup?: () => Promise<void> | void) => string
   broadcastToConnections: (data: any, excludePeer?: string) => Promise<void>
   cleanupAll: () => void
-  handlePong: (id: string) => void
-  recordBandwidth: (speed: number) => void
+  handlePong: (peerId: string, id: string) => void
+  recordBandwidth: (peerId: string, speed: number) => void
+  removePeerQuality: (peerId: string) => void
   notifyReceived: (type: string, name?: string) => void
 }
 
@@ -100,6 +104,7 @@ export function createSetupConnection(
     cleanupAll,
     handlePong,
     recordBandwidth,
+    removePeerQuality,
     notifyReceived,
   } = callbacks
 
@@ -263,6 +268,7 @@ export function createSetupConnection(
       markBuffersPendingForPeer(conn.peer)
       encryptorsRef.current.delete(conn.peer)
       keyExchangePendingRef.current.delete(conn.peer)
+      removePeerQuality(conn.peer)
 
       updatePeerCount()
 
@@ -281,6 +287,7 @@ export function createSetupConnection(
       markBuffersPendingForPeer(conn.peer)
       encryptorsRef.current.delete(conn.peer)
       keyExchangePendingRef.current.delete(conn.peer)
+      removePeerQuality(conn.peer)
 
       updatePeerCount()
 
@@ -360,7 +367,7 @@ export function createSetupConnection(
             try {
               if (!encryptor)
                 return
-              bytes = await decryptBytes(encryptor, data.encrypted)
+              bytes = await decryptBytes(encryptor, readBinaryChunkPayload(data.bytes))
             }
             catch (error) {
               console.error('File chunk decryption error:', error)
@@ -368,10 +375,24 @@ export function createSetupConnection(
             }
           }
           else {
-            // 未加密的文件块
-            bytes = base64ToUint8(data.data)
+            bytes = readBinaryChunkPayload(data.bytes)
           }
-          buffer.chunks.push(bytes)
+
+          try {
+            await buffer.storage.appendChunk(bytes)
+          }
+          catch (error) {
+            console.error('Failed to persist file chunk:', error)
+            updateItemProgress(buffer.localItemId, {
+              status: 'error',
+              speed: undefined,
+              remainingTime: undefined,
+            })
+            void buffer.storage.abort()
+            fileBuffersRef.current.delete(buffer.remoteItemId)
+            return
+          }
+
           buffer.received += bytes.length
 
           const now = Date.now()
@@ -397,7 +418,7 @@ export function createSetupConnection(
               remainingTime,
             })
 
-            recordBandwidth(speed)
+            recordBandwidth(conn.peer, speed)
 
             buffer.lastTime = now
             buffer.lastBytes = buffer.received
@@ -462,17 +483,37 @@ export function createSetupConnection(
           })
 
           const newRemoteItemId = hasRemoteId ? remoteItemId : localItemId
+          let storage: ReceiveStorageHandle
+
+          try {
+            storage = await createReceiveStorage({
+              fileName: decryptedData.name,
+              mimeType: decryptedData.fileType || '',
+              transferId: newRemoteItemId,
+            })
+          }
+          catch (error) {
+            console.error('Failed to create receive storage:', error)
+            updateItemProgress(localItemId, {
+              status: 'error',
+              speed: undefined,
+              remainingTime: undefined,
+            })
+            return
+          }
+
           fileBuffersRef.current.set(newRemoteItemId, {
             peerId: conn.peer,
             name: decryptedData.name,
             size: decryptedData.size,
-            chunks: [],
+            type: decryptedData.fileType || '',
             received: 0,
             localItemId,
             remoteItemId: newRemoteItemId,
             lastTime: Date.now(),
             lastBytes: 0,
             smoothedSpeed: 0,
+            storage,
           })
         }
       }
@@ -486,13 +527,28 @@ export function createSetupConnection(
               speed: undefined,
               remainingTime: undefined,
             })
-            buffer.chunks = []
+            void buffer.storage.abort()
             fileBuffersRef.current.delete(buffer.remoteItemId)
             return
           }
 
-          const blob = new Blob(buffer.chunks as unknown as BlobPart[])
-          const url = createTrackedBlobUrl(blob)
+          let finalized
+          try {
+            finalized = await buffer.storage.finalize()
+          }
+          catch (error) {
+            console.error('Failed to finalize receive storage:', error)
+            updateItemProgress(buffer.localItemId, {
+              status: 'error',
+              speed: undefined,
+              remainingTime: undefined,
+            })
+            void buffer.storage.abort()
+            fileBuffersRef.current.delete(buffer.remoteItemId)
+            return
+          }
+
+          const url = createTrackedBlobUrl(finalized.file, finalized.cleanup)
 
           updateItemProgress(buffer.localItemId, {
             content: url,
@@ -503,10 +559,9 @@ export function createSetupConnection(
             remainingTime: undefined,
           })
 
-          const fileType = IMAGE_FILE_NAME_REGEX.test(buffer.name) ? 'image' : 'file'
+          const fileType = buffer.type.startsWith('image/') || IMAGE_FILE_NAME_REGEX.test(buffer.name) ? 'image' : 'file'
           notifyReceived(fileType, buffer.name)
 
-          buffer.chunks = []
           fileBuffersRef.current.delete(buffer.remoteItemId)
         }
       }
@@ -535,7 +590,7 @@ export function createSetupConnection(
         }
       }
       else if (decryptedData.type === 'pong') {
-        handlePong(decryptedData.id)
+        handlePong(conn.peer, decryptedData.id)
       }
       else if (decryptedData.type === 'file-cancel') {
         const bufferKey = decryptedData.itemId || findBufferKeyByPeer(conn.peer)
@@ -546,7 +601,7 @@ export function createSetupConnection(
             speed: undefined,
           })
 
-          buffer.chunks = []
+          void buffer.storage.abort()
           fileBuffersRef.current.delete(buffer.remoteItemId)
         }
 

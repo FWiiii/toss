@@ -1,21 +1,20 @@
 'use client'
 
+import type { PendingTransferFile } from '@/lib/pending-transfer-file'
 import type { SharedData } from '@/lib/utils'
 import { useCallback, useEffect, useState } from 'react'
 import {
-  base64ToFile,
+  createRemotePendingTransferFile,
+  createStoredPendingTransferFile,
+} from '@/lib/pending-transfer-file'
+import {
   clearShareDataFromDB,
   getShareDataFromDB,
-
 } from '@/lib/utils'
 
 export type { SharedData }
 
-// Helper to convert file data array to File objects
-interface FileData { name: string, type: string, data: string }
-function convertFilesFromData(files: FileData[]): File[] {
-  return files.filter(f => f.data).map(f => base64ToFile(f.data, f.name, f.type))
-}
+interface FileData { data: string, name: string, size: number, type: string }
 
 interface RemoteFileData {
   name: string
@@ -24,22 +23,14 @@ interface RemoteFileData {
   url: string
 }
 
-async function fetchRemoteFiles(files: RemoteFileData[]): Promise<File[]> {
-  const blobs = await Promise.all(
-    files.map(async (file) => {
-      const response = await fetch(file.url)
-      if (!response.ok) {
-        throw new Error(`Failed to fetch shared file: ${file.name}`)
-      }
+async function fetchRemoteFile(file: RemoteFileData): Promise<File> {
+  const response = await fetch(file.url)
+  if (!response.ok) {
+    throw new Error(`Failed to fetch shared file: ${file.name}`)
+  }
 
-      return {
-        blob: await response.blob(),
-        ...file,
-      }
-    }),
-  )
-
-  return blobs.map(file => new File([file.blob], file.name, { type: file.blob.type || file.type }))
+  const blob = await response.blob()
+  return new File([blob], file.name, { type: blob.type || file.type })
 }
 
 // Helper to combine text parts
@@ -49,7 +40,7 @@ function combineTextParts(...parts: (string | undefined | null)[]): string {
 
 export function useShareTarget() {
   const [sharedData, setSharedData] = useState<SharedData | null>(null)
-  const [sharedFiles, setSharedFiles] = useState<File[]>([])
+  const [sharedFiles, setSharedFiles] = useState<PendingTransferFile[]>([])
   const [sharedText, setSharedText] = useState<string>('')
   const [isLoading, setIsLoading] = useState(true)
 
@@ -73,7 +64,11 @@ export function useShareTarget() {
       const dbData = await getShareDataFromDB()
       if (dbData) {
         setSharedData(dbData)
-        setSharedFiles(convertFilesFromData(dbData.files))
+        setSharedFiles(
+          dbData.files
+            .filter(file => file.data)
+            .map(file => createStoredPendingTransferFile(file as FileData)),
+        )
         setSharedText(combineTextParts(dbData.title, dbData.text, dbData.url))
         await clearShareDataFromDB()
         foundData = true
@@ -92,8 +87,15 @@ export function useShareTarget() {
             }
 
             if (data.files.length > 0) {
-              const files = await fetchRemoteFiles(data.files)
-              setSharedFiles(files)
+              setSharedFiles(
+                data.files.map(file => createRemotePendingTransferFile({
+                  id: `${shareId}:${file.name}:${file.size}`,
+                  name: file.name,
+                  resolveFile: () => fetchRemoteFile(file),
+                  size: file.size,
+                  type: file.type,
+                })),
+              )
               foundData = true
             }
 
@@ -102,8 +104,6 @@ export function useShareTarget() {
               setSharedText(text)
               foundData = true
             }
-
-            void fetch(`/share?id=${shareId}`, { method: 'DELETE' })
           }
         }
         catch (e) {

@@ -12,14 +12,14 @@ import {
   FILE_CHUNK_SIZE,
   FILE_RESUME_WAIT_TIMEOUT,
 } from './peer-config'
-import { uint8ToBase64 } from './utils'
+import { createBinaryFileChunkPayload } from './transfer-chunk'
 
 export interface DataTransferCallbacks {
   setSendingCount: (updater: (prev: number) => number) => void
   addItem: (item: any) => void
   addItemWithId: (item: any) => string
   updateItemProgress: (id: string, updates: any) => void
-  createTrackedBlobUrl: (blob: Blob | File) => string
+  createTrackedBlobUrl: (blob: Blob | File, cleanup?: () => Promise<void> | void) => string
 }
 
 interface PeerSendResult {
@@ -116,23 +116,16 @@ export function createDataTransfer(
     const isEncrypted = encryptor?.isReady() ?? false
 
     try {
-      if (isEncrypted && encryptor) {
-        const encryptedChunk = await encryptBytes(encryptor, chunk)
-        conn.send({
-          type: 'file-chunk',
-          itemId,
-          offset,
-          encrypted: encryptedChunk,
-        })
-      }
-      else {
-        conn.send({
-          type: 'file-chunk',
-          itemId,
-          offset,
-          data: uint8ToBase64(chunk),
-        })
-      }
+      const bytes = isEncrypted && encryptor
+        ? await encryptBytes(encryptor, chunk)
+        : chunk
+
+      conn.send(createBinaryFileChunkPayload({
+        bytes,
+        encrypted: isEncrypted,
+        itemId,
+        offset,
+      }))
       return true
     }
     catch (error) {
@@ -207,6 +200,7 @@ export function createDataTransfer(
         const resumed = offset > 0
         const started = await sendControlToPeer(peerId, {
           type: 'file-start',
+          fileType: file.type,
           name: file.name,
           size: totalSize,
           itemId,
@@ -224,6 +218,7 @@ export function createDataTransfer(
       else if (!hasSentStart) {
         const started = await sendControlToPeer(peerId, {
           type: 'file-start',
+          fileType: file.type,
           name: file.name,
           size: totalSize,
           itemId,

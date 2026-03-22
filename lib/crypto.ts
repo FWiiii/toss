@@ -363,9 +363,8 @@ export async function decryptJSON<T = unknown>(
 export async function encryptBytes(
   encryptor: SessionEncryptor,
   data: Uint8Array,
-): Promise<string> {
-  const encrypted = await encryptor.encrypt(data)
-  return arrayBufferToBase64(encrypted.buffer)
+): Promise<Uint8Array> {
+  return await encryptor.encrypt(data)
 }
 
 /**
@@ -373,8 +372,7 @@ export async function encryptBytes(
  */
 export async function decryptBytes(
   encryptor: SessionEncryptor,
-  encryptedBase64: string,
+  encryptedBytes: Uint8Array,
 ): Promise<Uint8Array> {
-  const encryptedBuffer = base64ToArrayBuffer(encryptedBase64)
-  return await encryptor.decrypt(new Uint8Array(encryptedBuffer))
+  return await encryptor.decrypt(encryptedBytes)
 }

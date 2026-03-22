@@ -1,22 +1,27 @@
 'use client'
 
+import type { Ref } from 'react'
+import type { PendingTransferFile } from '@/lib/pending-transfer-file'
 import { Clipboard, Loader2, Send, Upload } from 'lucide-react'
 import { useId, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 
+type PendingTransferInput = File | PendingTransferFile
+
 interface TransferInputProps {
   text: string
   onTextChange: (text: string) => void
   onSendText: () => void
-  onSendFiles: (files: File[]) => void
+  onSendFiles: (files: PendingTransferInput[]) => void
   onBeforeFilePick?: () => void
   onSendClipboard?: () => void
   isSendingClipboard?: boolean
   highlightComposer?: boolean
   isConnected: boolean
   sendingCount?: number
+  textInputRef?: Ref<HTMLTextAreaElement>
 }
 
 export function TransferInput({
@@ -30,6 +35,7 @@ export function TransferInput({
   highlightComposer = false,
   isConnected,
   sendingCount = 0,
+  textInputRef,
 }: TransferInputProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [clipboardAvailable] = useState(() => typeof navigator !== 'undefined' && !!navigator.clipboard)
@@ -62,6 +68,7 @@ export function TransferInput({
           要发送的文本
         </label>
         <Textarea
+          ref={textInputRef}
           id={textInputId}
           placeholder={isConnected ? '输入要发送的文本...' : '连接设备后可发送内容'}
           value={text}

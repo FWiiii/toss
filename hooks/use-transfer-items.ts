@@ -12,6 +12,7 @@ export function useTransferItems() {
 
   // Track Blob URLs for cleanup to prevent memory leaks
   const blobUrlsRef = useRef<Set<string>>(new Set())
+  const blobUrlCleanupRef = useRef<Map<string, () => Promise<void> | void>>(new Map())
 
   // 消息去重：记录最近的消息和时间，避免重复显示
   const recentMessagesRef = useRef<Map<string, number>>(new Map())
@@ -24,14 +25,23 @@ export function useTransferItems() {
         URL.revokeObjectURL(url)
       }
       catch {}
+
+      const cleanup = blobUrlCleanupRef.current.get(url)
+      if (cleanup) {
+        void cleanup()
+        blobUrlCleanupRef.current.delete(url)
+      }
     })
     blobUrlsRef.current.clear()
   }, [])
 
   // Create and track a Blob URL
-  const createTrackedBlobUrl = useCallback((blob: Blob | File): string => {
+  const createTrackedBlobUrl = useCallback((blob: Blob | File, cleanup?: () => Promise<void> | void): string => {
     const url = URL.createObjectURL(blob)
     blobUrlsRef.current.add(url)
+    if (cleanup) {
+      blobUrlCleanupRef.current.set(url, cleanup)
+    }
     return url
   }, [])
 
@@ -99,11 +109,16 @@ export function useTransferItems() {
     id: string,
     updates: Partial<Pick<TransferItem, 'status' | 'progress' | 'transferredBytes' | 'speed' | 'content' | 'remainingTime'>>,
   ) => {
-    setItems(prev =>
-      prev.map(item =>
-        item.id === id ? { ...item, ...updates } : item,
-      ),
-    )
+    setItems((prev) => {
+      const index = prev.findIndex(item => item.id === id)
+      if (index === -1) {
+        return prev
+      }
+
+      const next = [...prev]
+      next[index] = { ...next[index], ...updates }
+      return next
+    })
   }, [])
 
   // Clear all items
@@ -119,6 +134,12 @@ export function useTransferItems() {
         URL.revokeObjectURL(url)
       }
       catch {}
+
+      const cleanup = blobUrlCleanupRef.current.get(url)
+      if (cleanup) {
+        void cleanup()
+        blobUrlCleanupRef.current.delete(url)
+      }
     })
     blobUrlsRef.current.clear()
   }, [])

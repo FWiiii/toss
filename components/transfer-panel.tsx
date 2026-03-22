@@ -1,13 +1,15 @@
 'use client'
 
+import type { PendingTransferFile } from '@/lib/pending-transfer-file'
 import { Send, Share2, Trash2, Upload } from 'lucide-react'
-import { useCallback, useEffect, useId, useReducer, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useReducer, useRef, useState } from 'react'
 import { ImagePreviewDialog } from '@/components/image-preview-dialog'
 import { TransferInput } from '@/components/transfer-input'
 import { TransferItemComponent } from '@/components/transfer-item'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { useShareTarget } from '@/hooks/use-share-target'
+import { resolvePendingTransferFile } from '@/lib/pending-transfer-file'
 import { useTransfer, useTransferItems } from '@/lib/transfer-context'
 import { cn } from '@/lib/utils'
 
@@ -15,13 +17,15 @@ const PANEL_CLASS = 'panel-surface relative overflow-hidden transition-colors'
 const PANEL_HEADER_CLASS = 'flex items-center justify-between border-b border-border/70 px-4 py-3'
 const SCROLL_AREA_CLASS = 'min-h-[220px] space-y-2 p-4 sm:min-h-[260px]'
 
+type PendingTransferInput = File | PendingTransferFile
+
 interface PendingShareState {
-  files: File[]
+  files: PendingTransferInput[]
   text: string
 }
 
 type PendingShareAction = { type: 'replace', value: PendingShareState | null }
-  | { type: 'append-files', files: File[] }
+  | { type: 'append-files', files: PendingTransferInput[] }
 
 function pendingShareReducer(state: PendingShareState | null, action: PendingShareAction): PendingShareState | null {
   switch (action.type) {
@@ -69,6 +73,7 @@ export function TransferPanel() {
   const hasHighlightedComposerRef = useRef(false)
   const activeItemsEndRef = useRef<HTMLDivElement>(null)
   const itemsEndRef = useRef<HTMLDivElement>(null)
+  const composerInputRef = useRef<HTMLTextAreaElement>(null)
   const previousItemsCountRef = useRef(0)
   const shouldAutoScrollRef = useRef(true)
   const completedSectionId = useId()
@@ -88,10 +93,7 @@ export function TransferPanel() {
     if (!hasFocusedRef.current) {
       hasFocusedRef.current = true
       requestAnimationFrame(() => {
-        const input = document.querySelector<HTMLTextAreaElement>('[data-transfer-input] textarea')
-        if (input) {
-          input.focus()
-        }
+        composerInputRef.current?.focus()
       })
     }
 
@@ -122,8 +124,14 @@ export function TransferPanel() {
       window.clearTimeout(timeoutId)
     }
   }, [dropFeedbackLabel])
-  const activeItems = items.filter(item => item.status === 'transferring' || item.status === 'pending')
-  const completedItems = items.filter(item => !(item.status === 'transferring' || item.status === 'pending'))
+  const activeItems = useMemo(
+    () => items.filter(item => item.status === 'transferring' || item.status === 'pending'),
+    [items],
+  )
+  const completedItems = useMemo(
+    () => items.filter(item => !(item.status === 'transferring' || item.status === 'pending')),
+    [items],
+  )
   const hasItems = activeItems.length > 0 || completedItems.length > 0
   const showDormantPanel = !isConnected && !hasItems && !pendingShare
 
@@ -158,7 +166,7 @@ export function TransferPanel() {
     })
   }, [getAutoScrollAnchor])
 
-  const sendFiles = useCallback(async (files: File[]) => {
+  const sendFiles = useCallback(async (files: PendingTransferInput[]) => {
     if (files.length === 0)
       return
 
@@ -167,10 +175,17 @@ export function TransferPanel() {
       return
     }
 
-    for (const file of files) {
-      await sendFile(file)
+    for (const pendingFile of files) {
+      try {
+        const file = await resolvePendingTransferFile(pendingFile)
+        await sendFile(file)
+      }
+      catch (error) {
+        console.error('Failed to resolve shared file:', error)
+        addSystemMessage('获取分享文件失败，请重试', true)
+      }
     }
-  }, [isConnected, sendFile])
+  }, [addSystemMessage, isConnected, sendFile])
 
   const handleSendClipboard = useCallback(async () => {
     if (!isConnected || !navigator.clipboard)
@@ -526,6 +541,7 @@ export function TransferPanel() {
           highlightComposer={highlightComposer}
           isConnected={isConnected}
           sendingCount={sendingCount}
+          textInputRef={composerInputRef}
         />
       )}
 

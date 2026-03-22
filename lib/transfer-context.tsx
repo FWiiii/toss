@@ -1,6 +1,7 @@
 'use client'
 
 import type { generateKeyPair, SessionEncryptor } from './crypto'
+import type { ReceiveStorageHandle } from './receive-storage'
 import type { ConnectionCallbacks, ConnectionRefs } from './transfer-connection'
 import type { DataTransferCallbacks } from './transfer-data'
 import type { RoomCallbacks } from './transfer-room'
@@ -196,6 +197,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
 
   const {
     connectionQuality,
+    removePeerMetrics,
     startQualityMonitoring,
     stopQualityMonitoring,
     handlePong,
@@ -210,13 +212,14 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     peerId: string
     name: string
     size: number
-    chunks: Uint8Array[]
+    type: string
     received: number
     localItemId: string
     remoteItemId: string
     lastTime: number
     lastBytes: number
     smoothedSpeed: number
+    storage: ReceiveStorageHandle
   }>>(new Map())
 
   // 加密相关 refs
@@ -277,6 +280,9 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
   const cleanupConnections = useCallback(() => {
     connectionsRef.current.forEach(safeClose)
     connectionsRef.current.clear()
+    fileBuffersRef.current.forEach((buffer) => {
+      void buffer.storage.abort()
+    })
     fileBuffersRef.current.clear()
     encryptorsRef.current.clear()
     keyExchangePendingRef.current.clear()
@@ -415,6 +421,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     cleanupAll,
     handlePong,
     recordBandwidth,
+    removePeerQuality: removePeerMetrics,
     notifyReceived: (type: string, name?: string) => notifyReceived(type as 'text' | 'image' | 'file', name),
   }), [
     addItem,
@@ -426,6 +433,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     handlePong,
     notifyReceived,
     recordBandwidth,
+    removePeerMetrics,
     setConnectionInfo,
     setConnectionStatus,
     setError,
@@ -584,7 +592,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     else if (item.direction === 'received') {
       for (const [peerId, buffer] of fileBuffersRef.current.entries()) {
         if (buffer.localItemId === itemId) {
-          buffer.chunks = []
+          void buffer.storage.abort()
           fileBuffersRef.current.delete(peerId)
 
           const conn = connectionsRef.current.get(buffer.peerId)
@@ -621,6 +629,9 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
 
       activeConnections.forEach(safeClose)
       activeConnections.clear()
+      activeFileBuffers.forEach((buffer) => {
+        void buffer.storage.abort()
+      })
       activeFileBuffers.clear()
 
       if (peerRef.current) {

@@ -2,7 +2,7 @@
 
 import type { ConnectionQuality } from '@/lib/types'
 import { useCallback, useRef, useState } from 'react'
-import { generateUUID } from '@/lib/utils'
+import { createConnectionQualityTracker } from '@/lib/connection-quality'
 
 type ConnectionsRef = React.MutableRefObject<Map<string, any>>
 
@@ -15,60 +15,31 @@ export function useConnectionQuality(connectionsRef: ConnectionsRef) {
     bandwidth: null,
     quality: 'unknown',
   })
+  const trackerRef = useRef(createConnectionQualityTracker())
 
   // Quality monitoring refs
   const pingIntervalRef = useRef<NodeJS.Timeout | null>(null)
-  const pendingPingsRef = useRef<Map<string, number>>(new Map())
-  const latencyHistoryRef = useRef<number[]>([])
-  const bandwidthHistoryRef = useRef<number[]>([])
   const qualityIntervalRef = useRef<NodeJS.Timeout | null>(null)
 
   // Update connection quality based on collected metrics
   const updateConnectionQuality = useCallback(() => {
-    const latency = latencyHistoryRef.current.length > 0
-      ? latencyHistoryRef.current.reduce((a, b) => a + b, 0) / latencyHistoryRef.current.length
-      : null
-
-    const bandwidth = bandwidthHistoryRef.current.length > 0
-      ? bandwidthHistoryRef.current.reduce((a, b) => a + b, 0) / bandwidthHistoryRef.current.length
-      : null
-
-    let quality: 'excellent' | 'good' | 'fair' | 'poor' | 'unknown' = 'unknown'
-    if (latency !== null) {
-      if (latency < 50)
-        quality = 'excellent'
-      else if (latency < 100)
-        quality = 'good'
-      else if (latency < 200)
-        quality = 'fair'
-      else quality = 'poor'
-    }
-
-    setConnectionQuality({
-      latency: latency !== null ? Math.round(latency) : null,
-      bandwidth: bandwidth !== null ? Math.round(bandwidth) : null,
-      quality,
-    })
+    setConnectionQuality(trackerRef.current.getSnapshot())
   }, [])
 
   // Send ping to all connected peers
   const sendPing = useCallback(() => {
-    if (connectionsRef.current.size === 0)
+    const peerIds = Array.from(connectionsRef.current.entries())
+      .filter(([, conn]) => conn?.open)
+      .map(([peerId]) => peerId)
+
+    if (peerIds.length === 0)
       return
 
-    const pingId = generateUUID()
-    const timestamp = Date.now()
-    pendingPingsRef.current.set(pingId, timestamp)
-
-    // Clean up old pending pings (older than 5 seconds)
-    for (const [id, time] of pendingPingsRef.current.entries()) {
-      if (timestamp - time > 5000) {
-        pendingPingsRef.current.delete(id)
-      }
-    }
+    const pingId = trackerRef.current.createPing(peerIds)
 
     // Send ping to all connections
-    connectionsRef.current.forEach((conn) => {
+    peerIds.forEach((peerId) => {
+      const conn = connectionsRef.current.get(peerId)
       try {
         conn.send({ type: 'ping', id: pingId })
       }
@@ -79,30 +50,22 @@ export function useConnectionQuality(connectionsRef: ConnectionsRef) {
   }, [connectionsRef])
 
   // Handle pong response
-  const handlePong = useCallback((pingId: string) => {
-    const sendTime = pendingPingsRef.current.get(pingId)
-    if (sendTime) {
-      const latency = Date.now() - sendTime
-      pendingPingsRef.current.delete(pingId)
-
-      latencyHistoryRef.current.push(latency)
-      if (latencyHistoryRef.current.length > 10) {
-        latencyHistoryRef.current.shift()
-      }
-
+  const handlePong = useCallback((peerId: string, pingId: string) => {
+    const latency = trackerRef.current.recordPong(peerId, pingId)
+    if (latency !== null) {
       updateConnectionQuality()
     }
   }, [updateConnectionQuality])
 
   // Record bandwidth measurement
-  const recordBandwidth = useCallback((speed: number) => {
-    if (speed > 0) {
-      bandwidthHistoryRef.current.push(speed)
-      if (bandwidthHistoryRef.current.length > 10) {
-        bandwidthHistoryRef.current.shift()
-      }
-    }
+  const recordBandwidth = useCallback((peerId: string, speed: number) => {
+    trackerRef.current.recordBandwidth(peerId, speed)
   }, [])
+
+  const removePeerMetrics = useCallback((peerId: string) => {
+    trackerRef.current.removePeer(peerId)
+    updateConnectionQuality()
+  }, [updateConnectionQuality])
 
   // Start monitoring connection quality
   const startQualityMonitoring = useCallback(() => {
@@ -130,15 +93,9 @@ export function useConnectionQuality(connectionsRef: ConnectionsRef) {
       qualityIntervalRef.current = null
     }
 
-    pendingPingsRef.current.clear()
-    latencyHistoryRef.current = []
-    bandwidthHistoryRef.current = []
-    setConnectionQuality({
-      latency: null,
-      bandwidth: null,
-      quality: 'unknown',
-    })
-  }, [])
+    trackerRef.current.reset()
+    updateConnectionQuality()
+  }, [updateConnectionQuality])
 
   // Cleanup function
   const cleanup = useCallback(() => {
@@ -150,10 +107,13 @@ export function useConnectionQuality(connectionsRef: ConnectionsRef) {
       clearInterval(qualityIntervalRef.current)
       qualityIntervalRef.current = null
     }
+
+    trackerRef.current.reset()
   }, [])
 
   return {
     connectionQuality,
+    removePeerMetrics,
     startQualityMonitoring,
     stopQualityMonitoring,
     handlePong,

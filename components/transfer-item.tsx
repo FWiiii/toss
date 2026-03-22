@@ -2,7 +2,7 @@
 
 import type { TransferItem } from '@/lib/types'
 import { Ban, Check, Copy, Download, File as FileIcon, FileText, ImageIcon, Loader2, X, ZoomIn } from 'lucide-react'
-import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { ImageThumbnail } from '@/components/image-thumbnail'
 import { LinkPreview } from '@/components/link-preview'
 import { Button } from '@/components/ui/button'
@@ -385,7 +385,7 @@ function FileItem({
 // Text item component
 function TextItem({ item }: { item: TransferItem }) {
   const [copied, setCopied] = useState(false)
-  const segments = parseTextWithLinks(item.content)
+  const segments = useMemo(() => parseTextWithLinks(item.content), [item.content])
 
   const handleCopy = useCallback(async () => {
     try {
@@ -451,7 +451,7 @@ function TextItem({ item }: { item: TransferItem }) {
   )
 }
 
-export function TransferItemComponent({ item, onPreviewImage, onDownload, onCancel }: TransferItemProps) {
+export const TransferItemComponent = memo(({ item, onPreviewImage, onDownload, onCancel }: TransferItemProps) => {
   const [showSettleIn, setShowSettleIn] = useReducer(
     (_current: boolean, next: boolean) => next,
     false,
@@ -498,4 +498,6 @@ export function TransferItemComponent({ item, onPreviewImage, onDownload, onCanc
             )}
     </div>
   )
-}
+})
+
+TransferItemComponent.displayName = 'TransferItemComponent'
