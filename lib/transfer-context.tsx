@@ -239,6 +239,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
   const reconnectAttemptsRef = useRef(0)
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const shouldReconnectRef = useRef(true)
+  const pendingReconnectRef = useRef(false)
   const connectingPeersRef = useRef(createConnectionAttemptRegistry())
 
   const setupConnectionRef = useRef<((conn: any, isOutgoing?: boolean) => void) | null>(null)
@@ -292,6 +293,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     connectingPeersRef.current.clear()
     encryptorsRef.current.clear()
     keyExchangePendingRef.current.clear()
+    pendingReconnectRef.current = false
   }, [])
 
   const cleanupAll = useCallback(() => {
@@ -373,6 +375,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     if (count > 0) {
       setConnectionStatus('connected')
       setErrorMessage(null)
+      pendingReconnectRef.current = false
       reconnectAttemptsRef.current = 0
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current)
@@ -402,6 +405,8 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     reconnectAttemptsRef,
     reconnectTimeoutRef,
     shouldReconnectRef,
+    suppressReconnectUntilRef,
+    pendingReconnectRef,
     peerRef,
     connectingPeersRef,
     setupConnectionRef,
@@ -480,7 +485,8 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       return
 
     const tryReconnect = () => {
-      if (Date.now() < suppressReconnectUntilRef.current) {
+      const hasPendingReconnect = pendingReconnectRef.current
+      if (!hasPendingReconnect && Date.now() < suppressReconnectUntilRef.current) {
         return
       }
 
@@ -488,7 +494,13 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
 
       // Avoid forcing reconnection while an active connection still has recent heartbeats.
       if (hasOpenConnections && hasHealthyConnections()) {
+        pendingReconnectRef.current = false
         return
+      }
+
+      if (hasPendingReconnect) {
+        pendingReconnectRef.current = false
+        suppressReconnectUntilRef.current = 0
       }
 
       if (peerRef.current && peerRef.current.disconnected) {
@@ -645,6 +657,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       })
       activeFileBuffers.clear()
       activeConnectionAttempts.clear()
+      pendingReconnectRef.current = false
 
       if (peerRef.current) {
         try {

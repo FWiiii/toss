@@ -55,6 +55,8 @@ export interface ConnectionRefs {
   reconnectAttemptsRef: React.MutableRefObject<number>
   reconnectTimeoutRef: React.MutableRefObject<NodeJS.Timeout | null>
   shouldReconnectRef: React.MutableRefObject<boolean>
+  suppressReconnectUntilRef: React.MutableRefObject<number>
+  pendingReconnectRef: React.MutableRefObject<boolean>
   peerRef: React.MutableRefObject<any>
   connectingPeersRef: React.MutableRefObject<ConnectionAttemptRegistry>
   setupConnectionRef: React.MutableRefObject<((conn: any, isOutgoing?: boolean) => void) | null>
@@ -671,6 +673,16 @@ export function createAttemptReconnect(
     if (!roomCode || !refs.shouldReconnectRef.current || connectionStatus === 'dissolved') {
       return
     }
+
+    // File pickers and other app switches can temporarily background the page on mobile.
+    const reconnectSuppressed = Date.now() < refs.suppressReconnectUntilRef.current
+    const documentHidden = typeof document !== 'undefined' && document.visibilityState === 'hidden'
+    if (reconnectSuppressed || documentHidden) {
+      refs.pendingReconnectRef.current = true
+      return
+    }
+
+    refs.pendingReconnectRef.current = false
 
     // Avoid stacking multiple reconnect timers from close/error/visibility events.
     if (refs.reconnectTimeoutRef.current) {
