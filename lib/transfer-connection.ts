@@ -3,8 +3,10 @@
  * 处理 WebRTC 连接建立、密钥交换、重连等逻辑
  */
 
+import type { ConnectionAttemptRegistry } from './connection-attempts'
 import type { ReceiveStorageHandle } from './receive-storage'
 import type { ConnectionInfo } from './types'
+import { HEARTBEAT_TIMEOUT_MS } from './connection-quality'
 import {
   arrayBufferToBase64,
   base64ToArrayBuffer,
@@ -20,6 +22,7 @@ import {
 import {
   CONNECTION_TIMEOUT,
   detectConnectionType,
+  ICE_DISCONNECTED_GRACE_PERIOD_MS,
   MAX_RECONNECT_ATTEMPTS,
   PEER_PREFIX,
 } from './peer-config'
@@ -52,6 +55,7 @@ export interface ConnectionRefs {
   reconnectTimeoutRef: React.MutableRefObject<NodeJS.Timeout | null>
   shouldReconnectRef: React.MutableRefObject<boolean>
   peerRef: React.MutableRefObject<any>
+  connectingPeersRef: React.MutableRefObject<ConnectionAttemptRegistry>
   setupConnectionRef: React.MutableRefObject<((conn: any, isOutgoing?: boolean) => void) | null>
   attemptReconnectRef: React.MutableRefObject<(() => void) | null>
   joinRoomRef: React.MutableRefObject<((code: string) => Promise<void>) | null>
@@ -74,6 +78,8 @@ export interface ConnectionCallbacks {
   broadcastToConnections: (data: any, excludePeer?: string) => Promise<void>
   cleanupAll: () => void
   handlePong: (peerId: string, id: string) => void
+  touchPeer: (peerId: string) => void
+  isPeerHealthy: (peerId: string) => boolean
   recordBandwidth: (peerId: string, speed: number) => void
   removePeerQuality: (peerId: string) => void
   notifyReceived: (type: string, name?: string) => void
@@ -103,6 +109,8 @@ export function createSetupConnection(
     broadcastToConnections,
     cleanupAll,
     handlePong,
+    touchPeer,
+    isPeerHealthy,
     recordBandwidth,
     removePeerQuality,
     notifyReceived,
@@ -138,10 +146,28 @@ export function createSetupConnection(
   return async (conn: any, isOutgoing = false) => {
     let connectionTimeout: NodeJS.Timeout | null = null
     let disconnectedTimer: NodeJS.Timeout | null = null
+    const disconnectedGracePeriodMs = Math.min(
+      HEARTBEAT_TIMEOUT_MS,
+      ICE_DISCONNECTED_GRACE_PERIOD_MS,
+    )
+    const releaseConnectionAttempt = () => {
+      refs.connectingPeersRef.current.complete(conn.peer)
+    }
+
+    const existingConn = connectionsRef.current.get(conn.peer)
+    if (existingConn && existingConn !== conn && existingConn.open) {
+      releaseConnectionAttempt()
+      try {
+        conn.close()
+      }
+      catch {}
+      return
+    }
 
     if (isOutgoing) {
       connectionTimeout = setTimeout(() => {
         if (!conn.open) {
+          releaseConnectionAttempt()
           conn.close()
           setError('连接超时，请确保两个设备能够互相访问（同一网络或允许 P2P 连接）')
         }
@@ -156,6 +182,7 @@ export function createSetupConnection(
     }
     catch (error) {
       console.error('Failed to generate key pair:', error)
+      releaseConnectionAttempt()
       const message = error instanceof Error ? error.message : '加密初始化失败'
       setError(message)
       return
@@ -190,13 +217,16 @@ export function createSetupConnection(
               clearTimeout(disconnectedTimer)
             }
             disconnectedTimer = setTimeout(() => {
-              if (pc.iceConnectionState === 'disconnected') {
+              if (
+                pc.iceConnectionState === 'disconnected'
+                && !isPeerHealthy(conn.peer)
+              ) {
                 try {
                   pc.restartIce()
                 }
                 catch {}
               }
-            }, 1000)
+            }, disconnectedGracePeriodMs)
           }
           else if (disconnectedTimer) {
             clearTimeout(disconnectedTimer)
@@ -214,7 +244,9 @@ export function createSetupConnection(
     conn.on('open', async () => {
       if (connectionTimeout)
         clearTimeout(connectionTimeout)
+      releaseConnectionAttempt()
       connectionsRef.current.set(conn.peer, conn)
+      touchPeer(conn.peer)
 
       // 进行密钥交换
       try {
@@ -264,6 +296,7 @@ export function createSetupConnection(
         clearTimeout(connectionTimeout)
       if (disconnectedTimer)
         clearTimeout(disconnectedTimer)
+      releaseConnectionAttempt()
       connectionsRef.current.delete(conn.peer)
       markBuffersPendingForPeer(conn.peer)
       encryptorsRef.current.delete(conn.peer)
@@ -283,6 +316,7 @@ export function createSetupConnection(
         clearTimeout(connectionTimeout)
       if (disconnectedTimer)
         clearTimeout(disconnectedTimer)
+      releaseConnectionAttempt()
       connectionsRef.current.delete(conn.peer)
       markBuffersPendingForPeer(conn.peer)
       encryptorsRef.current.delete(conn.peer)
@@ -300,6 +334,8 @@ export function createSetupConnection(
     })
 
     conn.on('data', async (data: any) => {
+      touchPeer(conn.peer)
+
       // 处理密钥交换
       if (data.type === 'key-exchange') {
         try {
@@ -665,21 +701,37 @@ export function createAttemptReconnect(
       }
 
       if (isHost) {
+        if (refs.peerRef.current?.disconnected) {
+          try {
+            refs.peerRef.current.reconnect()
+          }
+          catch {}
+        }
         callbacks.setConnectionStatus('connecting')
       }
       else {
         const hostPeerId = PEER_PREFIX + roomCode
         if (refs.peerRef.current && !refs.peerRef.current.destroyed) {
+          if (refs.connectionsRef.current.has(hostPeerId) || refs.connectingPeersRef.current.has(hostPeerId)) {
+            return
+          }
+
+          if (!refs.connectingPeersRef.current.begin(hostPeerId)) {
+            return
+          }
+
           try {
             const conn = refs.peerRef.current.connect(hostPeerId, { reliable: true })
             if (conn && refs.setupConnectionRef.current) {
               refs.setupConnectionRef.current(conn, true)
             }
             else {
+              refs.connectingPeersRef.current.complete(hostPeerId)
               createAttemptReconnect(refs, callbacks, roomCode, connectionStatus, isHost)()
             }
           }
           catch {
+            refs.connectingPeersRef.current.complete(hostPeerId)
             createAttemptReconnect(refs, callbacks, roomCode, connectionStatus, isHost)()
           }
         }

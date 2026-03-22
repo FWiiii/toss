@@ -2,7 +2,10 @@
 
 import type { ConnectionQuality } from '@/lib/types'
 import { useCallback, useRef, useState } from 'react'
-import { createConnectionQualityTracker } from '@/lib/connection-quality'
+import {
+  createConnectionQualityTracker,
+  HEARTBEAT_INTERVAL_MS,
+} from '@/lib/connection-quality'
 
 type ConnectionsRef = React.MutableRefObject<Map<string, any>>
 
@@ -62,6 +65,26 @@ export function useConnectionQuality(connectionsRef: ConnectionsRef) {
     trackerRef.current.recordBandwidth(peerId, speed)
   }, [])
 
+  const touchPeer = useCallback((peerId: string) => {
+    trackerRef.current.touchPeer(peerId)
+  }, [])
+
+  const isPeerHealthy = useCallback((peerId: string) => {
+    return trackerRef.current.isPeerHealthy(peerId)
+  }, [])
+
+  const hasHealthyConnections = useCallback(() => {
+    const peerIds = Array.from(connectionsRef.current.entries())
+      .filter(([, conn]) => conn?.open)
+      .map(([peerId]) => peerId)
+
+    if (peerIds.length === 0) {
+      return false
+    }
+
+    return trackerRef.current.hasHealthyPeer(peerIds)
+  }, [connectionsRef])
+
   const removePeerMetrics = useCallback((peerId: string) => {
     trackerRef.current.removePeer(peerId)
     updateConnectionQuality()
@@ -76,7 +99,7 @@ export function useConnectionQuality(connectionsRef: ConnectionsRef) {
       clearInterval(qualityIntervalRef.current)
     }
 
-    pingIntervalRef.current = setInterval(sendPing, 3000)
+    pingIntervalRef.current = setInterval(sendPing, HEARTBEAT_INTERVAL_MS)
     qualityIntervalRef.current = setInterval(updateConnectionQuality, 5000)
 
     sendPing()
@@ -113,9 +136,12 @@ export function useConnectionQuality(connectionsRef: ConnectionsRef) {
 
   return {
     connectionQuality,
+    hasHealthyConnections,
+    isPeerHealthy,
     removePeerMetrics,
     startQualityMonitoring,
     stopQualityMonitoring,
+    touchPeer,
     handlePong,
     recordBandwidth,
     cleanup,

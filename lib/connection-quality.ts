@@ -2,6 +2,8 @@ import type { ConnectionQuality } from './types'
 
 const MAX_SAMPLES = 10
 const PING_TTL_MS = 5000
+export const HEARTBEAT_INTERVAL_MS = 4000
+export const HEARTBEAT_TIMEOUT_MS = 15000
 
 type MetricSamples = Map<string, number[]>
 type PendingPings = Map<string, Map<string, number>>
@@ -62,6 +64,16 @@ export function createConnectionQualityTracker() {
   const pendingPings: PendingPings = new Map()
   const latencyHistoryByPeer: MetricSamples = new Map()
   const bandwidthHistoryByPeer: MetricSamples = new Map()
+  const lastSeenAtByPeer = new Map<string, number>()
+
+  const isPeerHealthy = (peerId: string, now = Date.now()) => {
+    const lastSeenAt = lastSeenAtByPeer.get(peerId)
+    if (lastSeenAt === undefined) {
+      return false
+    }
+
+    return now - lastSeenAt <= HEARTBEAT_TIMEOUT_MS
+  }
 
   const cleanupExpiredPings = (now: number) => {
     for (const [pingId, peerMap] of pendingPings.entries()) {
@@ -101,6 +113,12 @@ export function createConnectionQualityTracker() {
 
     getSnapshot,
 
+    hasHealthyPeer(peerIds: string[], now = Date.now()) {
+      return peerIds.some(peerId => isPeerHealthy(peerId, now))
+    },
+
+    isPeerHealthy,
+
     recordBandwidth(peerId: string, speed: number) {
       if (speed > 0) {
         pushSample(bandwidthHistoryByPeer, peerId, speed)
@@ -125,12 +143,14 @@ export function createConnectionQualityTracker() {
 
       const latency = now - sentAt
       pushSample(latencyHistoryByPeer, peerId, latency)
+      lastSeenAtByPeer.set(peerId, now)
       return latency
     },
 
     removePeer(peerId: string) {
       latencyHistoryByPeer.delete(peerId)
       bandwidthHistoryByPeer.delete(peerId)
+      lastSeenAtByPeer.delete(peerId)
 
       for (const [pingId, pendingPeers] of pendingPings.entries()) {
         pendingPeers.delete(peerId)
@@ -140,10 +160,15 @@ export function createConnectionQualityTracker() {
       }
     },
 
+    touchPeer(peerId: string, now = Date.now()) {
+      lastSeenAtByPeer.set(peerId, now)
+    },
+
     reset() {
       pendingPings.clear()
       latencyHistoryByPeer.clear()
       bandwidthHistoryByPeer.clear()
+      lastSeenAtByPeer.clear()
     },
   }
 }

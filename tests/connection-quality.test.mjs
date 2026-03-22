@@ -37,3 +37,30 @@ test('connection quality tracker clears peer metrics independently', async () =>
     quality: 'excellent',
   })
 })
+
+test('connection quality tracker exposes heartbeat-based peer liveness', async () => {
+  const {
+    createConnectionQualityTracker,
+    HEARTBEAT_TIMEOUT_MS,
+  } = await import('../lib/connection-quality.ts')
+
+  const tracker = createConnectionQualityTracker()
+  tracker.touchPeer('peer-a', 100)
+
+  assert.equal(tracker.isPeerHealthy('peer-a', 100 + HEARTBEAT_TIMEOUT_MS - 1), true)
+  assert.equal(tracker.isPeerHealthy('peer-a', 100 + HEARTBEAT_TIMEOUT_MS + 1), false)
+})
+
+test('pong refreshes peer liveness after a heartbeat', async () => {
+  const {
+    createConnectionQualityTracker,
+    HEARTBEAT_TIMEOUT_MS,
+  } = await import('../lib/connection-quality.ts')
+
+  const tracker = createConnectionQualityTracker()
+  tracker.touchPeer('peer-a', 0)
+  const pingId = tracker.createPing(['peer-a'], HEARTBEAT_TIMEOUT_MS + 10)
+  tracker.recordPong('peer-a', pingId, HEARTBEAT_TIMEOUT_MS + 20)
+
+  assert.equal(tracker.isPeerHealthy('peer-a', HEARTBEAT_TIMEOUT_MS * 2), true)
+})

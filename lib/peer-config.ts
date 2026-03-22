@@ -173,4 +173,9 @@ export const MAX_RECONNECT_ATTEMPTS = 5
 /**
  * Connection timeout in milliseconds
  */
-export const CONNECTION_TIMEOUT = 20000
+export const CONNECTION_TIMEOUT = 40000
+
+/**
+ * Allow brief ICE disconnects to recover before restarting.
+ */
+export const ICE_DISCONNECTED_GRACE_PERIOD_MS = 6000

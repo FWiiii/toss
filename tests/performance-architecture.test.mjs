@@ -57,3 +57,15 @@ test('transfer panel uses localized render controls instead of DOM queries', asy
   assert.match(itemSource, /memo\(/)
   assert.doesNotMatch(pageSource, /import\s+\{\s*memo\s*\}\s+from\s+'react'/)
 })
+
+test('connection recovery uses relaxed timeouts and single-flight reconnect guards', async () => {
+  const peerConfigSource = await readProjectFile('lib/peer-config.ts')
+  const connectionSource = await readProjectFile('lib/transfer-connection.ts')
+  const roomSource = await readProjectFile('lib/transfer-room.ts')
+
+  assert.match(peerConfigSource, /export const CONNECTION_TIMEOUT = (3[5-9]\d{3}|[4-9]\d{4,})/)
+  assert.match(peerConfigSource, /export const ICE_DISCONNECTED_GRACE_PERIOD_MS = ([5-9]\d{3}|\d{5,})/)
+  assert.match(connectionSource, /HEARTBEAT_TIMEOUT_MS/)
+  assert.match(connectionSource, /connectingPeersRef/)
+  assert.match(roomSource, /connectingPeersRef/)
+})

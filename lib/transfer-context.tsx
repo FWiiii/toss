@@ -12,6 +12,7 @@ import { useConnectionQuality } from '@/hooks/use-connection-quality'
 import { useConnectionSettings } from '@/hooks/use-connection-settings'
 import { useNotification } from '@/hooks/use-notification'
 import { useTransferItems as useTransferItemsState } from '@/hooks/use-transfer-items'
+import { createConnectionAttemptRegistry } from './connection-attempts'
 import { encryptJSON } from './crypto'
 import { createAttemptReconnect, createSetupConnection } from './transfer-connection'
 import { createDataTransfer } from './transfer-data'
@@ -197,9 +198,12 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
 
   const {
     connectionQuality,
+    hasHealthyConnections,
+    isPeerHealthy,
     removePeerMetrics,
     startQualityMonitoring,
     stopQualityMonitoring,
+    touchPeer,
     handlePong,
     recordBandwidth,
     cleanup: cleanupQuality,
@@ -235,6 +239,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
   const reconnectAttemptsRef = useRef(0)
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const shouldReconnectRef = useRef(true)
+  const connectingPeersRef = useRef(createConnectionAttemptRegistry())
 
   const setupConnectionRef = useRef<((conn: any, isOutgoing?: boolean) => void) | null>(null)
   const attemptReconnectRef = useRef<(() => void) | null>(null)
@@ -284,6 +289,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       void buffer.storage.abort()
     })
     fileBuffersRef.current.clear()
+    connectingPeersRef.current.clear()
     encryptorsRef.current.clear()
     keyExchangePendingRef.current.clear()
   }, [])
@@ -397,6 +403,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     reconnectTimeoutRef,
     shouldReconnectRef,
     peerRef,
+    connectingPeersRef,
     setupConnectionRef,
     attemptReconnectRef,
     joinRoomRef,
@@ -420,6 +427,8 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     broadcastToConnections,
     cleanupAll,
     handlePong,
+    touchPeer,
+    isPeerHealthy,
     recordBandwidth,
     removePeerQuality: removePeerMetrics,
     notifyReceived: (type: string, name?: string) => notifyReceived(type as 'text' | 'image' | 'file', name),
@@ -431,6 +440,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     cleanupAll,
     createTrackedBlobUrl,
     handlePong,
+    isPeerHealthy,
     notifyReceived,
     recordBandwidth,
     removePeerMetrics,
@@ -440,6 +450,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     setErrorMessage,
     setIsEncrypted,
     setPeerCount,
+    touchPeer,
     updateItemProgress,
     updatePeerCount,
   ])
@@ -474,10 +485,9 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       }
 
       const hasOpenConnections = Array.from(connectionsRef.current.values()).some(conn => conn?.open)
-      const peerIsDisconnected = !!peerRef.current?.disconnected
 
-      // Avoid forcing reconnection when an existing connection is still healthy.
-      if (hasOpenConnections && !peerIsDisconnected) {
+      // Avoid forcing reconnection while an active connection still has recent heartbeats.
+      if (hasOpenConnections && hasHealthyConnections()) {
         return
       }
 
@@ -509,7 +519,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       document.removeEventListener('visibilitychange', handleVisibility)
       window.removeEventListener('online', handleOnline)
     }
-  }, [])
+  }, [hasHealthyConnections])
 
   // ============ Room Management ============
   const roomCallbacks = useMemo<RoomCallbacks>(() => ({
@@ -617,6 +627,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const activeConnections = connectionsRef.current
     const activeFileBuffers = fileBuffersRef.current
+    const activeConnectionAttempts = connectingPeersRef.current
 
     return () => {
       shouldReconnectRef.current = false
@@ -633,6 +644,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
         void buffer.storage.abort()
       })
       activeFileBuffers.clear()
+      activeConnectionAttempts.clear()
 
       if (peerRef.current) {
         try {

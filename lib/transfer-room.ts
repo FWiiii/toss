@@ -139,11 +139,18 @@ export function createRoomManagement(
 
       peer.on('open', () => {
         setIsJoiningRoom(false)
+        if (refs.connectionsRef.current.has(hostPeerId) || refs.connectingPeersRef.current.has(hostPeerId)) {
+          return
+        }
+        if (!refs.connectingPeersRef.current.begin(hostPeerId)) {
+          return
+        }
         const conn = peer.connect(hostPeerId, { reliable: true })
         if (conn) {
           setupConnection(conn, true)
         }
         else {
+          refs.connectingPeersRef.current.complete(hostPeerId)
           setError('无法创建连接')
         }
       })
@@ -154,6 +161,7 @@ export function createRoomManagement(
 
       peer.on('error', (err) => {
         setIsJoiningRoom(false)
+        refs.connectingPeersRef.current.complete(hostPeerId)
         if (err.type === 'peer-unavailable') {
           setError('找不到房间，请检查代码是否正确，或房间可能已关闭')
         }
@@ -189,6 +197,7 @@ export function createRoomManagement(
       clearTimeout(refs.reconnectTimeoutRef.current)
       refs.reconnectTimeoutRef.current = null
     }
+    refs.connectingPeersRef.current.clear()
 
     if (isHost) {
       await broadcastToConnections({ type: 'room-dissolved' })
