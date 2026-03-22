@@ -1,14 +1,14 @@
-"use client"
+'use client'
 
-import { TransferProvider, useTransfer } from "@/lib/transfer-context"
-import { RoomPanel } from "@/components/room-panel"
-import { TransferPanel } from "@/components/transfer-panel"
-import { PWARegister } from "@/components/pwa-register"
-import { NotificationSettings } from "@/components/notification-settings"
-import { RoomErrorBoundary, TransferErrorBoundary } from "@/components/error-boundary"
-import { cn } from "@/lib/utils"
+import { RoomErrorBoundary, TransferErrorBoundary } from '@/components/error-boundary'
+import { NotificationSettings } from '@/components/notification-settings'
+import { PWARegister } from '@/components/pwa-register'
+import { RoomPanel } from '@/components/room-panel'
+import { TransferPanel } from '@/components/transfer-panel'
+import { TransferProvider, useTransfer } from '@/lib/transfer-context'
+import { cn } from '@/lib/utils'
 
-const SHELL_CONTAINER = "mx-auto w-full max-w-[1200px] px-4 sm:px-6"
+const SHELL_CONTAINER = 'mx-auto w-full max-w-[1200px] px-4 sm:px-6'
 
 function AppHeader() {
   const {
@@ -49,7 +49,7 @@ function AppHeader() {
 
 function AppShell() {
   const { roomCode, connectionStatus } = useTransfer()
-  const showSplitLayout = Boolean(roomCode) || connectionStatus !== "disconnected"
+  const showSplitLayout = Boolean(roomCode) || connectionStatus !== 'disconnected'
 
   return (
     <div className="relative flex min-h-screen flex-col bg-background">
@@ -59,17 +59,17 @@ function AppShell() {
       <main
         className={cn(
           SHELL_CONTAINER,
-          "flex flex-1 flex-col gap-5 py-5 sm:py-6",
-          showSplitLayout && "lg:grid lg:grid-cols-[minmax(18rem,22rem)_minmax(0,1fr)] lg:items-start xl:grid-cols-[minmax(19rem,23rem)_minmax(0,1fr)]"
+          'flex flex-1 flex-col gap-5 py-5 sm:py-6',
+          showSplitLayout && 'lg:grid lg:grid-cols-[minmax(18rem,22rem)_minmax(0,1fr)] lg:items-start xl:grid-cols-[minmax(19rem,23rem)_minmax(0,1fr)]',
         )}
       >
-        <div className={cn("min-w-0", !showSplitLayout && "mx-auto w-full max-w-[36rem]", showSplitLayout && "lg:sticky lg:top-6 lg:self-start")}>
+        <div className={cn('min-w-0', !showSplitLayout && 'mx-auto w-full max-w-[36rem]', showSplitLayout && 'lg:sticky lg:top-6 lg:self-start')}>
           <RoomErrorBoundary>
             <RoomPanel />
           </RoomErrorBoundary>
         </div>
 
-        <div className={cn("min-w-0", !showSplitLayout && "mx-auto w-full max-w-[36rem]")}>
+        <div className={cn('min-w-0', !showSplitLayout && 'mx-auto w-full max-w-[36rem]')}>
           <TransferErrorBoundary>
             <TransferPanel />
           </TransferErrorBoundary>

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 interface NotificationSettings {
   soundEnabled: boolean
@@ -12,36 +12,44 @@ const DEFAULT_SETTINGS: NotificationSettings = {
   vibrationEnabled: true,
 }
 
-const STORAGE_KEY = "toss-notification-settings"
-const DEBUG_LOGS = process.env.NODE_ENV !== "production"
+const STORAGE_KEY = 'toss-notification-settings'
+const DEBUG_LOGS = process.env.NODE_ENV !== 'production'
+
+function debugNotification(...args: unknown[]) {
+  if (DEBUG_LOGS) {
+    console.warn(...args)
+  }
+}
 
 export function useNotification() {
   const [settings, setSettings] = useState<NotificationSettings>(() => {
-    if (typeof window === "undefined") return DEFAULT_SETTINGS
+    if (typeof window === 'undefined')
+      return DEFAULT_SETTINGS
     const stored = localStorage.getItem(STORAGE_KEY)
     if (stored) {
       try {
         return { ...DEFAULT_SETTINGS, ...JSON.parse(stored) }
-      } catch {
+      }
+      catch {
         return DEFAULT_SETTINGS
       }
     }
     return DEFAULT_SETTINGS
   })
 
-  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>("default")
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>('default')
   const audioContextRef = useRef<AudioContext | null>(null)
 
   // Check notification permission on mount
   useEffect(() => {
-    if (typeof window !== "undefined" && "Notification" in window) {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
       setNotificationPermission(Notification.permission)
     }
   }, [])
 
   // Save settings to localStorage
   useEffect(() => {
-    if (typeof window !== "undefined") {
+    if (typeof window !== 'undefined') {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(settings))
     }
   }, [settings])
@@ -56,44 +64,46 @@ export function useNotification() {
 
   // Play notification sound using Web Audio API
   const playSound = useCallback(() => {
-    if (!settings.soundEnabled) return
+    if (!settings.soundEnabled)
+      return
 
     try {
       const audioContext = getAudioContext()
-      
+
       // Create a pleasant notification sound
       const oscillator = audioContext.createOscillator()
       const gainNode = audioContext.createGain()
-      
+
       oscillator.connect(gainNode)
       gainNode.connect(audioContext.destination)
-      
+
       // Two-tone notification sound
       oscillator.frequency.setValueAtTime(800, audioContext.currentTime)
       oscillator.frequency.setValueAtTime(1000, audioContext.currentTime + 0.1)
-      
+
       gainNode.gain.setValueAtTime(0.3, audioContext.currentTime)
       gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3)
-      
+
       oscillator.start(audioContext.currentTime)
       oscillator.stop(audioContext.currentTime + 0.3)
-    } catch (error) {
-      console.error("Failed to play sound:", error)
+    }
+    catch (error) {
+      console.error('Failed to play sound:', error)
     }
   }, [settings.soundEnabled, getAudioContext])
 
   // Request notification permission
   const requestNotificationPermission = useCallback(async () => {
-    if (typeof window === "undefined" || !("Notification" in window)) {
-      return "denied" as NotificationPermission
+    if (typeof window === 'undefined' || !('Notification' in window)) {
+      return 'denied' as NotificationPermission
     }
 
-    if (Notification.permission === "granted") {
-      setNotificationPermission("granted")
-      return "granted" as NotificationPermission
+    if (Notification.permission === 'granted') {
+      setNotificationPermission('granted')
+      return 'granted' as NotificationPermission
     }
 
-    if (Notification.permission !== "denied") {
+    if (Notification.permission !== 'denied') {
       const permission = await Notification.requestPermission()
       setNotificationPermission(permission)
       return permission
@@ -105,39 +115,33 @@ export function useNotification() {
   // Show browser notification
   const showNotification = useCallback(async (title: string, options?: NotificationOptions, force = false) => {
     // Only check settings if not forced (allow test notification to bypass settings)
-    if (!force && !settings.browserNotificationEnabled) return
+    if (!force && !settings.browserNotificationEnabled)
+      return
 
     // Don't show notification if page is focused (unless forced for testing)
-    if (!force && typeof document !== "undefined" && !document.hidden) return
+    if (!force && typeof document !== 'undefined' && !document.hidden)
+      return
 
-    if (typeof window === "undefined" || !("Notification" in window)) {
-      console.log("Notification API not supported")
+    if (typeof window === 'undefined' || !('Notification' in window)) {
+      debugNotification('Notification API not supported')
       return
     }
 
     let permission = Notification.permission
-    if (DEBUG_LOGS) {
-      console.log("Current notification permission:", permission)
-    }
+    debugNotification('Current notification permission:', permission)
 
-    if (permission === "default") {
-      if (DEBUG_LOGS) {
-        console.log("Requesting notification permission...")
-      }
+    if (permission === 'default') {
+      debugNotification('Requesting notification permission...')
       permission = await requestNotificationPermission()
-      if (DEBUG_LOGS) {
-        console.log("Permission after request:", permission)
-      }
+      debugNotification('Permission after request:', permission)
     }
 
-    if (permission === "granted") {
+    if (permission === 'granted') {
       try {
-        if (DEBUG_LOGS) {
-          console.log("Creating notification:", title)
-        }
+        debugNotification('Creating notification:', title)
         const notification = new Notification(title, {
-          icon: "/logo-rounded.svg",
-          badge: "/logo-rounded.svg",
+          icon: '/logo-rounded.svg',
+          badge: '/logo-rounded.svg',
           ...options,
         })
 
@@ -149,34 +153,34 @@ export function useNotification() {
           window.focus()
           notification.close()
         }
-        if (DEBUG_LOGS) {
-          console.log("Notification created successfully")
-        }
-      } catch (error) {
-        console.error("Failed to show notification:", error)
+        debugNotification('Notification created successfully')
       }
-    } else {
-      if (DEBUG_LOGS) {
-        console.log("Notification permission denied or not granted:", permission)
+      catch (error) {
+        console.error('Failed to show notification:', error)
       }
+    }
+    else {
+      debugNotification('Notification permission denied or not granted:', permission)
     }
   }, [settings.browserNotificationEnabled, requestNotificationPermission])
 
   // Trigger vibration on mobile devices
   const vibrate = useCallback((pattern: number | number[] = 200) => {
-    if (!settings.vibrationEnabled) return
+    if (!settings.vibrationEnabled)
+      return
 
-    if (typeof navigator !== "undefined" && "vibrate" in navigator) {
+    if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
       try {
         navigator.vibrate(pattern)
-      } catch (error) {
-        console.error("Failed to vibrate:", error)
+      }
+      catch (error) {
+        console.error('Failed to vibrate:', error)
       }
     }
   }, [settings.vibrationEnabled])
 
   // Notify on received content
-  const notifyReceived = useCallback((type: "text" | "image" | "file", filename?: string) => {
+  const notifyReceived = useCallback((type: 'text' | 'image' | 'file', filename?: string) => {
     // Play sound
     playSound()
 
@@ -185,14 +189,14 @@ export function useNotification() {
 
     // Show browser notification
     const messages = {
-      text: "收到文本消息",
-      image: "收到图片",
-      file: filename ? `收到文件: ${filename}` : "收到文件",
+      text: '收到文本消息',
+      image: '收到图片',
+      file: filename ? `收到文件: ${filename}` : '收到文件',
     }
 
-    showNotification("Toss - 新内容", {
+    showNotification('Toss - 新内容', {
       body: messages[type],
-      tag: "toss-received",
+      tag: 'toss-received',
     })
   }, [playSound, vibrate, showNotification])
 
@@ -205,9 +209,9 @@ export function useNotification() {
     vibrate([100, 50, 100, 50, 100])
 
     // Force show browser notification even if page is focused
-    showNotification("Toss - 测试通知", {
-      body: "通知功能正常工作 ✓",
-      tag: "toss-test",
+    showNotification('Toss - 测试通知', {
+      body: '通知功能正常工作 ✓',
+      tag: 'toss-test',
     }, true) // force = true
   }, [playSound, vibrate, showNotification])
 

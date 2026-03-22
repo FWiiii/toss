@@ -5,24 +5,19 @@
 
 // 加密算法配置
 const ECDH_ALGORITHM = {
-  name: "ECDH",
-  namedCurve: "P-256",
+  name: 'ECDH',
+  namedCurve: 'P-256',
 } as const
 
 const AES_GCM_ALGORITHM = {
-  name: "AES-GCM",
+  name: 'AES-GCM',
   length: 256,
-} as const
-
-const HKDF_ALGORITHM = {
-  name: "HKDF",
-  hash: "SHA-256",
 } as const
 
 function getSubtleCrypto(): SubtleCrypto {
   const cryptoRef = globalThis.crypto
   if (!cryptoRef?.subtle) {
-    throw new Error("Web Crypto API 不可用，请使用 HTTPS 或现代浏览器")
+    throw new Error('Web Crypto API 不可用，请使用 HTTPS 或现代浏览器')
   }
   return cryptoRef.subtle
 }
@@ -48,7 +43,7 @@ export class SessionEncryptor {
   private sendKey: CryptoKey | null = null
   private recvKey: CryptoKey | null = null
   private sendIvCounter: number = 0
-  
+
   // 性能监控
   private encryptTimes: number[] = []
   private decryptTimes: number[] = []
@@ -60,41 +55,42 @@ export class SessionEncryptor {
    * 从共享密钥派生加密密钥
    * 注意：双方使用相同的密钥进行加密和解密（对称加密）
    */
-  async deriveKeys(sharedSecret: ArrayBuffer, role: "initiator" | "responder"): Promise<void> {
+  async deriveKeys(sharedSecret: ArrayBuffer, role: 'initiator' | 'responder'): Promise<void> {
     const subtle = getSubtleCrypto()
     // 将共享密钥导入为原始密钥，用于 HKDF 派生
     const baseKey = await subtle.importKey(
-      "raw",
+      'raw',
       sharedSecret,
       {
-        name: "HKDF",
+        name: 'HKDF',
       },
       false,
-      ["deriveBits", "deriveKey"] // HKDF 密钥需要 deriveBits 和 deriveKey 权限
+      ['deriveBits', 'deriveKey'], // HKDF 密钥需要 deriveBits 和 deriveKey 权限
     )
 
     const derive = async (info: string) => {
       return await subtle.deriveKey(
         {
-          name: "HKDF",
-          hash: "SHA-256",
+          name: 'HKDF',
+          hash: 'SHA-256',
           salt: new Uint8Array(32), // 固定盐值（在实际应用中可以使用随机盐）
           info: new TextEncoder().encode(info),
         },
         baseKey,
         AES_GCM_ALGORITHM,
         false,
-        ["encrypt", "decrypt"]
+        ['encrypt', 'decrypt'],
       )
     }
 
-    const keyA = await derive("toss-key-a")
-    const keyB = await derive("toss-key-b")
+    const keyA = await derive('toss-key-a')
+    const keyB = await derive('toss-key-b')
 
-    if (role === "initiator") {
+    if (role === 'initiator') {
       this.sendKey = keyA
       this.recvKey = keyB
-    } else {
+    }
+    else {
       this.sendKey = keyB
       this.recvKey = keyA
     }
@@ -107,11 +103,11 @@ export class SessionEncryptor {
   private generateIV(): Uint8Array<ArrayBuffer> {
     const iv = new Uint8Array(new ArrayBuffer(12)) // AES-GCM 标准 IV 长度
     const counter = this.sendIvCounter++
-    
+
     // 将计数器编码到 IV 中（前 8 字节）
     const view = new DataView(iv.buffer)
     view.setBigUint64(0, BigInt(counter), true) // little-endian
-    
+
     // 后 4 字节可以用于其他用途或保持为零
     return iv
   }
@@ -121,7 +117,7 @@ export class SessionEncryptor {
    */
   async encrypt(data: Uint8Array): Promise<Uint8Array> {
     if (!this.sendKey) {
-      throw new Error("加密密钥未初始化")
+      throw new Error('加密密钥未初始化')
     }
 
     const startTime = performance.now()
@@ -130,30 +126,30 @@ export class SessionEncryptor {
     const subtle = getSubtleCrypto()
     const encrypted = await subtle.encrypt(
       {
-        name: "AES-GCM",
-        iv: iv,
+        name: 'AES-GCM',
+        iv,
         tagLength: 128, // 128 位认证标签
       },
       this.sendKey,
-      plainData
+      plainData,
     )
 
     // 将 IV 和加密数据组合：IV (12 bytes) + 加密数据 + 认证标签 (16 bytes)
     const result = new Uint8Array(12 + encrypted.byteLength)
     result.set(iv, 0)
     result.set(new Uint8Array(encrypted), 12)
-    
+
     // 性能监控
     const encryptTime = performance.now() - startTime
     this.encryptTimes.push(encryptTime)
     this.totalEncryptedBytes += plainData.length
     this.chunkCount++
-    
+
     // 只保留最近 100 次的记录，避免内存泄漏
     if (this.encryptTimes.length > 100) {
       this.encryptTimes.shift()
     }
-    
+
     return result
   }
 
@@ -162,11 +158,11 @@ export class SessionEncryptor {
    */
   async decrypt(encryptedData: Uint8Array): Promise<Uint8Array> {
     if (!this.recvKey) {
-      throw new Error("解密密钥未初始化")
+      throw new Error('解密密钥未初始化')
     }
 
     if (encryptedData.length < 12) {
-      throw new Error("加密数据格式错误：缺少 IV")
+      throw new Error('加密数据格式错误：缺少 IV')
     }
 
     const startTime = performance.now()
@@ -177,26 +173,26 @@ export class SessionEncryptor {
     const subtle = getSubtleCrypto()
     const decrypted = await subtle.decrypt(
       {
-        name: "AES-GCM",
-        iv: iv,
+        name: 'AES-GCM',
+        iv,
         tagLength: 128,
       },
       this.recvKey,
-      ciphertext
+      ciphertext,
     )
 
     const result = new Uint8Array(decrypted)
-    
+
     // 性能监控
     const decryptTime = performance.now() - startTime
     this.decryptTimes.push(decryptTime)
     this.totalDecryptedBytes += result.length
-    
+
     // 只保留最近 100 次的记录
     if (this.decryptTimes.length > 100) {
       this.decryptTimes.shift()
     }
-    
+
     return result
   }
 
@@ -214,7 +210,7 @@ export class SessionEncryptor {
     const avgEncryptTime = this.encryptTimes.length > 0
       ? this.encryptTimes.reduce((a, b) => a + b, 0) / this.encryptTimes.length
       : 0
-    
+
     const avgDecryptTime = this.decryptTimes.length > 0
       ? this.decryptTimes.reduce((a, b) => a + b, 0) / this.decryptTimes.length
       : 0
@@ -258,7 +254,7 @@ export async function generateKeyPair(): Promise<EncryptionKeyPair> {
   const keyPair = await subtle.generateKey(
     ECDH_ALGORITHM,
     true, // 可导出（用于序列化公钥）
-    ["deriveBits"] // 私钥只需要 deriveBits 来派生共享密钥
+    ['deriveBits'], // 私钥只需要 deriveBits 来派生共享密钥
   )
 
   return {
@@ -272,7 +268,7 @@ export async function generateKeyPair(): Promise<EncryptionKeyPair> {
  */
 export async function exportPublicKey(publicKey: CryptoKey): Promise<ArrayBuffer> {
   const subtle = getSubtleCrypto()
-  return await subtle.exportKey("raw", publicKey)
+  return await subtle.exportKey('raw', publicKey)
 }
 
 /**
@@ -282,11 +278,11 @@ export async function importPublicKey(publicKeyData: ArrayBuffer): Promise<Crypt
   const subtle = getSubtleCrypto()
   // ECDH 公钥导入时不需要指定用途，它只作为 deriveBits 的参数使用
   return await subtle.importKey(
-    "raw",
+    'raw',
     publicKeyData,
     ECDH_ALGORITHM,
     true,
-    [] // 公钥不需要指定用途，它只作为 deriveBits 操作的参数
+    [], // 公钥不需要指定用途，它只作为 deriveBits 操作的参数
   )
 }
 
@@ -295,16 +291,16 @@ export async function importPublicKey(publicKeyData: ArrayBuffer): Promise<Crypt
  */
 export async function deriveSharedSecret(
   privateKey: CryptoKey,
-  peerPublicKey: CryptoKey
+  peerPublicKey: CryptoKey,
 ): Promise<ArrayBuffer> {
   const subtle = getSubtleCrypto()
   return await subtle.deriveBits(
     {
-      name: "ECDH",
+      name: 'ECDH',
       public: peerPublicKey,
     },
     privateKey,
-    256 // 256 位共享密钥
+    256, // 256 位共享密钥
   )
 }
 
@@ -313,7 +309,7 @@ export async function deriveSharedSecret(
  */
 export function arrayBufferToBase64(buffer: ArrayBufferLike): string {
   const bytes = new Uint8Array(buffer)
-  let binary = ""
+  let binary = ''
   for (let i = 0; i < bytes.length; i++) {
     binary += String.fromCharCode(bytes[i])
   }
@@ -338,7 +334,7 @@ export function base64ToArrayBuffer(base64: string): ArrayBuffer {
  */
 export async function encryptJSON(
   encryptor: SessionEncryptor,
-  data: unknown
+  data: unknown,
 ): Promise<string> {
   const jsonString = JSON.stringify(data)
   const encoder = new TextEncoder()
@@ -352,7 +348,7 @@ export async function encryptJSON(
  */
 export async function decryptJSON<T = unknown>(
   encryptor: SessionEncryptor,
-  encryptedBase64: string
+  encryptedBase64: string,
 ): Promise<T> {
   const encryptedBuffer = base64ToArrayBuffer(encryptedBase64)
   const decrypted = await encryptor.decrypt(new Uint8Array(encryptedBuffer))
@@ -366,7 +362,7 @@ export async function decryptJSON<T = unknown>(
  */
 export async function encryptBytes(
   encryptor: SessionEncryptor,
-  data: Uint8Array
+  data: Uint8Array,
 ): Promise<string> {
   const encrypted = await encryptor.encrypt(data)
   return arrayBufferToBase64(encrypted.buffer)
@@ -377,7 +373,7 @@ export async function encryptBytes(
  */
 export async function decryptBytes(
   encryptor: SessionEncryptor,
-  encryptedBase64: string
+  encryptedBase64: string,
 ): Promise<Uint8Array> {
   const encryptedBuffer = base64ToArrayBuffer(encryptedBase64)
   return await encryptor.decrypt(new Uint8Array(encryptedBuffer))

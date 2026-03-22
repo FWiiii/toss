@@ -1,9 +1,11 @@
-"use client"
+'use client'
 
-import React, { Component, ErrorInfo, ReactNode } from "react"
-import { AlertTriangle, RefreshCw } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { DEV_ERROR_DETAILS, STATUS_TONES } from "@/lib/design-tokens"
+import type { ErrorInfo, ReactNode } from 'react'
+import { AlertTriangle, RefreshCw } from 'lucide-react'
+import * as React from 'react'
+import { Component } from 'react'
+import { Button } from '@/components/ui/button'
+import { DEV_ERROR_DETAILS, STATUS_TONES } from '@/lib/design-tokens'
 
 interface Props {
   children: ReactNode
@@ -28,8 +30,8 @@ export class ErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     // Log error to console in development
-    console.error("ErrorBoundary caught an error:", error, errorInfo)
-    
+    console.error('ErrorBoundary caught an error:', error, errorInfo)
+
     // Call optional error handler
     this.props.onError?.(error, errorInfo)
   }
@@ -47,9 +49,9 @@ export class ErrorBoundary extends Component<Props, State> {
 
       // Default fallback UI
       return (
-        <ErrorFallback 
-          error={this.state.error} 
-          onRetry={this.handleRetry} 
+        <ErrorFallback
+          error={this.state.error}
+          onRetry={this.handleRetry}
         />
       )
     }
@@ -65,11 +67,11 @@ interface ErrorFallbackProps {
   description?: string
 }
 
-export function ErrorFallback({ 
-  error, 
-  onRetry, 
-  title = "出错了",
-  description = "应用遇到了一个问题"
+export function ErrorFallback({
+  error,
+  onRetry,
+  title = '出错了',
+  description = '应用遇到了一个问题',
 }: ErrorFallbackProps) {
   return (
     <div className="flex flex-col items-center justify-center p-8 text-center min-h-[200px]">
@@ -80,7 +82,7 @@ export function ErrorFallback({
       <p className="text-sm text-muted-foreground mb-4 max-w-md">
         {description}
       </p>
-      {error && process.env.NODE_ENV === "development" && (
+      {error && process.env.NODE_ENV === 'development' && (
         <details className="mb-4 w-full max-w-md">
           <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground">
             查看错误详情
@@ -89,7 +91,7 @@ export function ErrorFallback({
             {error.message}
             {error.stack && (
               <>
-                {"\n\n"}
+                {'\n\n'}
                 {error.stack}
               </>
             )}
@@ -110,14 +112,14 @@ export function ErrorFallback({
 export function RoomErrorBoundary({ children }: { children: ReactNode }) {
   return (
     <ErrorBoundary
-      fallback={
+      fallback={(
         <ErrorFallback
           error={null}
           title="房间连接出错"
           description="房间功能遇到问题，请刷新页面重试"
           onRetry={() => window.location.reload()}
         />
-      }
+      )}
     >
       {children}
     </ErrorBoundary>
@@ -127,14 +129,14 @@ export function RoomErrorBoundary({ children }: { children: ReactNode }) {
 export function TransferErrorBoundary({ children }: { children: ReactNode }) {
   return (
     <ErrorBoundary
-      fallback={
+      fallback={(
         <ErrorFallback
           error={null}
           title="传输功能出错"
           description="传输功能遇到问题，请刷新页面重试"
           onRetry={() => window.location.reload()}
         />
-      }
+      )}
     >
       {children}
     </ErrorBoundary>

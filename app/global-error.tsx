@@ -1,9 +1,9 @@
-"use client"
+'use client'
 
-import { useEffect } from "react"
-import { AlertTriangle, RefreshCw, Home } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { DEV_ERROR_DETAILS, STATUS_TONES } from "@/lib/design-tokens"
+import { AlertTriangle, Home, RefreshCw } from 'lucide-react'
+import { useEffect } from 'react'
+import { Button } from '@/components/ui/button'
+import { DEV_ERROR_DETAILS, STATUS_TONES } from '@/lib/design-tokens'
 
 export default function GlobalError({
   error,
@@ -14,7 +14,7 @@ export default function GlobalError({
 }) {
   useEffect(() => {
     // Log the error to an error reporting service
-    console.error("Global error:", error)
+    console.error('Global error:', error)
   }, [error])
 
   return (
@@ -25,13 +25,13 @@ export default function GlobalError({
             <div className={`mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full ${STATUS_TONES.danger.iconSurface}`}>
               <AlertTriangle className={`h-10 w-10 ${STATUS_TONES.danger.icon}`} />
             </div>
-            
+
             <h1 className="text-2xl font-bold mb-2">应用出现严重错误</h1>
             <p className="text-muted-foreground mb-6">
               抱歉，应用遇到了一个意外问题。请尝试刷新页面或返回首页。
             </p>
 
-            {process.env.NODE_ENV === "development" && error && (
+            {process.env.NODE_ENV === 'development' && error && (
               <details className="mb-6 text-left">
                 <summary className="text-muted-foreground hover:text-foreground mb-2 cursor-pointer text-sm">
                   错误详情
@@ -40,7 +40,7 @@ export default function GlobalError({
                   {error.message}
                   {error.stack && (
                     <>
-                      {"\n\n"}
+                      {'\n\n'}
                       {error.stack}
                     </>
                   )}
@@ -51,7 +51,7 @@ export default function GlobalError({
             <div className="flex gap-3 justify-center">
               <Button
                 variant="outline"
-                onClick={() => window.location.href = "/"}
+                onClick={() => window.location.href = '/'}
               >
                 <Home className="w-4 h-4 mr-2" />
                 返回首页

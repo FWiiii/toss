@@ -1,7 +1,7 @@
-import { LucideIcon } from "lucide-react"
-import { cn } from "@/lib/utils"
+import type { LucideIcon } from 'lucide-react'
+import { cn } from '@/lib/utils'
 
-type EmptyStateProps = {
+interface EmptyStateProps {
   icon: LucideIcon
   title?: string
   description: string
@@ -13,18 +13,20 @@ export function EmptyState({
   icon: Icon,
   title,
   description,
-  iconClassName = "bg-secondary text-muted-foreground",
+  iconClassName = 'bg-secondary text-muted-foreground',
   containerClassName,
 }: EmptyStateProps) {
   return (
     <div className={cn(
-      "flex flex-col items-center justify-center text-center py-12",
-      containerClassName
-    )}>
+      'flex flex-col items-center justify-center text-center py-12',
+      containerClassName,
+    )}
+    >
       <div className={cn(
-        "w-16 h-16 rounded-full flex items-center justify-center mb-4",
-        iconClassName
-      )}>
+        'w-16 h-16 rounded-full flex items-center justify-center mb-4',
+        iconClassName,
+      )}
+      >
         <Icon className="w-7 h-7" />
       </div>
       {title && (

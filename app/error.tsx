@@ -1,9 +1,9 @@
-"use client"
+'use client'
 
-import { useEffect } from "react"
-import { AlertTriangle, RefreshCw, Home } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { DEV_ERROR_DETAILS, STATUS_TONES } from "@/lib/design-tokens"
+import { AlertTriangle, Home, RefreshCw } from 'lucide-react'
+import { useEffect } from 'react'
+import { Button } from '@/components/ui/button'
+import { DEV_ERROR_DETAILS, STATUS_TONES } from '@/lib/design-tokens'
 
 export default function Error({
   error,
@@ -14,7 +14,7 @@ export default function Error({
 }) {
   useEffect(() => {
     // Log the error to an error reporting service
-    console.error("Page error:", error)
+    console.error('Page error:', error)
   }, [error])
 
   return (
@@ -23,13 +23,13 @@ export default function Error({
         <div className={`mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full ${STATUS_TONES.danger.iconSurface}`}>
           <AlertTriangle className={`h-10 w-10 ${STATUS_TONES.danger.icon}`} />
         </div>
-        
+
         <h1 className="text-2xl font-bold text-foreground mb-2">页面加载出错</h1>
         <p className="text-muted-foreground mb-6">
           抱歉，页面加载时遇到了问题。请尝试刷新页面或返回首页。
         </p>
 
-        {process.env.NODE_ENV === "development" && error && (
+        {process.env.NODE_ENV === 'development' && error && (
           <details className="mb-6 text-left">
             <summary className="text-sm text-muted-foreground cursor-pointer hover:text-foreground mb-2">
               错误详情
@@ -38,7 +38,7 @@ export default function Error({
               {error.message}
               {error.stack && (
                 <>
-                  {"\n\n"}
+                  {'\n\n'}
                   {error.stack}
                 </>
               )}
@@ -49,7 +49,7 @@ export default function Error({
         <div className="flex gap-3 justify-center">
           <Button
             variant="outline"
-            onClick={() => window.location.href = "/"}
+            onClick={() => window.location.href = '/'}
           >
             <Home className="w-4 h-4 mr-2" />
             返回首页

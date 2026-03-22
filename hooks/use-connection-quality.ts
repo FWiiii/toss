@@ -1,10 +1,9 @@
-"use client"
+'use client'
 
-import { useState, useCallback, useRef } from "react"
-import { generateUUID } from "@/lib/utils"
-import type { ConnectionQuality } from "@/lib/types"
+import type { ConnectionQuality } from '@/lib/types'
+import { useCallback, useRef, useState } from 'react'
+import { generateUUID } from '@/lib/utils'
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type ConnectionsRef = React.MutableRefObject<Map<string, any>>
 
 /**
@@ -14,7 +13,7 @@ export function useConnectionQuality(connectionsRef: ConnectionsRef) {
   const [connectionQuality, setConnectionQuality] = useState<ConnectionQuality>({
     latency: null,
     bandwidth: null,
-    quality: "unknown",
+    quality: 'unknown',
   })
 
   // Quality monitoring refs
@@ -34,12 +33,15 @@ export function useConnectionQuality(connectionsRef: ConnectionsRef) {
       ? bandwidthHistoryRef.current.reduce((a, b) => a + b, 0) / bandwidthHistoryRef.current.length
       : null
 
-    let quality: "excellent" | "good" | "fair" | "poor" | "unknown" = "unknown"
+    let quality: 'excellent' | 'good' | 'fair' | 'poor' | 'unknown' = 'unknown'
     if (latency !== null) {
-      if (latency < 50) quality = "excellent"
-      else if (latency < 100) quality = "good"
-      else if (latency < 200) quality = "fair"
-      else quality = "poor"
+      if (latency < 50)
+        quality = 'excellent'
+      else if (latency < 100)
+        quality = 'good'
+      else if (latency < 200)
+        quality = 'fair'
+      else quality = 'poor'
     }
 
     setConnectionQuality({
@@ -51,7 +53,8 @@ export function useConnectionQuality(connectionsRef: ConnectionsRef) {
 
   // Send ping to all connected peers
   const sendPing = useCallback(() => {
-    if (connectionsRef.current.size === 0) return
+    if (connectionsRef.current.size === 0)
+      return
 
     const pingId = generateUUID()
     const timestamp = Date.now()
@@ -67,9 +70,10 @@ export function useConnectionQuality(connectionsRef: ConnectionsRef) {
     // Send ping to all connections
     connectionsRef.current.forEach((conn) => {
       try {
-        conn.send({ type: "ping", id: pingId })
-      } catch (err) {
-        console.error("Failed to send ping:", err)
+        conn.send({ type: 'ping', id: pingId })
+      }
+      catch (err) {
+        console.error('Failed to send ping:', err)
       }
     })
   }, [connectionsRef])
@@ -80,12 +84,12 @@ export function useConnectionQuality(connectionsRef: ConnectionsRef) {
     if (sendTime) {
       const latency = Date.now() - sendTime
       pendingPingsRef.current.delete(pingId)
-      
+
       latencyHistoryRef.current.push(latency)
       if (latencyHistoryRef.current.length > 10) {
         latencyHistoryRef.current.shift()
       }
-      
+
       updateConnectionQuality()
     }
   }, [updateConnectionQuality])
@@ -111,7 +115,7 @@ export function useConnectionQuality(connectionsRef: ConnectionsRef) {
 
     pingIntervalRef.current = setInterval(sendPing, 3000)
     qualityIntervalRef.current = setInterval(updateConnectionQuality, 5000)
-    
+
     sendPing()
   }, [sendPing, updateConnectionQuality])
 
@@ -125,14 +129,14 @@ export function useConnectionQuality(connectionsRef: ConnectionsRef) {
       clearInterval(qualityIntervalRef.current)
       qualityIntervalRef.current = null
     }
-    
+
     pendingPingsRef.current.clear()
     latencyHistoryRef.current = []
     bandwidthHistoryRef.current = []
     setConnectionQuality({
       latency: null,
       bandwidth: null,
-      quality: "unknown",
+      quality: 'unknown',
     })
   }, [])
 

@@ -1,8 +1,8 @@
-"use client"
+'use client'
 
-import { ExternalLink } from "lucide-react"
-import { extractDomain } from "@/lib/link-utils"
-import { cn } from "@/lib/utils"
+import { ExternalLink } from 'lucide-react'
+import { extractDomain } from '@/lib/link-utils'
+import { cn } from '@/lib/utils'
 
 interface LinkPreviewProps {
   url: string
@@ -26,8 +26,8 @@ export function LinkPreview({ url, className, inline = false }: LinkPreviewProps
         rel="noopener noreferrer"
         onClick={handleClick}
         className={cn(
-          "inline-flex items-center gap-1 text-accent hover:text-accent/80 underline underline-offset-2 decoration-accent/50 hover:decoration-accent transition-colors",
-          className
+          'inline-flex items-center gap-1 text-accent hover:text-accent/80 underline underline-offset-2 decoration-accent/50 hover:decoration-accent transition-colors',
+          className,
         )}
       >
         <span className="break-all">{url}</span>
@@ -44,8 +44,8 @@ export function LinkPreview({ url, className, inline = false }: LinkPreviewProps
       rel="noopener noreferrer"
       onClick={handleClick}
       className={cn(
-        "group flex items-center gap-3 p-3 rounded-lg border border-border bg-card hover:bg-muted/50 transition-colors",
-        className
+        'group flex items-center gap-3 p-3 rounded-lg border border-border bg-card hover:bg-muted/50 transition-colors',
+        className,
       )}
     >
       <div className="flex-1 min-w-0">

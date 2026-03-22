@@ -3,17 +3,18 @@
  * Handles text and file sending with resume and adaptive chunk sizing.
  */
 
-import { uint8ToBase64 } from "./utils"
+import type { SessionEncryptor } from './crypto'
+import type { ConnectionRefs } from './transfer-connection'
+import { encryptBytes, encryptJSON } from './crypto'
 import {
-  FILE_CHUNK_SIZE,
-  FILE_CHUNK_MIN_SIZE,
   FILE_CHUNK_MAX_SIZE,
+  FILE_CHUNK_MIN_SIZE,
+  FILE_CHUNK_SIZE,
   FILE_RESUME_WAIT_TIMEOUT,
-} from "./peer-config"
-import { encryptJSON, encryptBytes, SessionEncryptor } from "./crypto"
-import type { ConnectionRefs } from "./transfer-connection"
+} from './peer-config'
+import { uint8ToBase64 } from './utils'
 
-export type DataTransferCallbacks = {
+export interface DataTransferCallbacks {
   setSendingCount: (updater: (prev: number) => number) => void
   addItem: (item: any) => void
   addItemWithId: (item: any) => string
@@ -21,21 +22,19 @@ export type DataTransferCallbacks = {
   createTrackedBlobUrl: (blob: Blob | File) => string
 }
 
-type PeerSendResult = {
-  status: "completed" | "failed" | "cancelled"
+interface PeerSendResult {
+  status: 'completed' | 'failed' | 'cancelled'
   bytesSent: number
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type PeerConnectionLike = any
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type ControlPayload = Record<string, any>
 
 export function createDataTransfer(
   refs: ConnectionRefs,
   callbacks: DataTransferCallbacks,
-  encryptorsRef: React.MutableRefObject<Map<string, SessionEncryptor>>
+  encryptorsRef: React.MutableRefObject<Map<string, SessionEncryptor>>,
 ) {
   const {
     setSendingCount,
@@ -45,39 +44,44 @@ export function createDataTransfer(
     createTrackedBlobUrl,
   } = callbacks
 
-  const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
+  const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
 
   const sendText = async (text: string) => {
-    if (!text.trim()) return
+    if (!text.trim())
+      return
 
     for (const [peerId, conn] of refs.connectionsRef.current.entries()) {
-      if (!conn.open) continue
+      if (!conn.open)
+        continue
 
       const encryptor = encryptorsRef.current.get(peerId)
       const isEncrypted = encryptor?.isReady() ?? false
 
       try {
         if (isEncrypted && encryptor) {
-          const encrypted = await encryptJSON(encryptor, { type: "text", content: text })
-          conn.send({ type: "encrypted", encrypted })
-        } else {
-          conn.send({ type: "text", content: text })
+          const encrypted = await encryptJSON(encryptor, { type: 'text', content: text })
+          conn.send({ type: 'encrypted', encrypted })
         }
-      } catch (error) {
-        console.error("Failed to send text:", error)
+        else {
+          conn.send({ type: 'text', content: text })
+        }
+      }
+      catch (error) {
+        console.error('Failed to send text:', error)
       }
     }
 
     addItem({
-      type: "text",
+      type: 'text',
       content: text,
-      direction: "sent",
+      direction: 'sent',
     })
   }
 
   const sendControlToPeer = async (peerId: string, payload: ControlPayload): Promise<boolean> => {
     const conn = refs.connectionsRef.current.get(peerId)
-    if (!conn || !conn.open) return false
+    if (!conn || !conn.open)
+      return false
 
     const encryptor = encryptorsRef.current.get(peerId)
     const isEncrypted = encryptor?.isReady() ?? false
@@ -85,13 +89,15 @@ export function createDataTransfer(
     try {
       if (isEncrypted && encryptor) {
         const encrypted = await encryptJSON(encryptor, payload)
-        conn.send({ type: "encrypted", encrypted })
-      } else {
+        conn.send({ type: 'encrypted', encrypted })
+      }
+      else {
         conn.send(payload)
       }
       return true
-    } catch (error) {
-      console.error("Failed to send control message:", error)
+    }
+    catch (error) {
+      console.error('Failed to send control message:', error)
       return false
     }
   }
@@ -100,10 +106,11 @@ export function createDataTransfer(
     peerId: string,
     itemId: string,
     offset: number,
-    chunk: Uint8Array
+    chunk: Uint8Array,
   ): Promise<boolean> => {
     const conn = refs.connectionsRef.current.get(peerId)
-    if (!conn || !conn.open) return false
+    if (!conn || !conn.open)
+      return false
 
     const encryptor = encryptorsRef.current.get(peerId)
     const isEncrypted = encryptor?.isReady() ?? false
@@ -112,22 +119,24 @@ export function createDataTransfer(
       if (isEncrypted && encryptor) {
         const encryptedChunk = await encryptBytes(encryptor, chunk)
         conn.send({
-          type: "file-chunk",
+          type: 'file-chunk',
           itemId,
           offset,
           encrypted: encryptedChunk,
         })
-      } else {
+      }
+      else {
         conn.send({
-          type: "file-chunk",
+          type: 'file-chunk',
           itemId,
           offset,
           data: uint8ToBase64(chunk),
         })
       }
       return true
-    } catch (error) {
-      console.error("Failed to send file chunk:", error)
+    }
+    catch (error) {
+      console.error('Failed to send file chunk:', error)
       return false
     }
   }
@@ -135,7 +144,7 @@ export function createDataTransfer(
   const waitForPeerConnection = async (
     peerId: string,
     itemId: string,
-    timeoutMs: number
+    timeoutMs: number,
   ): Promise<PeerConnectionLike | null> => {
     const deadline = Date.now() + timeoutMs
 
@@ -160,7 +169,8 @@ export function createDataTransfer(
 
     if (bufferedAmount > 2 * 1024 * 1024 || sendDurationMs > 40) {
       next = Math.max(FILE_CHUNK_MIN_SIZE, Math.floor(current / 2))
-    } else if (bufferedAmount < 256 * 1024 && sendDurationMs < 10) {
+    }
+    else if (bufferedAmount < 256 * 1024 && sendDurationMs < 10) {
       next = Math.min(FILE_CHUNK_MAX_SIZE, current + 4096)
     }
 
@@ -171,7 +181,7 @@ export function createDataTransfer(
     peerId: string,
     file: File,
     itemId: string,
-    onProgress: (bytesSent: number) => void
+    onProgress: (bytesSent: number) => void,
   ): Promise<PeerSendResult> => {
     const totalSize = file.size
     let offset = 0
@@ -181,8 +191,8 @@ export function createDataTransfer(
 
     while (offset < totalSize) {
       if (refs.cancelledTransfersRef.current.has(itemId)) {
-        await sendControlToPeer(peerId, { type: "file-cancel", itemId })
-        return { status: "cancelled", bytesSent: offset }
+        await sendControlToPeer(peerId, { type: 'file-cancel', itemId })
+        return { status: 'cancelled', bytesSent: offset }
       }
 
       let conn: PeerConnectionLike | null = refs.connectionsRef.current.get(peerId) ?? null
@@ -190,13 +200,13 @@ export function createDataTransfer(
         conn = await waitForPeerConnection(peerId, itemId, FILE_RESUME_WAIT_TIMEOUT)
         if (!conn) {
           return refs.cancelledTransfersRef.current.has(itemId)
-            ? { status: "cancelled", bytesSent: offset }
-            : { status: "failed", bytesSent: offset }
+            ? { status: 'cancelled', bytesSent: offset }
+            : { status: 'failed', bytesSent: offset }
         }
 
         const resumed = offset > 0
         const started = await sendControlToPeer(peerId, {
-          type: "file-start",
+          type: 'file-start',
           name: file.name,
           size: totalSize,
           itemId,
@@ -210,9 +220,10 @@ export function createDataTransfer(
         }
 
         hasSentStart = true
-      } else if (!hasSentStart) {
+      }
+      else if (!hasSentStart) {
         const started = await sendControlToPeer(peerId, {
-          type: "file-start",
+          type: 'file-start',
           name: file.name,
           size: totalSize,
           itemId,
@@ -253,26 +264,27 @@ export function createDataTransfer(
 
       chunkIndex += 1
       if (chunkIndex % 3 === 0) {
-        if (typeof requestIdleCallback !== "undefined") {
+        if (typeof requestIdleCallback !== 'undefined') {
           await new Promise<void>((resolve) => {
             requestIdleCallback(() => resolve(), { timeout: 5 })
           })
-        } else {
+        }
+        else {
           await sleep(0)
         }
       }
     }
 
-    const sentEnd = await sendControlToPeer(peerId, { type: "file-end", itemId })
+    const sentEnd = await sendControlToPeer(peerId, { type: 'file-end', itemId })
     if (!sentEnd) {
-      return { status: "failed", bytesSent: offset }
+      return { status: 'failed', bytesSent: offset }
     }
 
-    return { status: "completed", bytesSent: totalSize }
+    return { status: 'completed', bytesSent: totalSize }
   }
 
   const sendFile = async (file: File): Promise<void> => {
-    setSendingCount((prev) => prev + 1)
+    setSendingCount(prev => prev + 1)
 
     let itemId: string | null = null
     let cancelled = false
@@ -281,12 +293,12 @@ export function createDataTransfer(
       const url = createTrackedBlobUrl(file)
 
       itemId = addItemWithId({
-        type: "file",
+        type: 'file',
         name: file.name,
         content: url,
         size: file.size,
-        direction: "sent",
-        status: "transferring",
+        direction: 'sent',
+        status: 'transferring',
         progress: 0,
         transferredBytes: 0,
       })
@@ -297,11 +309,11 @@ export function createDataTransfer(
         .map(([peerId]) => peerId)
 
       if (targetPeerIds.length === 0) {
-        throw new Error("No active peers")
+        throw new Error('No active peers')
       }
 
       const peerProgress = new Map<string, number>()
-      targetPeerIds.forEach((peerId) => peerProgress.set(peerId, 0))
+      targetPeerIds.forEach(peerId => peerProgress.set(peerId, 0))
 
       let lastTime = Date.now()
       let lastBytes = 0
@@ -309,7 +321,8 @@ export function createDataTransfer(
 
       const updateAggregateProgress = (force = false) => {
         const offsets = Array.from(peerProgress.values())
-        if (offsets.length === 0) return
+        if (offsets.length === 0)
+          return
 
         const guaranteedOffset = Math.min(...offsets)
         const now = Date.now()
@@ -331,7 +344,7 @@ export function createDataTransfer(
         const remainingTime = speed > 0 ? Math.ceil(remainingBytes / speed) : undefined
 
         updateItemProgress(itemId!, {
-          status: guaranteedOffset < totalSize ? "transferring" : "completed",
+          status: guaranteedOffset < totalSize ? 'transferring' : 'completed',
           progress: Math.round((guaranteedOffset / totalSize) * 100),
           transferredBytes: guaranteedOffset,
           speed: guaranteedOffset < totalSize ? speed : undefined,
@@ -349,62 +362,67 @@ export function createDataTransfer(
             updateAggregateProgress(false)
           })
 
-          if (result.status === "completed") {
+          if (result.status === 'completed') {
             peerProgress.set(peerId, totalSize)
             updateAggregateProgress(false)
-          } else {
+          }
+          else {
             peerProgress.set(peerId, result.bytesSent)
           }
 
           return result
-        })
+        }),
       )
 
       updateAggregateProgress(true)
 
       cancelled = refs.cancelledTransfersRef.current.has(itemId)
-        || peerResults.some((result) => result.status === "cancelled")
+        || peerResults.some(result => result.status === 'cancelled')
 
-      const completedCount = peerResults.filter((result) => result.status === "completed").length
-      const failedCount = peerResults.filter((result) => result.status === "failed").length
+      const completedCount = peerResults.filter(result => result.status === 'completed').length
+      const failedCount = peerResults.filter(result => result.status === 'failed').length
 
       if (cancelled) {
         updateItemProgress(itemId, {
-          status: "cancelled",
+          status: 'cancelled',
           speed: undefined,
           remainingTime: undefined,
         })
         refs.cancelledTransfersRef.current.delete(itemId)
-      } else if (completedCount > 0) {
+      }
+      else if (completedCount > 0) {
         if (failedCount > 0) {
           console.warn(`Partial delivery: ${failedCount} peer(s) failed to receive ${file.name}`)
         }
 
         updateItemProgress(itemId, {
-          status: "completed",
+          status: 'completed',
           progress: 100,
           transferredBytes: totalSize,
           speed: undefined,
           remainingTime: undefined,
         })
-      } else {
+      }
+      else {
         updateItemProgress(itemId, {
-          status: "error",
+          status: 'error',
           speed: undefined,
           remainingTime: undefined,
         })
       }
-    } catch (error) {
-      console.error("File send error:", error)
+    }
+    catch (error) {
+      console.error('File send error:', error)
       if (itemId) {
         updateItemProgress(itemId, {
-          status: "error",
+          status: 'error',
           speed: undefined,
           remainingTime: undefined,
         })
       }
-    } finally {
-      setSendingCount((prev) => Math.max(0, prev - 1))
+    }
+    finally {
+      setSendingCount(prev => Math.max(0, prev - 1))
       if (itemId) {
         refs.cancelledTransfersRef.current.delete(itemId)
       }

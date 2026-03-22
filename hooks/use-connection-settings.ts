@@ -1,6 +1,6 @@
-"use client"
+'use client'
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from 'react'
 
 interface ConnectionSettings {
   forceRelay: boolean
@@ -10,16 +10,18 @@ const DEFAULT_SETTINGS: ConnectionSettings = {
   forceRelay: false,
 }
 
-const STORAGE_KEY = "toss-connection-settings"
+const STORAGE_KEY = 'toss-connection-settings'
 
 export function useConnectionSettings() {
   const [settings, setSettings] = useState<ConnectionSettings>(() => {
-    if (typeof window === "undefined") return DEFAULT_SETTINGS
+    if (typeof window === 'undefined')
+      return DEFAULT_SETTINGS
     const stored = localStorage.getItem(STORAGE_KEY)
     if (stored) {
       try {
         return { ...DEFAULT_SETTINGS, ...JSON.parse(stored) }
-      } catch {
+      }
+      catch {
         return DEFAULT_SETTINGS
       }
     }
@@ -27,13 +29,13 @@ export function useConnectionSettings() {
   })
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
+    if (typeof window !== 'undefined') {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(settings))
     }
   }, [settings])
 
   const updateSettings = useCallback((newSettings: Partial<ConnectionSettings>) => {
-    setSettings((prev) => ({ ...prev, ...newSettings }))
+    setSettings(prev => ({ ...prev, ...newSettings }))
   }, [])
 
   return {

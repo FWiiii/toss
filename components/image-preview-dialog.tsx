@@ -1,11 +1,11 @@
-"use client"
+'use client'
 
-import { Button } from "@/components/ui/button"
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
-import { Download, X } from "lucide-react"
+import { Download, X } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 
-type ImagePreviewDialogProps = {
-  image: { url: string; name: string } | null
+interface ImagePreviewDialogProps {
+  image: { url: string, name: string } | null
   onClose: () => void
   onDownload: (url: string, name: string) => void
 }
@@ -30,7 +30,7 @@ export function ImagePreviewDialog({ image, onClose, onDownload }: ImagePreviewD
           >
             <X className="w-5 h-5" />
           </Button>
-          
+
           {/* Download button */}
           {image && (
             <Button
@@ -44,7 +44,7 @@ export function ImagePreviewDialog({ image, onClose, onDownload }: ImagePreviewD
               <Download className="w-5 h-5" />
             </Button>
           )}
-          
+
           {/* Image */}
           {image && (
             <img
@@ -54,7 +54,7 @@ export function ImagePreviewDialog({ image, onClose, onDownload }: ImagePreviewD
               className="max-w-full max-h-[85vh] object-contain delight-preview-in"
             />
           )}
-          
+
           {/* File name */}
           {image && (
             <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/55 to-transparent delight-fade-up">

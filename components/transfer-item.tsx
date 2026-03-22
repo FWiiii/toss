@@ -1,48 +1,54 @@
-"use client"
+'use client'
 
-import { useCallback, useEffect, useRef, useState } from "react"
-import { Button } from "@/components/ui/button"
-import { ImageThumbnail } from "@/components/image-thumbnail"
-import { LinkPreview } from "@/components/link-preview"
-import { Download, FileText, File as FileIcon, ImageIcon, ZoomIn, Copy, Check, Loader2, X, Ban } from "lucide-react"
-import { cn, formatFileSize, isImageFile } from "@/lib/utils"
-import { parseTextWithLinks } from "@/lib/link-utils"
-import type { TransferItem } from "@/lib/types"
-import { INTERACTIVE_TONES, STATUS_TONES } from "@/lib/design-tokens"
+import type { TransferItem } from '@/lib/types'
+import { Ban, Check, Copy, Download, File as FileIcon, FileText, ImageIcon, Loader2, X, ZoomIn } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { ImageThumbnail } from '@/components/image-thumbnail'
+import { LinkPreview } from '@/components/link-preview'
+import { Button } from '@/components/ui/button'
+import { INTERACTIVE_TONES, STATUS_TONES } from '@/lib/design-tokens'
+import { parseTextWithLinks } from '@/lib/link-utils'
+import { cn, formatFileSize, isImageFile } from '@/lib/utils'
 
 function formatTime(date: Date) {
-  return date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })
+  return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
 }
 
 function formatSpeed(bytesPerSecond: number): string {
   if (bytesPerSecond < 1024) {
     return `${bytesPerSecond} B/s`
-  } else if (bytesPerSecond < 1024 * 1024) {
+  }
+  else if (bytesPerSecond < 1024 * 1024) {
     return `${(bytesPerSecond / 1024).toFixed(1)} KB/s`
-  } else {
+  }
+  else {
     return `${(bytesPerSecond / (1024 * 1024)).toFixed(1)} MB/s`
   }
 }
 
 function formatTimeRemaining(seconds: number): string {
-  if (!seconds || !isFinite(seconds) || seconds < 0) return ""
-  if (seconds < 60) return `${seconds}s`
+  if (!seconds || !Number.isFinite(seconds) || seconds < 0)
+    return ''
+  if (seconds < 60)
+    return `${seconds}s`
   const minutes = Math.floor(seconds / 60)
   const remainingSeconds = seconds % 60
   return `${minutes}m ${remainingSeconds}s`
 }
 
-
 function getFileIcon(name?: string) {
-  if (!name) return FileIcon
-  if (isImageFile(name)) return ImageIcon
-  const ext = name.split(".").pop()?.toLowerCase()
-  if (["txt", "md", "json", "js", "ts", "html", "css"].includes(ext || "")) return FileText
+  if (!name)
+    return FileIcon
+  if (isImageFile(name))
+    return ImageIcon
+  const ext = name.split('.').pop()?.toLowerCase()
+  if (['txt', 'md', 'json', 'js', 'ts', 'html', 'css'].includes(ext || ''))
+    return FileText
   return FileIcon
 }
 
 // Progress bar component - optimized for GPU acceleration
-function ProgressBar({ progress, className }: { progress: number; className?: string }) {
+function ProgressBar({ progress, className }: { progress: number, className?: string }) {
   const clampedProgress = Math.min(100, Math.max(0, progress))
   const [showFinishPulse, setShowFinishPulse] = useState(false)
   const previousProgressRef = useRef(clampedProgress)
@@ -64,21 +70,21 @@ function ProgressBar({ progress, className }: { progress: number; className?: st
   }, [clampedProgress])
 
   return (
-    <div className={cn("w-full h-1 bg-muted rounded-full overflow-hidden", showFinishPulse && "delight-progress-finish", className)}>
-      <div 
+    <div className={cn('w-full h-1 bg-muted rounded-full overflow-hidden', showFinishPulse && 'delight-progress-finish', className)}>
+      <div
         className="h-full bg-foreground/70 rounded-full will-change-transform transform-gpu"
-        style={{ 
+        style={{
           width: '100%',
           transform: `scaleX(${clampedProgress / 100})`,
           transformOrigin: 'left',
-          transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
+          transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
         }}
       />
     </div>
   )
 }
 
-type TransferItemProps = {
+interface TransferItemProps {
   item: TransferItem
   onPreviewImage: (url: string, name: string) => void
   onDownload: (url: string, name?: string) => void
@@ -97,23 +103,23 @@ function SystemMessage({ content }: { content: string }) {
 }
 
 // Image item component
-function ImageItem({ 
-  item, 
-  onPreviewImage, 
+function ImageItem({
+  item,
+  onPreviewImage,
   onDownload,
-  onCancel
-}: { 
+  onCancel,
+}: {
   item: TransferItem
   onPreviewImage: (url: string, name: string) => void
   onDownload: (url: string, name?: string) => void
   onCancel?: (itemId: string) => void
 }) {
-  const isTransferring = item.status === "transferring"
-  const isCancelled = item.status === "cancelled"
+  const isTransferring = item.status === 'transferring'
+  const isCancelled = item.status === 'cancelled'
   const progress = item.progress ?? 100
   const transferredBytes = item.transferredBytes ?? item.size ?? 0
   const totalSize = item.size ?? 0
-  const imageName = item.name || "图片"
+  const imageName = item.name || '图片'
 
   // Show cancelled state
   if (isCancelled) {
@@ -125,7 +131,13 @@ function ImageItem({
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium text-foreground truncate">{imageName}</p>
           <p className="text-xs text-muted-foreground mt-1">
-            已取消 · {formatFileSize(transferredBytes)} / {formatFileSize(totalSize)}
+            已取消 ·
+            {' '}
+            {formatFileSize(transferredBytes)}
+            {' '}
+            /
+            {' '}
+            {formatFileSize(totalSize)}
           </p>
         </div>
       </div>
@@ -141,16 +153,20 @@ function ImageItem({
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium text-foreground truncate">{imageName}</p>
-          
+
           {/* Progress bar */}
           <ProgressBar progress={progress} className="mt-2" />
-          
+
           {/* Progress info */}
           <div className="flex items-center justify-between mt-1.5">
             <p className="text-xs text-muted-foreground">
-              {formatFileSize(transferredBytes)} / {formatFileSize(totalSize)}
+              {formatFileSize(transferredBytes)}
+              {' '}
+              /
+              {formatFileSize(totalSize)}
               <span className="mx-1">·</span>
-              {progress}%
+              {progress}
+              %
             </p>
             <div className="flex items-center gap-2">
               {item.remainingTime && item.remainingTime > 0 && (
@@ -172,7 +188,7 @@ function ImageItem({
             variant="ghost"
             size="icon-sm"
             onClick={() => onCancel(item.id)}
-            className={cn("shrink-0", INTERACTIVE_TONES.dangerHover)}
+            className={cn('shrink-0', INTERACTIVE_TONES.dangerHover)}
             aria-label={`取消传输 ${imageName}`}
             title="取消传输"
           >
@@ -205,10 +221,16 @@ function ImageItem({
         <div className="min-w-0 flex-1">
           <p className="text-xs text-muted-foreground truncate">{imageName}</p>
           <p className="text-xs text-muted-foreground">
-            {formatFileSize(item.size || 0)} · {formatTime(item.timestamp)} · {item.direction === "sent" ? "已发送" : "已接收"}
+            {formatFileSize(item.size || 0)}
+            {' '}
+            ·
+            {formatTime(item.timestamp)}
+            {' '}
+            ·
+            {item.direction === 'sent' ? '已发送' : '已接收'}
           </p>
         </div>
-        {item.direction === "received" && (
+        {item.direction === 'received' && (
           <Button
             variant="ghost"
             size="icon-sm"
@@ -229,22 +251,22 @@ function ImageItem({
 }
 
 // File item component
-function FileItem({ 
-  item, 
+function FileItem({
+  item,
   onDownload,
-  onCancel
-}: { 
+  onCancel,
+}: {
   item: TransferItem
   onDownload: (url: string, name?: string) => void
   onCancel?: (itemId: string) => void
 }) {
   const IconComponent = getFileIcon(item.name)
-  const isTransferring = item.status === "transferring"
-  const isCancelled = item.status === "cancelled"
+  const isTransferring = item.status === 'transferring'
+  const isCancelled = item.status === 'cancelled'
   const progress = item.progress ?? 100
   const transferredBytes = item.transferredBytes ?? item.size ?? 0
   const totalSize = item.size ?? 0
-  const fileName = item.name || "文件"
+  const fileName = item.name || '文件'
 
   // Show cancelled state
   if (isCancelled) {
@@ -256,59 +278,76 @@ function FileItem({
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium text-foreground truncate">{fileName}</p>
           <p className="text-xs text-muted-foreground mt-1">
-            已取消 · {formatFileSize(transferredBytes)} / {formatFileSize(totalSize)}
+            已取消 ·
+            {' '}
+            {formatFileSize(transferredBytes)}
+            {' '}
+            /
+            {' '}
+            {formatFileSize(totalSize)}
           </p>
         </div>
       </div>
     )
   }
-  
+
   return (
     <div className="flex items-start gap-3">
       <div className="w-10 h-10 rounded-lg bg-background flex items-center justify-center shrink-0 relative">
-        {isTransferring ? (
-          <Loader2 className="w-5 h-5 text-accent animate-spin" />
-        ) : (
-          <IconComponent className="w-5 h-5 text-muted-foreground" />
-        )}
+        {isTransferring
+          ? (
+              <Loader2 className="w-5 h-5 text-accent animate-spin" />
+            )
+          : (
+              <IconComponent className="w-5 h-5 text-muted-foreground" />
+            )}
       </div>
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium text-foreground truncate">{fileName}</p>
-        
-        {isTransferring ? (
-          <>
-            {/* Progress bar */}
-            <ProgressBar progress={progress} className="mt-2" />
-            
-            {/* Progress info */}
-            <div className="flex items-center justify-between mt-1.5">
-              <p className="text-xs text-muted-foreground">
-                {formatFileSize(transferredBytes)} / {formatFileSize(totalSize)}
-                <span className="mx-1">·</span>
-                {progress}%
-              </p>
-            <div className="flex items-center gap-2">
-              {item.remainingTime && item.remainingTime > 0 && (
-                <p className="text-xs text-muted-foreground">
-                  {formatTimeRemaining(item.remainingTime)}
+
+        {isTransferring
+          ? (
+              <>
+                {/* Progress bar */}
+                <ProgressBar progress={progress} className="mt-2" />
+
+                {/* Progress info */}
+                <div className="flex items-center justify-between mt-1.5">
+                  <p className="text-xs text-muted-foreground">
+                    {formatFileSize(transferredBytes)}
+                    {' '}
+                    /
+                    {formatFileSize(totalSize)}
+                    <span className="mx-1">·</span>
+                    {progress}
+                    %
+                  </p>
+                  <div className="flex items-center gap-2">
+                    {item.remainingTime && item.remainingTime > 0 && (
+                      <p className="text-xs text-muted-foreground">
+                        {formatTimeRemaining(item.remainingTime)}
+                      </p>
+                    )}
+                    {item.speed && item.speed > 0 && (
+                      <p className="text-xs text-accent font-medium">
+                        {formatSpeed(item.speed)}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </>
+            )
+          : (
+              <>
+                <p className="text-xs text-muted-foreground">{formatFileSize(totalSize)}</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {formatTime(item.timestamp)}
+                  {' '}
+                  ·
+                  {item.direction === 'sent' ? '已发送' : '已接收'}
                 </p>
-              )}
-              {item.speed && item.speed > 0 && (
-                <p className="text-xs text-accent font-medium">
-                  {formatSpeed(item.speed)}
-                </p>
-              )}
-            </div>
-            </div>
-          </>
-        ) : (
-          <>
-            <p className="text-xs text-muted-foreground">{formatFileSize(totalSize)}</p>
-            <p className="text-xs text-muted-foreground mt-1">
-              {formatTime(item.timestamp)} · {item.direction === "sent" ? "已发送" : "已接收"}
-            </p>
-          </>
-        )}
+              </>
+            )}
       </div>
       {/* Cancel button during transfer */}
       {isTransferring && onCancel && (
@@ -316,7 +355,7 @@ function FileItem({
           variant="ghost"
           size="icon-sm"
           onClick={() => onCancel(item.id)}
-          className={cn("shrink-0", INTERACTIVE_TONES.dangerHover)}
+          className={cn('shrink-0', INTERACTIVE_TONES.dangerHover)}
           aria-label={`取消传输 ${fileName}`}
           title="取消传输"
         >
@@ -324,7 +363,7 @@ function FileItem({
         </Button>
       )}
       {/* Download button after transfer */}
-      {item.direction === "received" && !isTransferring && item.content && (
+      {item.direction === 'received' && !isTransferring && item.content && (
         <Button
           variant="ghost"
           size="icon-sm"
@@ -349,7 +388,8 @@ function TextItem({ item }: { item: TransferItem }) {
     try {
       if (navigator.clipboard && navigator.clipboard.writeText) {
         await navigator.clipboard.writeText(item.content)
-      } else {
+      }
+      else {
         // Fallback for older browsers
         const textArea = document.createElement('textarea')
         textArea.value = item.content
@@ -361,8 +401,9 @@ function TextItem({ item }: { item: TransferItem }) {
         document.body.removeChild(textArea)
       }
       setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    } catch (err) {
+      setTimeout(setCopied, 2000, false)
+    }
+    catch (err) {
       console.error('Failed to copy:', err)
     }
   }, [item.content])
@@ -372,7 +413,7 @@ function TextItem({ item }: { item: TransferItem }) {
       <div className="flex-1 min-w-0">
         <div className="text-sm text-foreground whitespace-pre-wrap break-words">
           {segments.map((segment, index) => {
-            if (segment.type === "link" && segment.url) {
+            if (segment.type === 'link' && segment.url) {
               return (
                 <LinkPreview key={index} url={segment.url} inline />
               )
@@ -381,7 +422,10 @@ function TextItem({ item }: { item: TransferItem }) {
           })}
         </div>
         <p className="text-xs text-muted-foreground mt-1">
-          {formatTime(item.timestamp)} · {item.direction === "sent" ? "已发送" : "已接收"}
+          {formatTime(item.timestamp)}
+          {' '}
+          ·
+          {item.direction === 'sent' ? '已发送' : '已接收'}
         </p>
       </div>
       <Button
@@ -389,14 +433,16 @@ function TextItem({ item }: { item: TransferItem }) {
         size="icon-sm"
         onClick={handleCopy}
         className="shrink-0"
-        aria-label={copied ? "文本已复制" : "复制文本"}
-        title={copied ? "已复制" : "复制文本"}
+        aria-label={copied ? '文本已复制' : '复制文本'}
+        title={copied ? '已复制' : '复制文本'}
       >
-        {copied ? (
-          <Check className={cn("h-4 w-4", STATUS_TONES.success.inline)} />
-        ) : (
-          <Copy className="h-4 w-4" />
-        )}
+        {copied
+          ? (
+              <Check className={cn('h-4 w-4', STATUS_TONES.success.inline)} />
+            )
+          : (
+              <Copy className="h-4 w-4" />
+            )}
       </Button>
     </div>
   )
@@ -406,7 +452,7 @@ export function TransferItemComponent({ item, onPreviewImage, onDownload, onCanc
   const [showSettleIn, setShowSettleIn] = useState(false)
 
   useEffect(() => {
-    if (item.type === "system" || item.status === "completed") {
+    if (item.type === 'system' || item.status === 'completed') {
       setShowSettleIn(true)
       const timeoutId = window.setTimeout(() => {
         setShowSettleIn(false)
@@ -419,27 +465,31 @@ export function TransferItemComponent({ item, onPreviewImage, onDownload, onCanc
   }, [item.id, item.status, item.type])
 
   // System messages
-  if (item.type === "system") {
+  if (item.type === 'system') {
     return <SystemMessage content={item.content} />
   }
-  
-  const isImage = item.type === "file" && isImageFile(item.name || "")
-  const directionClass = item.direction === "sent" ? "border-l-2 border-l-foreground/60" : "border-l-2 border-l-accent/70"
+
+  const isImage = item.type === 'file' && isImageFile(item.name || '')
+  const directionClass = item.direction === 'sent' ? 'border-l-2 border-l-foreground/60' : 'border-l-2 border-l-accent/70'
   return (
     <div
       className={cn(
-        "rounded-md border border-border/60 bg-card/50 px-3 py-2 hover:bg-card transition-colors",
+        'rounded-md border border-border/60 bg-card/50 px-3 py-2 hover:bg-card transition-colors',
         directionClass,
-        showSettleIn && "delight-rise-in"
+        showSettleIn && 'delight-rise-in',
       )}
     >
-      {isImage ? (
-        <ImageItem item={item} onPreviewImage={onPreviewImage} onDownload={onDownload} onCancel={onCancel} />
-      ) : item.type === "file" ? (
-        <FileItem item={item} onDownload={onDownload} onCancel={onCancel} />
-      ) : (
-        <TextItem item={item} />
-      )}
+      {isImage
+        ? (
+            <ImageItem item={item} onPreviewImage={onPreviewImage} onDownload={onDownload} onCancel={onCancel} />
+          )
+        : item.type === 'file'
+          ? (
+              <FileItem item={item} onDownload={onDownload} onCancel={onCancel} />
+            )
+          : (
+              <TextItem item={item} />
+            )}
     </div>
   )
 }

@@ -1,14 +1,14 @@
-const CACHE_NAME = "toss-v2"
+const CACHE_NAME = 'toss-v2'
 const urlsToCache = [
-  "/",
-  "/manifest.json",
-  "/icon-192.png",
-  "/logo.svg",
+  '/',
+  '/manifest.json',
+  '/icon-192.png',
+  '/logo.svg',
 ]
 
 // IndexedDB helper for share data
-const DB_NAME = "toss-share-db"
-const STORE_NAME = "shared-data"
+const DB_NAME = 'toss-share-db'
+const STORE_NAME = 'shared-data'
 
 function openDB() {
   return new Promise((resolve, reject) => {
@@ -18,7 +18,7 @@ function openDB() {
     request.onupgradeneeded = (event) => {
       const db = event.target.result
       if (!db.objectStoreNames.contains(STORE_NAME)) {
-        db.createObjectStore(STORE_NAME, { keyPath: "id", autoIncrement: true })
+        db.createObjectStore(STORE_NAME, { keyPath: 'id', autoIncrement: true })
       }
     }
   })
@@ -27,7 +27,7 @@ function openDB() {
 async function saveShareData(data) {
   const db = await openDB()
   return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, "readwrite")
+    const tx = db.transaction(STORE_NAME, 'readwrite')
     const store = tx.objectStore(STORE_NAME)
     // Clear old data first
     store.clear()
@@ -37,39 +37,40 @@ async function saveShareData(data) {
   })
 }
 
-self.addEventListener("install", (event) => {
+globalThis.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
       return cache.addAll(urlsToCache)
-    })
+    }),
   )
-  self.skipWaiting()
+  globalThis.skipWaiting()
 })
 
-self.addEventListener("activate", (event) => {
+globalThis.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(
         cacheNames
-          .filter((cacheName) => cacheName !== CACHE_NAME)
-          .map((cacheName) => caches.delete(cacheName))
+          .filter(cacheName => cacheName !== CACHE_NAME)
+          .map(cacheName => caches.delete(cacheName)),
       )
-    })
+    }),
   )
-  self.clients.claim()
+  globalThis.clients.claim()
 })
 
-self.addEventListener("fetch", (event) => {
+globalThis.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url)
-  
+
   // Handle Share Target POST requests
-  if (url.pathname === "/share" && event.request.method === "POST") {
+  if (url.pathname === '/share' && event.request.method === 'POST') {
     event.respondWith(handleShareTarget(event.request))
     return
   }
 
   // Skip non-GET requests
-  if (event.request.method !== "GET") return
+  if (event.request.method !== 'GET')
+    return
 
   // Network first, fallback to cache
   event.respondWith(
@@ -85,23 +86,23 @@ self.addEventListener("fetch", (event) => {
       })
       .catch(() => {
         return caches.match(event.request)
-      })
+      }),
   )
 })
 
 async function handleShareTarget(request) {
   try {
     const formData = await request.formData()
-    
+
     const shareData = {
-      title: formData.get("title") || "",
-      text: formData.get("text") || "",
-      url: formData.get("url") || "",
-      files: []
+      title: formData.get('title') || '',
+      text: formData.get('text') || '',
+      url: formData.get('url') || '',
+      files: [],
     }
-    
+
     // Process shared files
-    const files = formData.getAll("files")
+    const files = formData.getAll('files')
     for (const file of files) {
       if (file && file.size > 0) {
         // Convert file to base64 for storage
@@ -109,25 +110,26 @@ async function handleShareTarget(request) {
         const base64 = btoa(
           new Uint8Array(arrayBuffer).reduce(
             (data, byte) => data + String.fromCharCode(byte),
-            ""
-          )
+            '',
+          ),
         )
         shareData.files.push({
           name: file.name,
           type: file.type,
           size: file.size,
-          data: base64
+          data: base64,
         })
       }
     }
-    
+
     // Save share data to IndexedDB
     await saveShareData(shareData)
-    
+
     // Redirect to main page with share flag
-    return Response.redirect("/?shared=true", 303)
-  } catch (error) {
-    console.error("Share target error:", error)
-    return Response.redirect("/?share_error=true", 303)
+    return Response.redirect('/?shared=true', 303)
+  }
+  catch (error) {
+    console.error('Share target error:', error)
+    return Response.redirect('/?share_error=true', 303)
   }
 }

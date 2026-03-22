@@ -1,19 +1,24 @@
-"use client"
+'use client'
 
-import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from "react"
-import type { TransferItem, ConnectionStatus, ConnectionType, ConnectionInfo, ConnectionQuality, EncryptionPerformance } from "./types"
-import { useNotification } from "@/hooks/use-notification"
-import { useConnectionSettings } from "@/hooks/use-connection-settings"
-import { useTransferItems } from "@/hooks/use-transfer-items"
-import { useConnectionQuality } from "@/hooks/use-connection-quality"
-import { SessionEncryptor, generateKeyPair, encryptJSON } from "./crypto"
-import { createSetupConnection, createAttemptReconnect, type ConnectionRefs, type ConnectionCallbacks } from "./transfer-connection"
-import { createRoomManagement, type RoomCallbacks } from "./transfer-room"
-import { createDataTransfer, type DataTransferCallbacks } from "./transfer-data"
+import type { generateKeyPair, SessionEncryptor } from './crypto'
+import type { ConnectionCallbacks, ConnectionRefs } from './transfer-connection'
+import type { DataTransferCallbacks } from './transfer-data'
+import type { RoomCallbacks } from './transfer-room'
+import type { ConnectionInfo, ConnectionQuality, ConnectionStatus, ConnectionType, EncryptionPerformance, TransferItem } from './types'
+import * as React from 'react'
+import { createContext, use, useCallback, useEffect, useRef, useState } from 'react'
+import { useConnectionQuality } from '@/hooks/use-connection-quality'
+import { useConnectionSettings } from '@/hooks/use-connection-settings'
+import { useNotification } from '@/hooks/use-notification'
+import { useTransferItems } from '@/hooks/use-transfer-items'
+import { encryptJSON } from './crypto'
+import { createAttemptReconnect, createSetupConnection } from './transfer-connection'
+import { createDataTransfer } from './transfer-data'
+import { createRoomManagement } from './transfer-room'
 
-export type { TransferItem, ConnectionStatus, ConnectionType, ConnectionInfo, ConnectionQuality, EncryptionPerformance }
+export type { ConnectionInfo, ConnectionQuality, ConnectionStatus, ConnectionType, EncryptionPerformance, TransferItem }
 
-type TransferContextType = {
+interface TransferContextType {
   roomCode: string | null
   connectionStatus: ConnectionStatus
   connectionInfo: ConnectionInfo
@@ -61,9 +66,9 @@ type TransferContextType = {
 const TransferContext = createContext<TransferContextType | null>(null)
 
 export function useTransfer() {
-  const context = useContext(TransferContext)
+  const context = use(TransferContext)
   if (!context) {
-    throw new Error("useTransfer must be used within TransferProvider")
+    throw new Error('useTransfer must be used within TransferProvider')
   }
   return context
 }
@@ -71,8 +76,8 @@ export function useTransfer() {
 export function TransferProvider({ children }: { children: React.ReactNode }) {
   // ============ Core State ============
   const [roomCode, setRoomCode] = useState<string | null>(null)
-  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>("disconnected")
-  const [connectionInfo, setConnectionInfo] = useState<ConnectionInfo>({ type: "unknown" })
+  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('disconnected')
+  const [connectionInfo, setConnectionInfo] = useState<ConnectionInfo>({ type: 'unknown' })
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [peerCount, setPeerCount] = useState(0)
   const [isHost, setIsHost] = useState(false)
@@ -81,7 +86,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
   const [sendingCount, setSendingCount] = useState(0)
   const [isEncrypted, setIsEncrypted] = useState(false)
   const [encryptionPerformance, setEncryptionPerformance] = useState<EncryptionPerformance | null>(null)
-  
+
   // ============ Custom Hooks ============
   const {
     settings: notificationSettings,
@@ -96,7 +101,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     settings: connectionSettings,
     updateSettings: updateConnectionSettings,
   } = useConnectionSettings()
-  
+
   const {
     items,
     addItem,
@@ -107,10 +112,9 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     createTrackedBlobUrl,
     cleanup: cleanupItems,
   } = useTransferItems()
-  
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   const connectionsRef = useRef<Map<string, any>>(new Map())
-  
+
   const {
     connectionQuality,
     startQualityMonitoring,
@@ -119,11 +123,11 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     recordBandwidth,
     cleanup: cleanupQuality,
   } = useConnectionQuality(connectionsRef)
-  
+
   // ============ Refs ============
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   const peerRef = useRef<any>(null)
-  const fileBuffersRef = useRef<Map<string, { 
+  const fileBuffersRef = useRef<Map<string, {
     peerId: string
     name: string
     size: number
@@ -132,24 +136,24 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     localItemId: string
     remoteItemId: string
     lastTime: number
-    lastBytes: number 
+    lastBytes: number
     smoothedSpeed: number
   }>>(new Map())
-  
+
   // 加密相关 refs
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   const encryptorsRef = useRef<Map<string, SessionEncryptor>>(new Map())
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const keyExchangePendingRef = useRef<Map<string, { 
+
+  const keyExchangePendingRef = useRef<Map<string, {
     keyPair: Awaited<ReturnType<typeof generateKeyPair>>
     isOutgoing: boolean
   }>>(new Map())
-  
+
   // Reconnection state
   const reconnectAttemptsRef = useRef(0)
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const shouldReconnectRef = useRef(true)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   const setupConnectionRef = useRef<((conn: any, isOutgoing?: boolean) => void) | null>(null)
   const attemptReconnectRef = useRef<(() => void) | null>(null)
   const joinRoomRef = useRef<((code: string) => Promise<void>) | null>(null)
@@ -157,7 +161,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
   const stopQualityMonitoringRef = useRef<(() => void) | null>(null)
   const forceRelayRef = useRef(connectionSettings.forceRelay)
   const suppressReconnectUntilRef = useRef(0)
-  
+
   // Transfer cancellation tracking
   const cancelledTransfersRef = useRef<Set<string>>(new Set())
 
@@ -169,13 +173,15 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
 
   // ============ Utility Functions ============
   const setError = useCallback((message: string) => {
-    setConnectionStatus("error")
+    setConnectionStatus('error')
     setErrorMessage(message)
   }, [])
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const safeClose = (conn: any) => {
-    try { conn.close() } catch {}
+    try {
+      conn.close()
+    }
+    catch {}
   }
 
   const destroyPeer = useCallback(() => {
@@ -183,7 +189,8 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       try {
         peerRef.current.disconnect()
         peerRef.current.destroy()
-      } catch {}
+      }
+      catch {}
       peerRef.current = null
     }
   }, [])
@@ -216,8 +223,8 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     cleanupAll()
 
     setRoomCode(null)
-    setConnectionStatus("disconnected")
-    setConnectionInfo({ type: "unknown" })
+    setConnectionStatus('disconnected')
+    setConnectionInfo({ type: 'unknown' })
     setErrorMessage(null)
     setPeerCount(0)
     setIsHost(false)
@@ -227,7 +234,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       stopQualityMonitoringRef.current()
     }
 
-    addSystemMessage("已切换连接模式，请重新连接", true)
+    addSystemMessage('已切换连接模式，请重新连接', true)
     shouldReconnectRef.current = true
   }, [
     addSystemMessage,
@@ -242,7 +249,6 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     setRoomCode,
   ])
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const broadcastToConnections = useCallback(async (data: any, excludePeer?: string) => {
     for (const [peerId, conn] of connectionsRef.current.entries()) {
       if (conn.open && conn.peer !== excludePeer) {
@@ -252,12 +258,14 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
 
           if (isEncrypted && encryptor) {
             const encrypted = await encryptJSON(encryptor, data)
-            conn.send({ type: "encrypted", encrypted })
-          } else {
+            conn.send({ type: 'encrypted', encrypted })
+          }
+          else {
             conn.send(data)
           }
-        } catch (error) {
-          console.error("Failed to broadcast:", error)
+        }
+        catch (error) {
+          console.error('Failed to broadcast:', error)
         }
       }
     }
@@ -266,13 +274,13 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
   const updatePeerCount = useCallback(() => {
     const count = connectionsRef.current.size
     setPeerCount(count)
-    
+
     // 更新加密状态
     const allEncrypted = count > 0 && Array.from(encryptorsRef.current.values()).every(e => e.isReady())
     setIsEncrypted(allEncrypted)
-    
+
     if (count > 0) {
-      setConnectionStatus("connected")
+      setConnectionStatus('connected')
       setErrorMessage(null)
       reconnectAttemptsRef.current = 0
       if (reconnectTimeoutRef.current) {
@@ -282,10 +290,11 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       if (startQualityMonitoringRef.current) {
         startQualityMonitoringRef.current()
       }
-    } else {
+    }
+    else {
       setIsEncrypted(false)
-      if (roomCode && connectionStatus !== "reconnecting") {
-        setConnectionStatus("connecting")
+      if (roomCode && connectionStatus !== 'reconnecting') {
+        setConnectionStatus('connecting')
       }
       if (stopQualityMonitoringRef.current) {
         stopQualityMonitoringRef.current()
@@ -327,11 +336,11 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     cleanupAll,
     handlePong,
     recordBandwidth,
-    notifyReceived: (type: string, name?: string) => notifyReceived(type as "text" | "image" | "file", name),
+    notifyReceived: (type: string, name?: string) => notifyReceived(type as 'text' | 'image' | 'file', name),
   }
 
   // ============ Connection Setup ============
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   const setupConnection = useCallback(async (conn: any, isOutgoing = false) => {
     const setupFn = createSetupConnection(connectionRefs, connectionCallbacks, roomCode)
     return setupFn(conn, isOutgoing)
@@ -351,14 +360,15 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
 
   // Reconnect when app returns to foreground or network comes back
   useEffect(() => {
-    if (typeof window === "undefined") return
+    if (typeof window === 'undefined')
+      return
 
     const tryReconnect = () => {
       if (Date.now() < suppressReconnectUntilRef.current) {
         return
       }
 
-      const hasOpenConnections = Array.from(connectionsRef.current.values()).some((conn) => conn?.open)
+      const hasOpenConnections = Array.from(connectionsRef.current.values()).some(conn => conn?.open)
       const peerIsDisconnected = !!peerRef.current?.disconnected
 
       // Avoid forcing reconnection when an existing connection is still healthy.
@@ -369,7 +379,8 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       if (peerRef.current && peerRef.current.disconnected) {
         try {
           peerRef.current.reconnect()
-        } catch {}
+        }
+        catch {}
       }
       if (attemptReconnectRef.current) {
         attemptReconnectRef.current()
@@ -377,7 +388,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     }
 
     const handleVisibility = () => {
-      if (document.visibilityState === "visible") {
+      if (document.visibilityState === 'visible') {
         tryReconnect()
       }
     }
@@ -386,12 +397,12 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       tryReconnect()
     }
 
-    document.addEventListener("visibilitychange", handleVisibility)
-    window.addEventListener("online", handleOnline)
+    document.addEventListener('visibilitychange', handleVisibility)
+    window.addEventListener('online', handleOnline)
 
     return () => {
-      document.removeEventListener("visibilitychange", handleVisibility)
-      window.removeEventListener("online", handleOnline)
+      document.removeEventListener('visibilitychange', handleVisibility)
+      window.removeEventListener('online', handleOnline)
     }
   }, [])
 
@@ -414,7 +425,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     connectionRefs,
     roomCallbacks,
     setupConnection,
-    connectionSettings.forceRelay
+    connectionSettings.forceRelay,
   )
 
   const leaveRoom = useCallback(async () => {
@@ -437,34 +448,36 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
   const { sendText, sendFile } = createDataTransfer(
     connectionRefs,
     dataTransferCallbacks,
-    encryptorsRef
+    encryptorsRef,
   )
 
   const cancelTransfer = useCallback((itemId: string) => {
     const item = items.find(i => i.id === itemId)
-    if (!item || item.status !== "transferring") return
+    if (!item || item.status !== 'transferring')
+      return
 
-    if (item.direction === "sent") {
+    if (item.direction === 'sent') {
       cancelledTransfersRef.current.add(itemId)
-    } else if (item.direction === "received") {
+    }
+    else if (item.direction === 'received') {
       for (const [peerId, buffer] of fileBuffersRef.current.entries()) {
         if (buffer.localItemId === itemId) {
           buffer.chunks = []
           fileBuffersRef.current.delete(peerId)
-          
+
           const conn = connectionsRef.current.get(buffer.peerId)
           if (conn && conn.open) {
             conn.send({
-              type: "file-cancel",
+              type: 'file-cancel',
               itemId: buffer.remoteItemId,
             })
           }
           break
         }
       }
-      
+
       updateItemProgress(itemId, {
-        status: "cancelled",
+        status: 'cancelled',
         speed: undefined,
       })
     }
@@ -478,18 +491,21 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
         clearTimeout(reconnectTimeoutRef.current)
         reconnectTimeoutRef.current = null
       }
-      
+
       cleanupQuality()
-      
+
       connectionsRef.current.forEach(safeClose)
       connectionsRef.current.clear()
       fileBuffersRef.current.clear()
-      
+
       if (peerRef.current) {
-        try { peerRef.current.destroy() } catch {}
+        try {
+          peerRef.current.destroy()
+        }
+        catch {}
         peerRef.current = null
       }
-      
+
       cleanupItems()
     }
   }, [cleanupQuality, cleanupItems])
@@ -559,7 +575,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
 
   // ============ Provider ============
   return (
-    <TransferContext.Provider
+    <TransferContext
       value={{
         roomCode,
         connectionStatus,
@@ -594,6 +610,6 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       }}
     >
       {children}
-    </TransferContext.Provider>
+    </TransferContext>
   )
 }

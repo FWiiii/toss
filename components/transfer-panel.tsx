@@ -1,19 +1,19 @@
-"use client"
+'use client'
 
-import { useCallback, useEffect, useId, useRef, useState } from "react"
-import { useTransfer } from "@/lib/transfer-context"
-import { useShareTarget } from "@/hooks/use-share-target"
-import { Button } from "@/components/ui/button"
-import { EmptyState } from "@/components/ui/empty-state"
-import { TransferItemComponent } from "@/components/transfer-item"
-import { ImagePreviewDialog } from "@/components/image-preview-dialog"
-import { TransferInput } from "@/components/transfer-input"
-import { Send, Trash2, Share2, Upload } from "lucide-react"
-import { cn } from "@/lib/utils"
+import { Send, Share2, Trash2, Upload } from 'lucide-react'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
+import { ImagePreviewDialog } from '@/components/image-preview-dialog'
+import { TransferInput } from '@/components/transfer-input'
+import { TransferItemComponent } from '@/components/transfer-item'
+import { Button } from '@/components/ui/button'
+import { EmptyState } from '@/components/ui/empty-state'
+import { useShareTarget } from '@/hooks/use-share-target'
+import { useTransfer } from '@/lib/transfer-context'
+import { cn } from '@/lib/utils'
 
-const PANEL_CLASS = "panel-surface relative overflow-hidden transition-colors"
-const PANEL_HEADER_CLASS = "flex items-center justify-between border-b border-border/70 px-4 py-3"
-const SCROLL_AREA_CLASS = "min-h-[220px] space-y-2 p-4 sm:min-h-[260px]"
+const PANEL_CLASS = 'panel-surface relative overflow-hidden transition-colors'
+const PANEL_HEADER_CLASS = 'flex items-center justify-between border-b border-border/70 px-4 py-3'
+const SCROLL_AREA_CLASS = 'min-h-[220px] space-y-2 p-4 sm:min-h-[260px]'
 
 export function TransferPanel() {
   const {
@@ -29,10 +29,10 @@ export function TransferPanel() {
     suspendAutoReconnect,
   } = useTransfer()
   const { sharedFiles, sharedText, hasSharedContent, clearSharedData } = useShareTarget()
-  const [text, setText] = useState("")
+  const [text, setText] = useState('')
   const [isDragging, setIsDragging] = useState(false)
   const [pendingShare, setPendingShare] = useState<{ files: File[], text: string } | null>(null)
-  const [previewImage, setPreviewImage] = useState<{ url: string; name: string } | null>(null)
+  const [previewImage, setPreviewImage] = useState<{ url: string, name: string } | null>(null)
   const [showCompleted, setShowCompleted] = useState(false)
   const [isSendingClipboard, setIsSendingClipboard] = useState(false)
   const [highlightComposer, setHighlightComposer] = useState(false)
@@ -46,8 +46,8 @@ export function TransferPanel() {
   const shouldAutoScrollRef = useRef(true)
   const completedSectionId = useId()
 
-  const isConnected = connectionStatus === "connected" && peerCount > 0
-  
+  const isConnected = connectionStatus === 'connected' && peerCount > 0
+
   useEffect(() => {
     if (!isConnected) {
       hasFocusedRef.current = false
@@ -84,7 +84,8 @@ export function TransferPanel() {
   }, [isConnected])
 
   useEffect(() => {
-    if (!dropFeedbackLabel) return
+    if (!dropFeedbackLabel)
+      return
 
     const timeoutId = window.setTimeout(() => {
       setDropFeedbackLabel(null)
@@ -94,8 +95,8 @@ export function TransferPanel() {
       window.clearTimeout(timeoutId)
     }
   }, [dropFeedbackLabel])
-  const activeItems = items.filter((item) => item.status === "transferring" || item.status === "pending")
-  const completedItems = items.filter((item) => !(item.status === "transferring" || item.status === "pending"))
+  const activeItems = items.filter(item => item.status === 'transferring' || item.status === 'pending')
+  const completedItems = items.filter(item => !(item.status === 'transferring' || item.status === 'pending'))
   const hasItems = activeItems.length > 0 || completedItems.length > 0
   const showDormantPanel = !isConnected && !hasItems && !pendingShare
 
@@ -119,23 +120,25 @@ export function TransferPanel() {
 
   const scrollToLatest = useCallback(() => {
     const anchor = getAutoScrollAnchor()
-    if (!anchor) return
+    if (!anchor)
+      return
 
-    const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
     anchor.scrollIntoView({
-      behavior: prefersReducedMotion ? "auto" : "smooth",
-      block: "end",
-      inline: "nearest",
+      behavior: prefersReducedMotion ? 'auto' : 'smooth',
+      block: 'end',
+      inline: 'nearest',
     })
   }, [getAutoScrollAnchor])
 
   const sendFiles = useCallback(async (files: File[]) => {
-    if (files.length === 0) return
+    if (files.length === 0)
+      return
 
     if (!isConnected) {
-      setPendingShare((prev) => ({
+      setPendingShare(prev => ({
         files: [...(prev?.files ?? []), ...files],
-        text: prev?.text ?? "",
+        text: prev?.text ?? '',
       }))
       return
     }
@@ -146,7 +149,8 @@ export function TransferPanel() {
   }, [isConnected, sendFile])
 
   const handleSendClipboard = useCallback(async () => {
-    if (!isConnected || !navigator.clipboard) return
+    if (!isConnected || !navigator.clipboard)
+      return
     setIsSendingClipboard(true)
 
     try {
@@ -155,23 +159,25 @@ export function TransferPanel() {
         try {
           const items = await navigator.clipboard.read()
           for (const item of items) {
-            const imageType = item.types.find((type) => type.startsWith("image/"))
+            const imageType = item.types.find(type => type.startsWith('image/'))
             if (imageType) {
               const blob = await item.getType(imageType)
-              const ext = imageType.split("/")[1] || "png"
+              const ext = imageType.split('/')[1] || 'png'
               files.push(new File([blob], `clipboard-${Date.now()}.${ext}`, { type: imageType }))
             }
           }
-        } catch {
+        }
+        catch {
           // Ignore if read permission is not granted
         }
       }
 
-      let textData = ""
+      let textData = ''
       try {
         textData = await navigator.clipboard.readText()
-      } catch {
-        textData = ""
+      }
+      catch {
+        textData = ''
       }
 
       const trimmedText = textData.trim()
@@ -184,15 +190,19 @@ export function TransferPanel() {
       }
 
       if (files.length > 0 && trimmedText) {
-        addSystemMessage("已从剪贴板加入内容")
-      } else if (files.length > 0) {
-        addSystemMessage(files.every((file) => file.type.startsWith("image/")) ? "已从剪贴板加入图片" : "已从剪贴板加入文件")
-      } else if (trimmedText) {
-        addSystemMessage("已从剪贴板加入文本")
-      } else {
-        addSystemMessage("剪贴板中暂无可发送内容", true)
+        addSystemMessage('已从剪贴板加入内容')
       }
-    } finally {
+      else if (files.length > 0) {
+        addSystemMessage(files.every(file => file.type.startsWith('image/')) ? '已从剪贴板加入图片' : '已从剪贴板加入文件')
+      }
+      else if (trimmedText) {
+        addSystemMessage('已从剪贴板加入文本')
+      }
+      else {
+        addSystemMessage('剪贴板中暂无可发送内容', true)
+      }
+    }
+    finally {
       setIsSendingClipboard(false)
     }
   }, [addSystemMessage, isConnected, sendFiles, sendText])
@@ -213,7 +223,8 @@ export function TransferPanel() {
         clearSharedData()
       }, 500)
       return () => clearTimeout(timer)
-    } else {
+    }
+    else {
       hasProcessedShareRef.current = true
       setPendingShare({ files: [...sharedFiles], text: sharedText })
       if (sharedText) {
@@ -255,12 +266,12 @@ export function TransferPanel() {
       updateAutoScrollState()
     }
 
-    window.addEventListener("scroll", handleViewportChange, { passive: true })
-    window.addEventListener("resize", handleViewportChange)
+    window.addEventListener('scroll', handleViewportChange, { passive: true })
+    window.addEventListener('resize', handleViewportChange)
 
     return () => {
-      window.removeEventListener("scroll", handleViewportChange)
-      window.removeEventListener("resize", handleViewportChange)
+      window.removeEventListener('scroll', handleViewportChange)
+      window.removeEventListener('resize', handleViewportChange)
     }
   }, [updateAutoScrollState])
 
@@ -286,7 +297,7 @@ export function TransferPanel() {
   const handleSendText = useCallback(() => {
     if (text.trim() && isConnected) {
       sendText(text)
-      setText("")
+      setText('')
     }
   }, [text, isConnected, sendText])
 
@@ -297,9 +308,9 @@ export function TransferPanel() {
   }, [suspendAutoReconnect])
 
   const handleDownload = useCallback((url: string, name?: string) => {
-    const a = document.createElement("a")
+    const a = document.createElement('a')
     a.href = url
-    a.download = name || "download"
+    a.download = name || 'download'
     a.click()
   }, [])
 
@@ -326,9 +337,10 @@ export function TransferPanel() {
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault()
     setIsDragging(false)
-    
-    if (!isConnected) return
-    
+
+    if (!isConnected)
+      return
+
     const files = e.dataTransfer.files
     if (files.length > 0) {
       const droppedFiles = Array.from(files)
@@ -349,10 +361,10 @@ export function TransferPanel() {
   }
 
   return (
-    <div 
+    <div
       className={cn(
         PANEL_CLASS,
-        isDragging ? "border-accent bg-accent/5 ring-2 ring-accent/30 delight-drag-lift" : "border-border/80"
+        isDragging ? 'border-accent bg-accent/5 ring-2 ring-accent/30 delight-drag-lift' : 'border-border/80',
       )}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
@@ -396,7 +408,9 @@ export function TransferPanel() {
           </div>
           {pendingShare.files.length > 0 && (
             <p className="text-xs text-muted-foreground mt-1">
-              {pendingShare.files.length} 个文件待发送
+              {pendingShare.files.length}
+              {' '}
+              个文件待发送
             </p>
           )}
           {pendingShare.text.trim() && (
@@ -409,64 +423,66 @@ export function TransferPanel() {
 
       {/* Items List */}
       <div className={SCROLL_AREA_CLASS}>
-        {!hasItems && !pendingShare ? (
-          <EmptyState
-            icon={Send}
-            description={isConnected ? "发送文本或文件开始传输" : "连接设备后开始传输"}
-            containerClassName="h-full"
-          />
-        ) : (
-          <div className="space-y-3">
-            {activeItems.length > 0 && (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-xs text-muted-foreground">
-                  <span>进行中</span>
-                  <span>{activeItems.length}</span>
-                </div>
-                <div className="space-y-2">
-                  {activeItems.map((item) => (
-                    <TransferItemComponent
-                      key={item.id}
-                      item={item}
-                      onPreviewImage={handlePreviewImage}
-                      onDownload={handleDownload}
-                      onCancel={cancelTransfer}
-                    />
-                  ))}
-                </div>
-                <div ref={activeItemsEndRef} aria-hidden="true" />
-              </div>
-            )}
+        {!hasItems && !pendingShare
+          ? (
+              <EmptyState
+                icon={Send}
+                description={isConnected ? '发送文本或文件开始传输' : '连接设备后开始传输'}
+                containerClassName="h-full"
+              />
+            )
+          : (
+              <div className="space-y-3">
+                {activeItems.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-xs text-muted-foreground">
+                      <span>进行中</span>
+                      <span>{activeItems.length}</span>
+                    </div>
+                    <div className="space-y-2">
+                      {activeItems.map(item => (
+                        <TransferItemComponent
+                          key={item.id}
+                          item={item}
+                          onPreviewImage={handlePreviewImage}
+                          onDownload={handleDownload}
+                          onCancel={cancelTransfer}
+                        />
+                      ))}
+                    </div>
+                    <div ref={activeItemsEndRef} aria-hidden="true" />
+                  </div>
+                )}
 
-            {completedItems.length > 0 && (
-              <div className="space-y-2">
-                <button
-                  type="button"
-                  onClick={() => setShowCompleted((prev) => !prev)}
-                  className="w-full flex items-center justify-between text-xs text-muted-foreground hover:text-foreground transition-colors"
-                  aria-expanded={showCompleted}
-                  aria-controls={completedSectionId}
-                >
-                  <span>已完成</span>
-                  <span>{showCompleted ? "收起" : `展开 ${completedItems.length}`}</span>
-                </button>
-                {showCompleted && (
-                  <div id={completedSectionId} className="space-y-2">
-                    {completedItems.map((item) => (
-                      <TransferItemComponent
-                        key={item.id}
-                        item={item}
-                        onPreviewImage={handlePreviewImage}
-                        onDownload={handleDownload}
-                        onCancel={cancelTransfer}
-                      />
-                    ))}
+                {completedItems.length > 0 && (
+                  <div className="space-y-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowCompleted(prev => !prev)}
+                      className="w-full flex items-center justify-between text-xs text-muted-foreground hover:text-foreground transition-colors"
+                      aria-expanded={showCompleted}
+                      aria-controls={completedSectionId}
+                    >
+                      <span>已完成</span>
+                      <span>{showCompleted ? '收起' : `展开 ${completedItems.length}`}</span>
+                    </button>
+                    {showCompleted && (
+                      <div id={completedSectionId} className="space-y-2">
+                        {completedItems.map(item => (
+                          <TransferItemComponent
+                            key={item.id}
+                            item={item}
+                            onPreviewImage={handlePreviewImage}
+                            onDownload={handleDownload}
+                            onCancel={cancelTransfer}
+                          />
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
             )}
-          </div>
-        )}
         <div ref={itemsEndRef} aria-hidden="true" />
       </div>
 

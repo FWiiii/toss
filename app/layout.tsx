@@ -1,6 +1,6 @@
-import React from "react"
 import type { Metadata, Viewport } from 'next'
 import { Analytics } from '@vercel/analytics/next'
+import * as React from 'react'
 import { ThemeProvider } from '@/components/theme-provider'
 import { VIEWPORT_THEME_COLORS } from '@/lib/design-tokens'
 import './globals.css'
@@ -11,7 +11,7 @@ export const metadata: Metadata = {
   generator: 'H',
   other: {
     // Prevent Dark Reader from mutating SSR DOM before hydration.
-    "darkreader-lock": "",
+    'darkreader-lock': '',
   },
   manifest: '/manifest.json',
   appleWebApp: {

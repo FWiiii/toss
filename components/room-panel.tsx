@@ -1,40 +1,41 @@
-"use client"
+'use client'
 
-import { useEffect, useId, useRef, useState } from "react"
-import { useTransfer } from "@/lib/transfer-context"
-import { useJoinCode } from "@/hooks/use-join-code"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { EmptyState } from "@/components/ui/empty-state"
-import { QRCodeDisplay } from "@/components/qr-code-display"
-import { QRCodeScanner } from "@/components/qr-code-scanner"
-import { ConnectionStatusDisplay } from "@/components/connection-status"
-import { Copy, Check, LogOut, Loader2, AlertCircle, QrCode, ScanLine } from "lucide-react"
-import { STATUS_TONES } from "@/lib/design-tokens"
-import { cn } from "@/lib/utils"
+import { AlertCircle, Check, Copy, Loader2, LogOut, QrCode, ScanLine } from 'lucide-react'
+import { useEffect, useId, useRef, useState } from 'react'
+import { ConnectionStatusDisplay } from '@/components/connection-status'
+import { QRCodeDisplay } from '@/components/qr-code-display'
+import { QRCodeScanner } from '@/components/qr-code-scanner'
+import { Button } from '@/components/ui/button'
+import { EmptyState } from '@/components/ui/empty-state'
+import { Input } from '@/components/ui/input'
+import { useJoinCode } from '@/hooks/use-join-code'
+import { STATUS_TONES } from '@/lib/design-tokens'
+import { useTransfer } from '@/lib/transfer-context'
+import { cn } from '@/lib/utils'
 
-const CARD_CLASS = "panel-surface relative overflow-hidden p-6"
-const SECTION_HINT_CLASS = "mt-2 text-center text-xs text-muted-foreground"
+const CARD_CLASS = 'panel-surface relative overflow-hidden p-6'
+const SECTION_HINT_CLASS = 'mt-2 text-center text-xs text-muted-foreground'
+const ROOM_CODE_SANITIZE_REGEX = /[^A-Z0-9]/g
 
 export function RoomPanel() {
-  const { 
-    roomCode, 
+  const {
+    roomCode,
     connectionStatus,
     connectionInfo,
     connectionQuality,
-    errorMessage, 
-    createRoom, 
-    joinRoom, 
-    leaveRoom, 
-    peerCount, 
+    errorMessage,
+    createRoom,
+    joinRoom,
+    leaveRoom,
+    peerCount,
     isHost,
     isCreatingRoom,
     isJoiningRoom,
-    isEncrypted
+    isEncrypted,
   } = useTransfer()
   const { joinCode, clearJoinCode } = useJoinCode()
-  const [inputCode, setInputCode] = useState("")
-  const [copyState, setCopyState] = useState<"idle" | "success" | "error">("idle")
+  const [inputCode, setInputCode] = useState('')
+  const [copyState, setCopyState] = useState<'idle' | 'success' | 'error'>('idle')
   const [showQRCode, setShowQRCode] = useState(false)
   const [showScanner, setShowScanner] = useState(false)
   const copyResetTimerRef = useRef<number | null>(null)
@@ -74,7 +75,8 @@ export function RoomPanel() {
         // Try modern clipboard API first
         if (navigator.clipboard && navigator.clipboard.writeText) {
           await navigator.clipboard.writeText(roomCode)
-        } else {
+        }
+        else {
           // Fallback for older browsers or non-HTTPS
           const textArea = document.createElement('textarea')
           textArea.value = roomCode
@@ -85,11 +87,12 @@ export function RoomPanel() {
           document.execCommand('copy')
           document.body.removeChild(textArea)
         }
-        setCopyState("success")
-        copyResetTimerRef.current = window.setTimeout(() => setCopyState("idle"), 2000)
-      } catch {
-        setCopyState("error")
-        copyResetTimerRef.current = window.setTimeout(() => setCopyState("idle"), 2500)
+        setCopyState('success')
+        copyResetTimerRef.current = window.setTimeout(setCopyState, 2000, 'idle')
+      }
+      catch {
+        setCopyState('error')
+        copyResetTimerRef.current = window.setTimeout(setCopyState, 2500, 'idle')
       }
     }
   }
@@ -101,15 +104,15 @@ export function RoomPanel() {
   }
 
   const formatCode = (code: string) => {
-    return code.slice(0, 3) + " " + code.slice(3)
+    return `${code.slice(0, 3)} ${code.slice(3)}`
   }
 
-  const joinHasError = connectionStatus === "error" && Boolean(errorMessage)
-  const roomCodeCopied = copyState === "success"
-  const roomCodeCopyFailed = copyState === "error"
+  const joinHasError = connectionStatus === 'error' && Boolean(errorMessage)
+  const roomCodeCopied = copyState === 'success'
+  const roomCodeCopyFailed = copyState === 'error'
 
   // Room dissolved state - show return button
-  if (connectionStatus === "dissolved") {
+  if (connectionStatus === 'dissolved') {
     return (
       <div className={CARD_CLASS}>
         <EmptyState
@@ -125,7 +128,7 @@ export function RoomPanel() {
     )
   }
 
-  const isConnected = connectionStatus === "connected" && peerCount > 0
+  const isConnected = connectionStatus === 'connected' && peerCount > 0
   if (roomCode || isConnected) {
     return (
       <div className={CARD_CLASS}>
@@ -144,8 +147,8 @@ export function RoomPanel() {
                   size="icon-sm"
                   className="absolute right-1 top-1/2 -translate-y-1/2"
                   onClick={handleCopyCode}
-                  aria-label={roomCodeCopied ? "房间代码已复制" : "复制房间代码"}
-                  title={roomCodeCopied ? "房间代码已复制" : "复制房间代码"}
+                  aria-label={roomCodeCopied ? '房间代码已复制' : '复制房间代码'}
+                  title={roomCodeCopied ? '房间代码已复制' : '复制房间代码'}
                 >
                   {roomCodeCopied ? <Check className={`h-5 w-5 ${STATUS_TONES.success.inline}`} /> : <Copy className="h-5 w-5" />}
                 </Button>
@@ -153,15 +156,15 @@ export function RoomPanel() {
             </div>
             <p
               className={cn(
-                "mt-2 min-h-[1rem] text-xs transition-all duration-200",
-                roomCodeCopied || roomCodeCopyFailed ? "translate-y-0 opacity-100" : "translate-y-1 opacity-0",
-                roomCodeCopyFailed ? STATUS_TONES.danger.inline : "text-muted-foreground"
+                'mt-2 min-h-[1rem] text-xs transition-all duration-200',
+                roomCodeCopied || roomCodeCopyFailed ? 'translate-y-0 opacity-100' : 'translate-y-1 opacity-0',
+                roomCodeCopyFailed ? STATUS_TONES.danger.inline : 'text-muted-foreground',
               )}
               aria-live="polite"
             >
               {roomCodeCopyFailed
-                ? "复制失败，请手动输入房间代码"
-                : `已复制，可在另一台设备粘贴${isHost ? " · 或直接让对方扫码" : ""}`}
+                ? '复制失败，请手动输入房间代码'
+                : `已复制，可在另一台设备粘贴${isHost ? ' · 或直接让对方扫码' : ''}`}
             </p>
           </div>
         )}
@@ -187,12 +190,12 @@ export function RoomPanel() {
             </Button>
           )}
           <Button
-            variant={isHost ? "destructive" : "outline"}
-            className={isHost ? "flex-1" : "w-full"}
+            variant={isHost ? 'destructive' : 'outline'}
+            className={isHost ? 'flex-1' : 'w-full'}
             onClick={leaveRoom}
           >
             <LogOut className="w-4 h-4 mr-2" />
-            {isHost ? "解散房间" : "离开房间"}
+            {isHost ? '解散房间' : '离开房间'}
           </Button>
         </div>
 
@@ -216,14 +219,16 @@ export function RoomPanel() {
             onClick={createRoom}
             disabled={isCreatingRoom || isJoiningRoom}
           >
-            {isCreatingRoom ? (
-              <>
-                <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                创建中...
-              </>
-            ) : (
-              "创建房间"
-            )}
+            {isCreatingRoom
+              ? (
+                  <>
+                    <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                    创建中...
+                  </>
+                )
+              : (
+                  '创建房间'
+                )}
           </Button>
           <p className={SECTION_HINT_CLASS}>
             生成代码给另一台设备
@@ -248,7 +253,7 @@ export function RoomPanel() {
               id={joinInputId}
               placeholder="输入房间代码"
               value={inputCode}
-              onChange={(e) => setInputCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6))}
+              onChange={e => setInputCode(e.target.value.toUpperCase().replace(ROOM_CODE_SANITIZE_REGEX, '').slice(0, 6))}
               className="h-14 border-border bg-input text-center text-xl font-mono uppercase tracking-[0.2em]"
               maxLength={6}
               disabled={isCreatingRoom || isJoiningRoom}
@@ -259,7 +264,8 @@ export function RoomPanel() {
               aria-describedby={joinHasError ? `${joinHintId} ${joinErrorId}` : joinHintId}
               aria-invalid={joinHasError}
               onKeyDown={(e) => {
-                if (e.key === "Enter") handleJoinRoom()
+                if (e.key === 'Enter')
+                  handleJoinRoom()
               }}
             />
             <Button
@@ -267,16 +273,18 @@ export function RoomPanel() {
               size="xl"
               onClick={handleJoinRoom}
               disabled={inputCode.length < 6 || isCreatingRoom || isJoiningRoom}
-              aria-label={isJoiningRoom ? "正在加入房间" : "加入房间"}
+              aria-label={isJoiningRoom ? '正在加入房间' : '加入房间'}
             >
-              {isJoiningRoom ? (
-                <Loader2 className="w-5 h-5 animate-spin" />
-              ) : (
-                "加入"
-              )}
+              {isJoiningRoom
+                ? (
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                  )
+                : (
+                    '加入'
+                  )}
             </Button>
           </div>
-          
+
           {/* Scan QR Code Button */}
           <Button
             variant="outline"
@@ -288,7 +296,7 @@ export function RoomPanel() {
             <ScanLine className="w-4 h-4 mr-2" />
             扫描二维码加入
           </Button>
-          
+
           <p id={joinHintId} className={SECTION_HINT_CLASS}>
             输入代码或扫码加入
           </p>

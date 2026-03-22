@@ -1,32 +1,38 @@
-"use client"
+'use client'
 
-import { useEffect, useState } from "react"
-import { Button } from "@/components/ui/button"
-import { Download, X } from "lucide-react"
+import { Download, X } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Button } from '@/components/ui/button'
+
+interface BeforeInstallPromptEvent extends Event {
+  prompt: () => Promise<void>
+  userChoice: Promise<{ outcome: 'accepted' | 'dismissed', platform: string }>
+}
 
 export function PWARegister() {
   const [showInstallPrompt, setShowInstallPrompt] = useState(false)
-  const [deferredPrompt, setDeferredPrompt] = useState<any>(null)
+  const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null)
 
   useEffect(() => {
     // Register service worker
-    if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("/sw.js").catch((err) => {
-        console.log("SW registration failed:", err)
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch((err) => {
+        console.error('SW registration failed:', err)
       })
     }
 
     // Handle install prompt
     const handleBeforeInstallPrompt = (e: Event) => {
-      e.preventDefault()
-      setDeferredPrompt(e)
+      const promptEvent = e as BeforeInstallPromptEvent
+      promptEvent.preventDefault()
+      setDeferredPrompt(promptEvent)
       setShowInstallPrompt(true)
     }
 
-    window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt)
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt)
 
     return () => {
-      window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt)
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt)
     }
   }, [])
 
@@ -34,14 +40,15 @@ export function PWARegister() {
     if (deferredPrompt) {
       deferredPrompt.prompt()
       const { outcome } = await deferredPrompt.userChoice
-      if (outcome === "accepted") {
+      if (outcome === 'accepted') {
         setShowInstallPrompt(false)
       }
       setDeferredPrompt(null)
     }
   }
 
-  if (!showInstallPrompt) return null
+  if (!showInstallPrompt)
+    return null
 
   return (
     <div className="fixed bottom-4 left-4 right-4 md:left-auto md:right-4 md:w-80 bg-card border border-border rounded-xl p-4 shadow-lg z-50">

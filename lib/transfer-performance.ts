@@ -3,11 +3,11 @@
  * 处理加密性能数据的收集和聚合
  */
 
-import type { EncryptionPerformance } from "./types"
-import { SessionEncryptor } from "./crypto"
+import type { SessionEncryptor } from './crypto'
+import type { EncryptionPerformance } from './types'
 
 export function createPerformanceMonitoring(
-  encryptorsRef: React.MutableRefObject<Map<string, SessionEncryptor>>
+  encryptorsRef: React.MutableRefObject<Map<string, SessionEncryptor>>,
 ) {
   const getEncryptionPerformance = (): EncryptionPerformance | null => {
     if (encryptorsRef.current.size === 0) {
