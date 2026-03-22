@@ -1,10 +1,9 @@
 'use client'
 
 import { AlertCircle, Check, Copy, Loader2, LogOut, QrCode, ScanLine } from 'lucide-react'
+import dynamic from 'next/dynamic'
 import { useEffect, useId, useRef, useState } from 'react'
 import { ConnectionStatusDisplay } from '@/components/connection-status'
-import { QRCodeDisplay } from '@/components/qr-code-display'
-import { QRCodeScanner } from '@/components/qr-code-scanner'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Input } from '@/components/ui/input'
@@ -16,6 +15,14 @@ import { cn } from '@/lib/utils'
 const CARD_CLASS = 'panel-surface relative overflow-hidden p-6'
 const SECTION_HINT_CLASS = 'mt-2 text-center text-xs text-muted-foreground'
 const ROOM_CODE_SANITIZE_REGEX = /[^A-Z0-9]/g
+const QRCodeDisplay = dynamic(
+  () => import('@/components/qr-code-display').then(mod => mod.QRCodeDisplay),
+  { ssr: false },
+)
+const QRCodeScanner = dynamic(
+  () => import('@/components/qr-code-scanner').then(mod => mod.QRCodeScanner),
+  { ssr: false },
+)
 
 export function RoomPanel() {
   const {
@@ -200,11 +207,13 @@ export function RoomPanel() {
         </div>
 
         {/* QR Code Display Dialog */}
-        <QRCodeDisplay
-          roomCode={roomCode}
-          open={showQRCode}
-          onOpenChange={setShowQRCode}
-        />
+        {showQRCode && (
+          <QRCodeDisplay
+            roomCode={roomCode}
+            open={showQRCode}
+            onOpenChange={setShowQRCode}
+          />
+        )}
       </div>
     )
   }
@@ -314,11 +323,13 @@ export function RoomPanel() {
       </div>
 
       {/* QR Code Scanner Dialog */}
-      <QRCodeScanner
-        open={showScanner}
-        onOpenChange={setShowScanner}
-        onScan={handleScan}
-      />
+      {showScanner && (
+        <QRCodeScanner
+          open={showScanner}
+          onOpenChange={setShowScanner}
+          onScan={handleScan}
+        />
+      )}
     </div>
   )
 }

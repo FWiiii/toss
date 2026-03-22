@@ -8,7 +8,7 @@ import { TransferItemComponent } from '@/components/transfer-item'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { useShareTarget } from '@/hooks/use-share-target'
-import { useTransfer } from '@/lib/transfer-context'
+import { useTransfer, useTransferItems } from '@/lib/transfer-context'
 import { cn } from '@/lib/utils'
 
 const PANEL_CLASS = 'panel-surface relative overflow-hidden transition-colors'
@@ -40,16 +40,18 @@ function pendingShareReducer(state: PendingShareState | null, action: PendingSha
 export function TransferPanel() {
   const {
     connectionStatus,
+    peerCount,
+    suspendAutoReconnect,
+  } = useTransfer()
+  const {
     items,
     sendText,
     sendFile,
     cancelTransfer,
     clearHistory,
     addSystemMessage,
-    peerCount,
     sendingCount,
-    suspendAutoReconnect,
-  } = useTransfer()
+  } = useTransferItems()
   const { sharedFiles, sharedText, hasSharedContent, clearSharedData } = useShareTarget()
   const [text, setText] = useReducer((_current: string, next: string) => next, '')
   const [isDragging, setIsDragging] = useState(false)

@@ -17,6 +17,31 @@ function convertFilesFromData(files: FileData[]): File[] {
   return files.filter(f => f.data).map(f => base64ToFile(f.data, f.name, f.type))
 }
 
+interface RemoteFileData {
+  name: string
+  size: number
+  type: string
+  url: string
+}
+
+async function fetchRemoteFiles(files: RemoteFileData[]): Promise<File[]> {
+  const blobs = await Promise.all(
+    files.map(async (file) => {
+      const response = await fetch(file.url)
+      if (!response.ok) {
+        throw new Error(`Failed to fetch shared file: ${file.name}`)
+      }
+
+      return {
+        blob: await response.blob(),
+        ...file,
+      }
+    }),
+  )
+
+  return blobs.map(file => new File([file.blob], file.name, { type: file.blob.type || file.type }))
+}
+
 // Helper to combine text parts
 function combineTextParts(...parts: (string | undefined | null)[]): string {
   return parts.filter(Boolean).join('\n')
@@ -60,14 +85,14 @@ export function useShareTarget() {
           const response = await fetch(`/share?id=${shareId}`)
           if (response.ok) {
             const data = await response.json() as {
+              files: RemoteFileData[]
               title: string
               text: string
               url: string
-              files: FileData[]
             }
 
-            const files = convertFilesFromData(data.files)
-            if (files.length > 0) {
+            if (data.files.length > 0) {
+              const files = await fetchRemoteFiles(data.files)
               setSharedFiles(files)
               foundData = true
             }
@@ -77,6 +102,8 @@ export function useShareTarget() {
               setSharedText(text)
               foundData = true
             }
+
+            void fetch(`/share?id=${shareId}`, { method: 'DELETE' })
           }
         }
         catch (e) {

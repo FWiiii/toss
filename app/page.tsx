@@ -1,6 +1,7 @@
 'use client'
 
 import Image from 'next/image'
+import { memo } from 'react'
 import { RoomErrorBoundary, TransferErrorBoundary } from '@/components/error-boundary'
 import { NotificationSettings } from '@/components/notification-settings'
 import { PWARegister } from '@/components/pwa-register'
@@ -11,7 +12,7 @@ import { cn } from '@/lib/utils'
 
 const SHELL_CONTAINER = 'mx-auto w-full max-w-[1200px] px-4 sm:px-6'
 
-function AppHeader() {
+const AppHeader = memo(() => {
   const {
     notificationSettings,
     notificationPermission,
@@ -53,9 +54,9 @@ function AppHeader() {
       </div>
     </header>
   )
-}
+})
 
-function AppShell() {
+const AppShell = memo(() => {
   const { roomCode, connectionStatus } = useTransfer()
   const showSplitLayout = Boolean(roomCode) || connectionStatus !== 'disconnected'
 
@@ -87,7 +88,7 @@ function AppShell() {
       <PWARegister />
     </div>
   )
-}
+})
 
 export default function Home() {
   return (

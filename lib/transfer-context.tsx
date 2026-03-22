@@ -10,7 +10,7 @@ import { createContext, use, useCallback, useEffect, useMemo, useReducer, useRef
 import { useConnectionQuality } from '@/hooks/use-connection-quality'
 import { useConnectionSettings } from '@/hooks/use-connection-settings'
 import { useNotification } from '@/hooks/use-notification'
-import { useTransferItems } from '@/hooks/use-transfer-items'
+import { useTransferItems as useTransferItemsState } from '@/hooks/use-transfer-items'
 import { encryptJSON } from './crypto'
 import { createAttemptReconnect, createSetupConnection } from './transfer-connection'
 import { createDataTransfer } from './transfer-data'
@@ -24,20 +24,13 @@ interface TransferContextType {
   connectionInfo: ConnectionInfo
   connectionQuality: ConnectionQuality
   errorMessage: string | null
-  items: TransferItem[]
   createRoom: () => void
   joinRoom: (code: string) => void
   leaveRoom: () => void
-  sendText: (text: string) => void
-  sendFile: (file: File) => Promise<void>
-  cancelTransfer: (itemId: string) => void
-  clearHistory: () => void
-  addSystemMessage: (message: string, force?: boolean) => void
   peerCount: number
   isHost: boolean
   isCreatingRoom: boolean
   isJoiningRoom: boolean
-  sendingCount: number
   isEncrypted: boolean
   notificationSettings: {
     soundEnabled: boolean
@@ -63,7 +56,18 @@ interface TransferContextType {
   suspendAutoReconnect: (durationMs?: number) => void
 }
 
+interface TransferItemsContextType {
+  items: TransferItem[]
+  sendText: (text: string) => void
+  sendFile: (file: File) => Promise<void>
+  cancelTransfer: (itemId: string) => void
+  clearHistory: () => void
+  addSystemMessage: (message: string, force?: boolean) => void
+  sendingCount: number
+}
+
 const TransferContext = createContext<TransferContextType | null>(null)
+const TransferItemsContext = createContext<TransferItemsContextType | null>(null)
 const DEFAULT_CONNECTION_INFO: ConnectionInfo = { type: 'unknown' }
 
 interface ConnectionState {
@@ -102,6 +106,14 @@ export function useTransfer() {
   const context = use(TransferContext)
   if (!context) {
     throw new Error('useTransfer must be used within TransferProvider')
+  }
+  return context
+}
+
+export function useTransferItems() {
+  const context = use(TransferItemsContext)
+  if (!context) {
+    throw new Error('useTransferItems must be used within TransferProvider')
   }
   return context
 }
@@ -169,12 +181,16 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     items,
     addItem,
     addItemWithId,
-    addSystemMessage,
+    addSystemMessage: pushSystemMessage,
     updateItemProgress,
     clearHistory,
     createTrackedBlobUrl,
     cleanup: cleanupItems,
-  } = useTransferItems()
+  } = useTransferItemsState()
+  const enqueueSystemMessage = useCallback((message: string, force = false) => {
+    // eslint-disable-next-line react-hooks-extra/no-direct-set-state-in-use-effect
+    pushSystemMessage(message, force)
+  }, [pushSystemMessage])
 
   const connectionsRef = useRef<Map<string, any>>(new Map())
 
@@ -297,12 +313,12 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       stopQualityMonitoringRef.current()
     }
 
-    addSystemMessage('已切换连接模式，请重新连接', true)
+    enqueueSystemMessage('已切换连接模式，请重新连接', true)
     shouldReconnectRef.current = true
   }, [
-    addSystemMessage,
     cleanupAll,
     connectionSettings.forceRelay,
+    enqueueSystemMessage,
     setConnectionInfo,
     setConnectionStatus,
     setErrorMessage,
@@ -390,7 +406,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     setIsEncrypted,
     setPeerCount,
     updatePeerCount,
-    addSystemMessage,
+    addSystemMessage: enqueueSystemMessage,
     addItem,
     addItemWithId,
     updateItemProgress,
@@ -403,7 +419,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
   }), [
     addItem,
     addItemWithId,
-    addSystemMessage,
+    enqueueSystemMessage,
     broadcastToConnections,
     cleanupAll,
     createTrackedBlobUrl,
@@ -488,7 +504,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   // ============ Room Management ============
-  const roomCallbacks: RoomCallbacks = {
+  const roomCallbacks = useMemo<RoomCallbacks>(() => ({
     setIsCreatingRoom,
     setIsJoiningRoom,
     setRoomCode,
@@ -500,13 +516,30 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     broadcastToConnections,
     setConnectionInfo,
     setPeerCount,
-  }
+  }), [
+    broadcastToConnections,
+    cleanupAll,
+    setConnectionInfo,
+    setConnectionStatus,
+    setError,
+    setErrorMessage,
+    setIsHost,
+    setPeerCount,
+    setRoomCode,
+  ])
 
-  const { createRoom, joinRoom, leaveRoom: leaveRoomFn } = createRoomManagement(
-    connectionRefs,
-    roomCallbacks,
-    setupConnection,
-    connectionSettings.forceRelay,
+  const {
+    createRoom,
+    joinRoom,
+    leaveRoom: leaveRoomFn,
+  } = useMemo(
+    () => createRoomManagement(
+      connectionRefs,
+      roomCallbacks,
+      setupConnection,
+      connectionSettings.forceRelay,
+    ),
+    [connectionRefs, connectionSettings.forceRelay, roomCallbacks, setupConnection],
   )
 
   const leaveRoom = useCallback(async () => {
@@ -518,18 +551,26 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
   }, [joinRoom])
 
   // ============ Data Transfer ============
-  const dataTransferCallbacks: DataTransferCallbacks = {
+  const dataTransferCallbacks = useMemo<DataTransferCallbacks>(() => ({
     setSendingCount,
     addItem,
     addItemWithId,
     updateItemProgress,
     createTrackedBlobUrl,
-  }
+  }), [
+    addItem,
+    addItemWithId,
+    createTrackedBlobUrl,
+    updateItemProgress,
+  ])
 
-  const { sendText, sendFile } = createDataTransfer(
-    connectionRefs,
-    dataTransferCallbacks,
-    encryptorsRef,
+  const { sendText, sendFile } = useMemo(
+    () => createDataTransfer(
+      connectionRefs,
+      dataTransferCallbacks,
+      encryptorsRef,
+    ),
+    [connectionRefs, dataTransferCallbacks],
   )
 
   const cancelTransfer = useCallback((itemId: string) => {
@@ -658,42 +699,79 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
   }, [isEncrypted, getEncryptionPerformance, setEncryptionPerformance])
 
   // ============ Provider ============
+  const transferSessionValue = useMemo<TransferContextType>(() => ({
+    roomCode,
+    connectionStatus,
+    connectionInfo,
+    connectionQuality,
+    errorMessage,
+    createRoom,
+    joinRoom,
+    leaveRoom,
+    peerCount,
+    isHost,
+    isCreatingRoom,
+    isJoiningRoom,
+    isEncrypted,
+    notificationSettings,
+    notificationPermission,
+    updateNotificationSettings,
+    requestNotificationPermission,
+    testNotification,
+    connectionSettings,
+    updateConnectionSettings,
+    encryptionPerformance,
+    getEncryptionPerformance,
+    suspendAutoReconnect,
+  }), [
+    roomCode,
+    connectionStatus,
+    connectionInfo,
+    connectionQuality,
+    errorMessage,
+    createRoom,
+    joinRoom,
+    leaveRoom,
+    peerCount,
+    isHost,
+    isCreatingRoom,
+    isJoiningRoom,
+    isEncrypted,
+    notificationSettings,
+    notificationPermission,
+    updateNotificationSettings,
+    requestNotificationPermission,
+    testNotification,
+    connectionSettings,
+    updateConnectionSettings,
+    encryptionPerformance,
+    getEncryptionPerformance,
+    suspendAutoReconnect,
+  ])
+
+  const transferItemsValue = useMemo<TransferItemsContextType>(() => ({
+    items,
+    sendText,
+    sendFile,
+    cancelTransfer,
+    clearHistory,
+    addSystemMessage: enqueueSystemMessage,
+    sendingCount,
+  }), [
+    items,
+    sendText,
+    sendFile,
+    cancelTransfer,
+    clearHistory,
+    enqueueSystemMessage,
+    sendingCount,
+  ])
+
   return (
-    <TransferContext
-      value={{
-        roomCode,
-        connectionStatus,
-        connectionInfo,
-        connectionQuality,
-        errorMessage,
-        items,
-        createRoom,
-        joinRoom,
-        leaveRoom,
-        sendText,
-        sendFile,
-        cancelTransfer,
-        clearHistory,
-        addSystemMessage,
-        peerCount,
-        isHost,
-        isCreatingRoom,
-        isJoiningRoom,
-        sendingCount,
-        isEncrypted,
-        notificationSettings,
-        notificationPermission,
-        updateNotificationSettings,
-        requestNotificationPermission,
-        testNotification,
-        connectionSettings,
-        updateConnectionSettings,
-        encryptionPerformance,
-        getEncryptionPerformance,
-        suspendAutoReconnect,
-      }}
-    >
-      {children}
+    <TransferContext value={transferSessionValue}>
+      <TransferItemsContext value={transferItemsValue}>
+        {children}
+      </TransferItemsContext>
     </TransferContext>
   )
 }
