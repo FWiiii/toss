@@ -107,3 +107,30 @@ test('pwa install prompt remembers dismissal and has ios fallback instructions',
   assert.match(registerSource, /isIos/)
   assert.match(registerSource, /isStandalone/)
 })
+
+test('room code copy announcement is only exposed to screen readers when state changes', async () => {
+  const roomSource = await readProjectFile('components/room-panel.tsx')
+
+  assert.match(roomSource, /const copyAnnouncement =/)
+  assert.match(roomSource, /aria-live=\{copyAnnouncement \? 'polite' : 'off'\}/)
+})
+
+test('transfer panel keeps composer available while disconnected and queues text for later send', async () => {
+  const panelSource = await readProjectFile('components/transfer-panel.tsx')
+  const inputSource = await readProjectFile('components/transfer-input.tsx')
+
+  assert.match(panelSource, /dispatchPendingShare\(\{ type: 'append-text'/)
+  assert.doesNotMatch(panelSource, /\{isConnected && \(\s*<TransferInput/)
+  assert.match(inputSource, /allowQueueWithoutConnection/)
+})
+
+test('host leave action requires confirmation before dissolving room', async () => {
+  const roomSource = await readProjectFile('components/room-panel.tsx')
+
+  assert.match(roomSource, /showLeaveConfirm/)
+  assert.match(roomSource, /setShowLeaveConfirm\(true\)/)
+  assert.match(roomSource, /<Dialog open=\{showLeaveConfirm\}/)
+  assert.match(roomSource, /onClick=\{handleConfirmLeaveRoom\}/)
+  assert.doesNotMatch(roomSource, /window\.confirm\(/)
+  assert.match(roomSource, /onClick=\{handleLeaveRoom\}/)
+})

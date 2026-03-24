@@ -3,7 +3,7 @@
 import type { Ref } from 'react'
 import type { PendingTransferFile } from '@/lib/pending-transfer-file'
 import { Clipboard, Loader2, Send, Upload } from 'lucide-react'
-import { useId, useRef, useState } from 'react'
+import { useEffect, useId, useReducer, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
@@ -20,6 +20,7 @@ interface TransferInputProps {
   isSendingClipboard?: boolean
   highlightComposer?: boolean
   isConnected: boolean
+  allowQueueWithoutConnection?: boolean
   sendingCount?: number
   textInputRef?: Ref<HTMLTextAreaElement>
 }
@@ -34,13 +35,20 @@ export function TransferInput({
   isSendingClipboard = false,
   highlightComposer = false,
   isConnected,
+  allowQueueWithoutConnection = false,
   sendingCount = 0,
   textInputRef,
 }: TransferInputProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const [clipboardAvailable] = useState(() => typeof navigator !== 'undefined' && !!navigator.clipboard)
+  const [isMounted, markMounted] = useReducer(() => true, false)
   const textInputId = useId()
   const textHintId = useId()
+  const canQueueWithoutConnection = allowQueueWithoutConnection && !isConnected
+  const clipboardAvailable = isMounted && typeof navigator !== 'undefined' && !!navigator.clipboard
+
+  useEffect(() => {
+    markMounted()
+  }, [])
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const fileList = e.target.files
@@ -70,10 +78,10 @@ export function TransferInput({
         <Textarea
           ref={textInputRef}
           id={textInputId}
-          placeholder={isConnected ? '输入要发送的文本...' : '连接设备后可发送内容'}
+          placeholder={isConnected ? '输入要发送的文本...' : '可先输入，连接后自动发送'}
           value={text}
           onChange={e => onTextChange(e.target.value)}
-          disabled={!isConnected}
+          disabled={!isConnected && !allowQueueWithoutConnection}
           className={cn(
             'min-h-[84px] resize-none',
             highlightComposer ? 'border-accent/30 bg-accent/5' : 'border-border bg-input',
@@ -97,16 +105,16 @@ export function TransferInput({
             onBeforeFilePick?.()
             fileInputRef.current?.click()
           }}
-          disabled={!isConnected}
+          disabled={!isConnected && !allowQueueWithoutConnection}
         >
           <Upload className="w-4 h-4 mr-2" />
-          选择文件
+          {canQueueWithoutConnection ? '选择文件并排队' : '选择文件'}
         </Button>
         <Button
           variant="secondary"
           className="min-w-0 flex-1 sm:flex-none"
           onClick={() => onSendClipboard?.()}
-          disabled={!isConnected || !clipboardAvailable || isSendingClipboard}
+          disabled={(!isConnected && !allowQueueWithoutConnection) || !clipboardAvailable || isSendingClipboard}
         >
           {isSendingClipboard
             ? (
@@ -122,10 +130,10 @@ export function TransferInput({
         <Button
           className={cn('w-full', highlightComposer && 'delight-ready-pulse')}
           onClick={onSendText}
-          disabled={!isConnected || !text.trim()}
+          disabled={(!isConnected && !allowQueueWithoutConnection) || !text.trim()}
         >
           <Send className="w-4 h-4 mr-2" />
-          发送文本
+          {canQueueWithoutConnection ? '加入待发送队列' : '发送文本'}
         </Button>
       </div>
       <p id={textHintId} className="mt-2 text-xs text-muted-foreground" aria-live="polite">
@@ -140,7 +148,7 @@ export function TransferInput({
               </>
             )
           : null}
-        按 Ctrl/Cmd + Enter 快速发送
+        {isConnected ? '按 Ctrl/Cmd + Enter 快速发送' : '未连接时可先编辑并排队，连接后自动发送'}
       </p>
     </div>
   )

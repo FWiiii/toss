@@ -5,6 +5,14 @@ import dynamic from 'next/dynamic'
 import { useEffect, useId, useRef, useState } from 'react'
 import { ConnectionStatusDisplay } from '@/components/connection-status'
 import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Input } from '@/components/ui/input'
 import { useJoinCode } from '@/hooks/use-join-code'
@@ -45,6 +53,7 @@ export function RoomPanel() {
   const [copyState, setCopyState] = useState<'idle' | 'success' | 'error'>('idle')
   const [showQRCode, setShowQRCode] = useState(false)
   const [showScanner, setShowScanner] = useState(false)
+  const [showLeaveConfirm, setShowLeaveConfirm] = useState(false)
   const copyResetTimerRef = useRef<number | null>(null)
   const joinInputId = useId()
   const joinHintId = useId()
@@ -117,6 +126,33 @@ export function RoomPanel() {
   const joinHasError = connectionStatus === 'error' && Boolean(errorMessage)
   const roomCodeCopied = copyState === 'success'
   const roomCodeCopyFailed = copyState === 'error'
+  const copyAnnouncement = roomCodeCopyFailed
+    ? '复制失败，请手动输入房间代码'
+    : roomCodeCopied
+      ? `已复制，可在另一台设备粘贴${isHost ? ' · 或直接让对方扫码' : ''}`
+      : ''
+
+  const handleLeaveRoom = () => {
+    if (
+      isHost
+      && roomCode
+      && (
+        connectionStatus === 'connecting'
+        || connectionStatus === 'connected'
+        || connectionStatus === 'reconnecting'
+      )
+    ) {
+      setShowLeaveConfirm(true)
+      return
+    }
+
+    leaveRoom()
+  }
+
+  const handleConfirmLeaveRoom = () => {
+    setShowLeaveConfirm(false)
+    leaveRoom()
+  }
 
   // Room dissolved state - show return button
   if (connectionStatus === 'dissolved') {
@@ -167,11 +203,10 @@ export function RoomPanel() {
                 roomCodeCopied || roomCodeCopyFailed ? 'translate-y-0 opacity-100' : 'translate-y-1 opacity-0',
                 roomCodeCopyFailed ? STATUS_TONES.danger.inline : 'text-muted-foreground',
               )}
-              aria-live="polite"
+              aria-live={copyAnnouncement ? 'polite' : 'off'}
+              aria-atomic="true"
             >
-              {roomCodeCopyFailed
-                ? '复制失败，请手动输入房间代码'
-                : `已复制，可在另一台设备粘贴${isHost ? ' · 或直接让对方扫码' : ''}`}
+              {copyAnnouncement}
             </p>
           </div>
         )}
@@ -199,7 +234,7 @@ export function RoomPanel() {
           <Button
             variant={isHost ? 'destructive' : 'outline'}
             className={isHost ? 'flex-1' : 'w-full'}
-            onClick={leaveRoom}
+            onClick={handleLeaveRoom}
           >
             <LogOut className="w-4 h-4 mr-2" />
             {isHost ? '解散房间' : '离开房间'}
@@ -214,6 +249,25 @@ export function RoomPanel() {
             onOpenChange={setShowQRCode}
           />
         )}
+
+        <Dialog open={showLeaveConfirm} onOpenChange={setShowLeaveConfirm}>
+          <DialogContent className="sm:max-w-md" showCloseButton={false}>
+            <DialogHeader>
+              <DialogTitle>确认解散房间</DialogTitle>
+              <DialogDescription>
+                解散后所有连接会立即中断，且当前房间代码会失效。
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowLeaveConfirm(false)}>
+                取消
+              </Button>
+              <Button variant="destructive" onClick={handleConfirmLeaveRoom}>
+                解散房间
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     )
   }

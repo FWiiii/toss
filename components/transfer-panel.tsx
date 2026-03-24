@@ -26,6 +26,7 @@ interface PendingShareState {
 
 type PendingShareAction = { type: 'replace', value: PendingShareState | null }
   | { type: 'append-files', files: PendingTransferInput[] }
+  | { type: 'append-text', text: string }
 
 function pendingShareReducer(state: PendingShareState | null, action: PendingShareAction): PendingShareState | null {
   switch (action.type) {
@@ -35,6 +36,13 @@ function pendingShareReducer(state: PendingShareState | null, action: PendingSha
       return {
         files: [...(state?.files ?? []), ...action.files],
         text: state?.text ?? '',
+      }
+    case 'append-text':
+      return {
+        files: state?.files ?? [],
+        text: state?.text
+          ? `${state.text}\n\n${action.text}`
+          : action.text,
       }
     default:
       return state
@@ -153,7 +161,6 @@ export function TransferPanel() {
     [items],
   )
   const hasItems = activeItems.length > 0 || completedItems.length > 0
-  const showDormantPanel = !isConnected && !hasItems && !pendingShare
 
   const getAutoScrollAnchor = useCallback(() => {
     if (activeItems.length > 0 && activeItemsEndRef.current) {
@@ -208,7 +215,7 @@ export function TransferPanel() {
   }, [addSystemMessage, isConnected, sendFile])
 
   const handleSendClipboard = useCallback(async () => {
-    if (!isConnected || !navigator.clipboard)
+    if (!navigator.clipboard)
       return
     setIsSendingClipboard(true)
 
@@ -245,7 +252,12 @@ export function TransferPanel() {
         await sendFiles(files)
       }
       if (trimmedText) {
-        sendText(trimmedText)
+        if (isConnected) {
+          sendText(trimmedText)
+        }
+        else {
+          dispatchPendingShare({ type: 'append-text', text: trimmedText })
+        }
       }
 
       if (files.length > 0 && trimmedText) {
@@ -255,7 +267,7 @@ export function TransferPanel() {
         addSystemMessage(files.every(file => file.type.startsWith('image/')) ? '已从剪贴板加入图片' : '已从剪贴板加入文件')
       }
       else if (trimmedText) {
-        addSystemMessage('已从剪贴板加入文本')
+        addSystemMessage(isConnected ? '已从剪贴板加入文本' : '文本已加入待发送队列')
       }
       else {
         addSystemMessage('剪贴板中暂无可发送内容', true)
@@ -357,11 +369,20 @@ export function TransferPanel() {
   }, [items.length, previewImage, scrollToLatest, updateAutoScrollState])
 
   const handleSendText = useCallback(() => {
-    if (text.trim() && isConnected) {
+    if (!text.trim()) {
+      return
+    }
+
+    if (isConnected) {
       sendText(text)
       setText('')
+      return
     }
-  }, [text, isConnected, sendText])
+
+    dispatchPendingShare({ type: 'append-text', text: text.trim() })
+    addSystemMessage('文本已加入待发送队列，连接后自动发送')
+    setText('')
+  }, [addSystemMessage, isConnected, sendText, text])
 
   const handleBeforeFilePick = useCallback(() => {
     // On some mobile browsers, opening the file picker can trigger visibility
@@ -382,10 +403,8 @@ export function TransferPanel() {
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault()
-    if (isConnected) {
-      setIsDragging(true)
-    }
-  }, [isConnected])
+    setIsDragging(true)
+  }, [])
 
   const handleDragLeave = useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -400,27 +419,17 @@ export function TransferPanel() {
     e.preventDefault()
     setIsDragging(false)
 
-    if (!isConnected)
-      return
-
     const files = e.dataTransfer.files
     if (files.length > 0) {
       const droppedFiles = Array.from(files)
-      setDropFeedbackLabel(`已加入 ${droppedFiles.length} 个文件`)
+      setDropFeedbackLabel(
+        isConnected
+          ? `已加入 ${droppedFiles.length} 个文件`
+          : `已排队 ${droppedFiles.length} 个文件`,
+      )
       void sendFiles(droppedFiles)
     }
   }, [isConnected, sendFiles])
-
-  if (showDormantPanel) {
-    return (
-      <div className="rounded-xl border border-dashed border-border/70 bg-card/65 px-5 py-4">
-        <p className="text-sm font-medium text-foreground">连接后开始发送</p>
-        <p className="mt-1 text-xs text-muted-foreground">
-          文本、图片和文件会在连接成功后出现在这里。
-        </p>
-      </div>
-    )
-  }
 
   return (
     <div
@@ -549,21 +558,20 @@ export function TransferPanel() {
       </div>
 
       {/* Input Area */}
-      {isConnected && (
-        <TransferInput
-          text={text}
-          onTextChange={setText}
-          onSendText={handleSendText}
-          onSendFiles={sendFiles}
-          onBeforeFilePick={handleBeforeFilePick}
-          onSendClipboard={handleSendClipboard}
-          isSendingClipboard={isSendingClipboard}
-          highlightComposer={highlightComposer}
-          isConnected={isConnected}
-          sendingCount={sendingCount}
-          textInputRef={composerInputRef}
-        />
-      )}
+      <TransferInput
+        text={text}
+        onTextChange={setText}
+        onSendText={handleSendText}
+        onSendFiles={sendFiles}
+        onBeforeFilePick={handleBeforeFilePick}
+        onSendClipboard={handleSendClipboard}
+        isSendingClipboard={isSendingClipboard}
+        highlightComposer={highlightComposer}
+        isConnected={isConnected}
+        allowQueueWithoutConnection
+        sendingCount={sendingCount}
+        textInputRef={composerInputRef}
+      />
 
       {/* Image Preview Dialog */}
       <ImagePreviewDialog
