@@ -182,13 +182,16 @@ export function RoomPanel() {
             <div className="relative overflow-hidden rounded-xl">
               {roomCodeCopied && <div className="pointer-events-none absolute inset-0 delight-sweep-overlay" aria-hidden="true" />}
               <div className="relative rounded-xl px-12 py-1 sm:px-14">
-                <span className="block text-center text-4xl font-mono font-bold tracking-[0.3em] text-foreground sm:text-[2.6rem]">
+                <span className="block text-center text-4xl font-mono font-bold tracking-[0.22em] text-foreground sm:text-[2.6rem] sm:tracking-[0.2em]">
                   {formatCode(roomCode)}
                 </span>
                 <Button
-                  variant="ghost"
+                  variant={roomCodeCopied ? 'outline' : 'ghost'}
                   size="icon-sm"
-                  className="absolute right-1 top-1/2 -translate-y-1/2"
+                  className={cn(
+                    'absolute right-1 top-1/2 -translate-y-1/2 transition-colors',
+                    roomCodeCopied && `${STATUS_TONES.success.surface} ${STATUS_TONES.success.inline} border-success/40 hover:bg-success/15`,
+                  )}
                   onClick={handleCopyCode}
                   aria-label={roomCodeCopied ? '房间代码已复制' : '复制房间代码'}
                   title={roomCodeCopied ? '房间代码已复制' : '复制房间代码'}
@@ -199,7 +202,7 @@ export function RoomPanel() {
             </div>
             <p
               className={cn(
-                'mt-2 min-h-[1rem] text-xs transition-all duration-200',
+                'mt-2 min-h-[1.25rem] text-sm transition-all duration-200',
                 roomCodeCopied || roomCodeCopyFailed ? 'translate-y-0 opacity-100' : 'translate-y-1 opacity-0',
                 roomCodeCopyFailed ? STATUS_TONES.danger.inline : 'text-muted-foreground',
               )}

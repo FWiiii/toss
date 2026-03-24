@@ -127,7 +127,10 @@ export function PWARegister() {
   const showIosGuide = isIos && !deferredPrompt
 
   return (
-    <div className="fixed bottom-4 left-4 right-4 md:left-auto md:right-4 md:w-80 bg-card border border-border rounded-xl p-4 shadow-lg z-50">
+    <div
+      className="fixed left-4 right-4 z-50 rounded-xl border border-border bg-card p-4 shadow-lg md:left-auto md:right-4 md:w-80"
+      style={{ bottom: 'max(1rem, env(safe-area-inset-bottom))' }}
+    >
       <div className="flex items-start gap-3">
         <div className="w-10 h-10 rounded-lg bg-accent/20 flex items-center justify-center flex-shrink-0">
           <Download className="w-5 h-5 text-accent" />
@@ -136,12 +139,12 @@ export function PWARegister() {
           <h3 className="text-sm font-medium text-foreground">{showIosGuide ? '添加到主屏幕' : '安装应用'}</h3>
           {showIosGuide
             ? (
-                <p className="text-xs text-muted-foreground mt-1">
+                <p className="mt-1 text-sm text-muted-foreground">
                   iOS Safari：点“分享”按钮，再选“添加到主屏幕”。
                 </p>
               )
             : (
-                <p className="text-xs text-muted-foreground mt-1">
+                <p className="mt-1 text-sm text-muted-foreground">
                   安装 Toss 到您的设备，享受更好的体验
                 </p>
               )}

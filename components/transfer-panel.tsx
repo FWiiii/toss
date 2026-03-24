@@ -161,6 +161,20 @@ export function TransferPanel() {
     [items],
   )
   const hasItems = activeItems.length > 0 || completedItems.length > 0
+  const pendingShareSummary = useMemo(() => {
+    if (!pendingShare) {
+      return ''
+    }
+
+    const segments: string[] = []
+    if (pendingShare.files.length > 0) {
+      segments.push(`${pendingShare.files.length} 个文件`)
+    }
+    if (pendingShare.text.trim()) {
+      segments.push('1 段文本')
+    }
+    return segments.join(' · ')
+  }, [pendingShare])
 
   const getAutoScrollAnchor = useCallback(() => {
     if (activeItems.length > 0 && activeItemsEndRef.current) {
@@ -473,20 +487,13 @@ export function TransferPanel() {
       {/* Pending Share Notice */}
       {pendingShare && !isConnected && (
         <div className="mx-4 mt-4 rounded-lg border border-accent/25 bg-accent/10 p-3">
-          <div className="flex items-center gap-2 text-sm text-accent">
+          <div className="flex items-center gap-2 text-sm font-medium text-accent">
             <Share2 className="w-4 h-4" />
-            <span>有待发送的分享内容，请先连接设备</span>
+            <span>待发送内容已排队，连接后自动发送</span>
           </div>
-          {pendingShare.files.length > 0 && (
-            <p className="text-xs text-muted-foreground mt-1">
-              {pendingShare.files.length}
-              {' '}
-              个文件待发送
-            </p>
-          )}
-          {pendingShare.text.trim() && (
-            <p className="text-xs text-muted-foreground mt-1">
-              1 段文本待发送
+          {pendingShareSummary && (
+            <p className="mt-1 text-sm text-accent/90">
+              {pendingShareSummary}
             </p>
           )}
         </div>
@@ -498,7 +505,8 @@ export function TransferPanel() {
           ? (
               <EmptyState
                 icon={Send}
-                description={isConnected ? '发送文本或文件开始传输' : '连接设备后开始传输'}
+                title={isConnected ? '准备发送' : '等待连接'}
+                description={isConnected ? '发送文本或文件即可开始传输' : '连接设备后即可开始传输'}
                 containerClassName="h-full"
               />
             )
@@ -506,7 +514,7 @@ export function TransferPanel() {
               <div className="space-y-3">
                 {activeItems.length > 0 && (
                   <div className="space-y-2">
-                    <div className="flex items-center justify-between text-xs text-muted-foreground">
+                    <div className="flex items-center justify-between text-sm text-muted-foreground">
                       <span>进行中</span>
                       <span>{activeItems.length}</span>
                     </div>
@@ -530,7 +538,7 @@ export function TransferPanel() {
                     <button
                       type="button"
                       onClick={() => setShowCompleted(prev => !prev)}
-                      className="w-full flex items-center justify-between text-xs text-muted-foreground hover:text-foreground transition-colors"
+                      className="w-full flex items-center justify-between text-sm text-muted-foreground hover:text-foreground transition-colors"
                       aria-expanded={showCompleted}
                       aria-controls={completedSectionId}
                     >

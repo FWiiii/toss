@@ -289,7 +289,7 @@ export function ConnectionStatusDisplay({
             </p>
             {status === 'connected' && peerCount > 0 && (
               <p className={cn(
-                'mt-2 text-xs text-muted-foreground',
+                'mt-2 text-sm text-foreground/85',
                 showConnectionFlash && 'delight-fade-up',
               )}
               >
@@ -359,7 +359,7 @@ export function ConnectionStatusDisplay({
       {/* Tips based on status */}
       {status === 'connecting' && isHost && (
         <div className={cn(
-          'flex items-start gap-2 p-3 text-xs',
+          'flex items-start gap-2 p-3 text-sm leading-relaxed',
           STATUS_TONES.neutral.calloutSurface,
           STATUS_TONES.neutral.calloutText,
         )}
@@ -372,7 +372,7 @@ export function ConnectionStatusDisplay({
       {status === 'reconnecting' && (
         <div
           className={cn(
-            'flex items-start gap-2 p-3 text-xs',
+            'flex items-start gap-2 p-3 text-sm leading-relaxed',
             STATUS_TONES.info.calloutSurface,
             STATUS_TONES.info.calloutText,
           )}
@@ -387,7 +387,7 @@ export function ConnectionStatusDisplay({
       {status === 'error' && (
         <div
           className={cn(
-            'flex items-start gap-2 p-3 text-xs',
+            'flex items-start gap-2 p-3 text-sm leading-relaxed',
             STATUS_TONES.neutral.calloutSurface,
             STATUS_TONES.neutral.calloutText,
           )}

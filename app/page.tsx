@@ -67,7 +67,7 @@ function AppShell() {
       <main
         className={cn(
           SHELL_CONTAINER,
-          'flex flex-1 flex-col gap-5 py-5 sm:py-6',
+          'flex flex-1 flex-col gap-5 py-5 pb-[calc(8rem+env(safe-area-inset-bottom))] sm:py-6 sm:pb-[calc(8rem+env(safe-area-inset-bottom))] md:pb-6',
           showSplitLayout && 'lg:grid lg:grid-cols-[minmax(18rem,22rem)_minmax(0,1fr)] lg:items-start xl:grid-cols-[minmax(19rem,23rem)_minmax(0,1fr)]',
         )}
       >
