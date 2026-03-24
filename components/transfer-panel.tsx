@@ -298,16 +298,25 @@ export function TransferPanel() {
       return
     }
 
+    let cancelled = false
+
     if (isConnected) {
       hasProcessedShareRef.current = true
-      const timer = setTimeout(async () => {
+      void (async () => {
+        if (cancelled) {
+          return
+        }
         if (sharedText) {
           sendText(sharedText)
         }
         await sendFiles(sharedFiles)
-        clearSharedData()
-      }, 500)
-      return () => clearTimeout(timer)
+        if (!cancelled) {
+          clearSharedData()
+        }
+      })()
+      return () => {
+        cancelled = true
+      }
     }
     else {
       hasProcessedShareRef.current = true
@@ -319,6 +328,9 @@ export function TransferPanel() {
         setText(sharedText)
       }
       clearSharedData()
+      return () => {
+        cancelled = true
+      }
     }
   }, [clearSharedData, hasSharedContent, isConnected, sendFiles, sendText, sharedFiles, sharedText])
 
@@ -328,19 +340,25 @@ export function TransferPanel() {
       return
     }
 
+    let cancelled = false
     const filesToSend = [...pendingShare.files]
     const textToSend = pendingShare.text
     dispatchPendingShare({ type: 'replace', value: null })
 
-    const timer = setTimeout(async () => {
+    void (async () => {
+      if (cancelled) {
+        return
+      }
       if (textToSend.trim()) {
         sendText(textToSend)
       }
       if (filesToSend.length > 0) {
         await sendFiles(filesToSend)
       }
-    }, 500)
-    return () => clearTimeout(timer)
+    })()
+    return () => {
+      cancelled = true
+    }
   }, [isConnected, pendingShare, sendFiles, sendText])
 
   useEffect(() => {

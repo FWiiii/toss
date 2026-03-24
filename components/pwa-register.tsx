@@ -13,6 +13,21 @@ const INSTALL_PROMPT_DISMISSED_AT_KEY = 'toss-install-prompt-dismissed-at'
 const INSTALL_PROMPT_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000
 const IOS_DEVICE_REGEX = /iphone|ipad|ipod/
 
+function detectIos(): boolean {
+  if (typeof navigator === 'undefined') {
+    return false
+  }
+  return IOS_DEVICE_REGEX.test(navigator.userAgent.toLowerCase())
+}
+
+function detectStandaloneMode(): boolean {
+  if (typeof window === 'undefined') {
+    return false
+  }
+  const isLegacyStandalone = Boolean((window.navigator as Navigator & { standalone?: boolean }).standalone)
+  return window.matchMedia('(display-mode: standalone)').matches || isLegacyStandalone
+}
+
 function getDismissedAt() {
   try {
     return Number(localStorage.getItem(INSTALL_PROMPT_DISMISSED_AT_KEY) || '0')
@@ -37,28 +52,24 @@ function markInstallPromptDismissed() {
 }
 
 export function PWARegister() {
-  const [showInstallPrompt, setShowInstallPrompt] = useState(false)
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null)
-  const [isIos, setIsIos] = useState(false)
-  const [isStandalone, setIsStandalone] = useState(false)
+  const [isIos] = useState(detectIos)
+  const [isStandalone, setIsStandalone] = useState(detectStandaloneMode)
+  const [promptDismissed, setPromptDismissed] = useState(isPromptInCooldown)
 
   useEffect(() => {
     const media = window.matchMedia('(display-mode: standalone)')
-    const updateStandaloneState = () => {
-      const isLegacyStandalone = Boolean((window.navigator as Navigator & { standalone?: boolean }).standalone)
-      setIsStandalone(media.matches || isLegacyStandalone)
-    }
-    updateStandaloneState()
-
-    const userAgent = navigator.userAgent.toLowerCase()
-    const iosDetected = IOS_DEVICE_REGEX.test(userAgent)
-    setIsIos(iosDetected)
 
     // Register service worker
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch((err) => {
         console.error('SW registration failed:', err)
       })
+    }
+
+    const handleStandaloneModeChange = () => {
+      const nextStandalone = detectStandaloneMode()
+      setIsStandalone(previousStandalone => previousStandalone === nextStandalone ? previousStandalone : nextStandalone)
     }
 
     // Handle install prompt
@@ -68,34 +79,29 @@ export function PWARegister() {
       const promptEvent = e as BeforeInstallPromptEvent
       promptEvent.preventDefault()
       setDeferredPrompt(promptEvent)
-      setShowInstallPrompt(true)
     }
 
     const handleAppInstalled = () => {
-      setShowInstallPrompt(false)
       setDeferredPrompt(null)
       markInstallPromptDismissed()
-    }
-
-    if (iosDetected && !isPromptInCooldown()) {
-      setShowInstallPrompt(true)
+      setPromptDismissed(true)
     }
 
     if (typeof media.addEventListener === 'function') {
-      media.addEventListener('change', updateStandaloneState)
+      media.addEventListener('change', handleStandaloneModeChange)
     }
     else {
-      media.addListener(updateStandaloneState)
+      media.addListener(handleStandaloneModeChange)
     }
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt)
     window.addEventListener('appinstalled', handleAppInstalled)
 
     return () => {
       if (typeof media.removeEventListener === 'function') {
-        media.removeEventListener('change', updateStandaloneState)
+        media.removeEventListener('change', handleStandaloneModeChange)
       }
       else {
-        media.removeListener(updateStandaloneState)
+        media.removeListener(handleStandaloneModeChange)
       }
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt)
       window.removeEventListener('appinstalled', handleAppInstalled)
@@ -107,10 +113,11 @@ export function PWARegister() {
       deferredPrompt.prompt()
       const { outcome } = await deferredPrompt.userChoice
       if (outcome === 'accepted') {
-        setShowInstallPrompt(false)
+        setPromptDismissed(true)
       }
       else {
         markInstallPromptDismissed()
+        setPromptDismissed(true)
       }
       setDeferredPrompt(null)
     }
@@ -118,8 +125,10 @@ export function PWARegister() {
 
   const handleDismissPrompt = () => {
     markInstallPromptDismissed()
-    setShowInstallPrompt(false)
+    setPromptDismissed(true)
   }
+
+  const showInstallPrompt = !isStandalone && !promptDismissed && (isIos || deferredPrompt !== null)
 
   if (!showInstallPrompt || isStandalone)
     return null

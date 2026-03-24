@@ -17,9 +17,9 @@ function generateId(): string {
 
 export async function POST(request: NextRequest) {
   try {
-    await cleanupExpiredSharePayloads()
-
-    const formData = await request.formData()
+    const cleanupPromise = cleanupExpiredSharePayloads()
+    const formDataPromise = request.formData()
+    const [, formData] = await Promise.all([cleanupPromise, formDataPromise])
 
     const title = formData.get('title')?.toString() || ''
     const text = formData.get('text')?.toString() || ''
@@ -31,16 +31,23 @@ export async function POST(request: NextRequest) {
     let totalSize = 0
     const maxTotalSize = 50 * 1024 * 1024 // 50MB limit
 
+    const acceptedFiles: File[] = []
     for (const file of files) {
       if (file && file.size > 0 && totalSize + file.size <= maxTotalSize) {
-        const arrayBuffer = await file.arrayBuffer()
-        fileInfos.push({
-          data: new Uint8Array(arrayBuffer),
-          name: file.name,
-          type: file.type,
-        })
+        acceptedFiles.push(file)
         totalSize += file.size
       }
+    }
+
+    const fileBuffers = await Promise.all(acceptedFiles.map(file => file.arrayBuffer()))
+    for (let i = 0; i < acceptedFiles.length; i++) {
+      const file = acceptedFiles[i]
+      const arrayBuffer = fileBuffers[i]
+      fileInfos.push({
+        data: new Uint8Array(arrayBuffer),
+        name: file.name,
+        type: file.type,
+      })
     }
 
     // Generate share ID and store data on disk
