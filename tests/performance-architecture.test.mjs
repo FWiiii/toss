@@ -77,3 +77,33 @@ test('incoming connection data is processed sequentially to avoid receive races'
   assert.match(connectionSource, /conn\.on\('data',\s*\(data: any\) => \{/)
   assert.match(connectionSource, /processIncomingData\(\s*async\s*\(\)\s*=>/)
 })
+
+test('service worker does not intercept share target posts and avoids caching share payload endpoints', async () => {
+  const swSource = await readProjectFile('public/sw.js')
+
+  assert.doesNotMatch(swSource, /handleShareTarget/)
+  assert.doesNotMatch(swSource, /url\.pathname === '\/share' && event\.request\.method === 'POST'/)
+  assert.doesNotMatch(swSource, /cache\.put\(event\.request/)
+  assert.match(swSource, /requestUrl\.pathname\.startsWith\('\/share'\)/)
+})
+
+test('share storage keeps payloads long enough for delayed peer connection flows', async () => {
+  const shareStorageSource = await readProjectFile('lib/share-storage.ts')
+
+  assert.match(shareStorageSource, /SHARE_PAYLOAD_TTL_MS = 15 \* 60 \* 1000/)
+})
+
+test('share payload is deleted after the client consumes the remote manifest', async () => {
+  const shareTargetSource = await readProjectFile('hooks/use-share-target.ts')
+
+  assert.match(shareTargetSource, /fetch\(`\/share\?id=\$\{shareId\}`\s*,\s*\{\s*method:\s*'DELETE'\s*\}\)/)
+})
+
+test('pwa install prompt remembers dismissal and has ios fallback instructions', async () => {
+  const registerSource = await readProjectFile('components/pwa-register.tsx')
+
+  assert.match(registerSource, /INSTALL_PROMPT_DISMISSED_AT_KEY/)
+  assert.match(registerSource, /INSTALL_PROMPT_COOLDOWN_MS = 7 \* 24 \* 60 \* 60 \* 1000/)
+  assert.match(registerSource, /isIos/)
+  assert.match(registerSource, /isStandalone/)
+})

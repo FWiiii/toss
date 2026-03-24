@@ -9,11 +9,51 @@ interface BeforeInstallPromptEvent extends Event {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed', platform: string }>
 }
 
+const INSTALL_PROMPT_DISMISSED_AT_KEY = 'toss-install-prompt-dismissed-at'
+const INSTALL_PROMPT_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000
+const IOS_DEVICE_REGEX = /iphone|ipad|ipod/
+
+function getDismissedAt() {
+  try {
+    return Number(localStorage.getItem(INSTALL_PROMPT_DISMISSED_AT_KEY) || '0')
+  }
+  catch {
+    return 0
+  }
+}
+
+function isPromptInCooldown(now: number = Date.now()) {
+  const dismissedAt = getDismissedAt()
+  return dismissedAt > 0 && now - dismissedAt < INSTALL_PROMPT_COOLDOWN_MS
+}
+
+function markInstallPromptDismissed() {
+  try {
+    localStorage.setItem(INSTALL_PROMPT_DISMISSED_AT_KEY, String(Date.now()))
+  }
+  catch {
+    // Ignore localStorage failures.
+  }
+}
+
 export function PWARegister() {
   const [showInstallPrompt, setShowInstallPrompt] = useState(false)
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null)
+  const [isIos, setIsIos] = useState(false)
+  const [isStandalone, setIsStandalone] = useState(false)
 
   useEffect(() => {
+    const media = window.matchMedia('(display-mode: standalone)')
+    const updateStandaloneState = () => {
+      const isLegacyStandalone = Boolean((window.navigator as Navigator & { standalone?: boolean }).standalone)
+      setIsStandalone(media.matches || isLegacyStandalone)
+    }
+    updateStandaloneState()
+
+    const userAgent = navigator.userAgent.toLowerCase()
+    const iosDetected = IOS_DEVICE_REGEX.test(userAgent)
+    setIsIos(iosDetected)
+
     // Register service worker
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch((err) => {
@@ -23,16 +63,42 @@ export function PWARegister() {
 
     // Handle install prompt
     const handleBeforeInstallPrompt = (e: Event) => {
+      if (isPromptInCooldown())
+        return
       const promptEvent = e as BeforeInstallPromptEvent
       promptEvent.preventDefault()
       setDeferredPrompt(promptEvent)
       setShowInstallPrompt(true)
     }
 
+    const handleAppInstalled = () => {
+      setShowInstallPrompt(false)
+      setDeferredPrompt(null)
+      markInstallPromptDismissed()
+    }
+
+    if (iosDetected && !isPromptInCooldown()) {
+      setShowInstallPrompt(true)
+    }
+
+    if (typeof media.addEventListener === 'function') {
+      media.addEventListener('change', updateStandaloneState)
+    }
+    else {
+      media.addListener(updateStandaloneState)
+    }
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt)
+    window.addEventListener('appinstalled', handleAppInstalled)
 
     return () => {
+      if (typeof media.removeEventListener === 'function') {
+        media.removeEventListener('change', updateStandaloneState)
+      }
+      else {
+        media.removeListener(updateStandaloneState)
+      }
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt)
+      window.removeEventListener('appinstalled', handleAppInstalled)
     }
   }, [])
 
@@ -43,12 +109,22 @@ export function PWARegister() {
       if (outcome === 'accepted') {
         setShowInstallPrompt(false)
       }
+      else {
+        markInstallPromptDismissed()
+      }
       setDeferredPrompt(null)
     }
   }
 
-  if (!showInstallPrompt)
+  const handleDismissPrompt = () => {
+    markInstallPromptDismissed()
+    setShowInstallPrompt(false)
+  }
+
+  if (!showInstallPrompt || isStandalone)
     return null
+
+  const showIosGuide = isIos && !deferredPrompt
 
   return (
     <div className="fixed bottom-4 left-4 right-4 md:left-auto md:right-4 md:w-80 bg-card border border-border rounded-xl p-4 shadow-lg z-50">
@@ -57,15 +133,25 @@ export function PWARegister() {
           <Download className="w-5 h-5 text-accent" />
         </div>
         <div className="flex-1 min-w-0">
-          <h3 className="text-sm font-medium text-foreground">安装应用</h3>
-          <p className="text-xs text-muted-foreground mt-1">
-            安装 Toss 到您的设备，享受更好的体验
-          </p>
+          <h3 className="text-sm font-medium text-foreground">{showIosGuide ? '添加到主屏幕' : '安装应用'}</h3>
+          {showIosGuide
+            ? (
+                <p className="text-xs text-muted-foreground mt-1">
+                  iOS Safari：点“分享”按钮，再选“添加到主屏幕”。
+                </p>
+              )
+            : (
+                <p className="text-xs text-muted-foreground mt-1">
+                  安装 Toss 到您的设备，享受更好的体验
+                </p>
+              )}
           <div className="flex gap-2 mt-3">
-            <Button size="sm" onClick={handleInstall}>
-              安装
-            </Button>
-            <Button size="sm" variant="ghost" onClick={() => setShowInstallPrompt(false)}>
+            {!showIosGuide && (
+              <Button size="sm" onClick={handleInstall}>
+                安装
+              </Button>
+            )}
+            <Button size="sm" variant="ghost" onClick={handleDismissPrompt}>
               稍后
             </Button>
           </div>
@@ -74,7 +160,7 @@ export function PWARegister() {
           variant="ghost"
           size="icon-sm"
           className="flex-shrink-0 -mt-1 -mr-1"
-          onClick={() => setShowInstallPrompt(false)}
+          onClick={handleDismissPrompt}
           aria-label="关闭安装提示"
           title="关闭安装提示"
         >

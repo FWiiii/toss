@@ -1,5 +1,6 @@
 import type { NextRequest } from 'next/server'
 import { Buffer } from 'node:buffer'
+import { randomUUID } from 'node:crypto'
 import { NextResponse } from 'next/server'
 import {
   cleanupExpiredSharePayloads,
@@ -11,7 +12,7 @@ import {
 
 // Generate a random ID
 function generateId(): string {
-  return Math.random().toString(36).substring(2, 15)
+  return randomUUID()
 }
 
 export async function POST(request: NextRequest) {
@@ -85,6 +86,7 @@ export async function GET(request: NextRequest) {
 
     return new NextResponse(Buffer.from(file.data), {
       headers: {
+        'Cache-Control': 'no-store, max-age=0',
         'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(file.name)}`,
         'Content-Length': String(file.size),
         'Content-Type': file.type || 'application/octet-stream',
@@ -97,17 +99,24 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Share data not found or expired' }, { status: 404 })
   }
 
-  return NextResponse.json({
-    title: data.title,
-    text: data.text,
-    url: data.url,
-    files: data.files.map(file => ({
-      name: file.name,
-      size: file.size,
-      type: file.type,
-      url: `/share?id=${shareId}&file=${file.fileId}`,
-    })),
-  })
+  return NextResponse.json(
+    {
+      title: data.title,
+      text: data.text,
+      url: data.url,
+      files: data.files.map(file => ({
+        name: file.name,
+        size: file.size,
+        type: file.type,
+        url: `/share?id=${shareId}&file=${file.fileId}`,
+      })),
+    },
+    {
+      headers: {
+        'Cache-Control': 'no-store, max-age=0',
+      },
+    },
+  )
 }
 
 export async function DELETE(request: NextRequest) {

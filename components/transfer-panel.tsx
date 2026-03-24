@@ -56,7 +56,13 @@ export function TransferPanel() {
     addSystemMessage,
     sendingCount,
   } = useTransferItems()
-  const { sharedFiles, sharedText, hasSharedContent, clearSharedData } = useShareTarget()
+  const {
+    sharedFiles,
+    sharedText,
+    shareLoadError,
+    hasSharedContent,
+    clearSharedData,
+  } = useShareTarget()
   const [text, setText] = useReducer((_current: string, next: string) => next, '')
   const [isDragging, setIsDragging] = useState(false)
   const [pendingShare, dispatchPendingShare] = useReducer(pendingShareReducer, null)
@@ -69,6 +75,7 @@ export function TransferPanel() {
   )
   const [dropFeedbackLabel, setDropFeedbackLabel] = useState<string | null>(null)
   const hasProcessedShareRef = useRef(false)
+  const hasShownShareLoadErrorRef = useRef(false)
   const hasFocusedRef = useRef(false)
   const hasHighlightedComposerRef = useRef(false)
   const activeItemsEndRef = useRef<HTMLDivElement>(null)
@@ -124,6 +131,19 @@ export function TransferPanel() {
       window.clearTimeout(timeoutId)
     }
   }, [dropFeedbackLabel])
+
+  useEffect(() => {
+    if (!shareLoadError) {
+      hasShownShareLoadErrorRef.current = false
+      return
+    }
+    if (hasShownShareLoadErrorRef.current) {
+      return
+    }
+
+    addSystemMessage(shareLoadError, true)
+    hasShownShareLoadErrorRef.current = true
+  }, [addSystemMessage, shareLoadError])
   const activeItems = useMemo(
     () => items.filter(item => item.status === 'transferring' || item.status === 'pending'),
     [items],

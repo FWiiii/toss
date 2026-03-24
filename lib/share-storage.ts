@@ -3,7 +3,7 @@ import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-export const SHARE_PAYLOAD_TTL_MS = 2 * 60 * 1000
+export const SHARE_PAYLOAD_TTL_MS = 15 * 60 * 1000
 export const SHARE_STORAGE_ROOT = join(tmpdir(), 'toss-share-target')
 
 interface ShareStorageOptions {

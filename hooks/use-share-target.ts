@@ -23,6 +23,15 @@ interface RemoteFileData {
   url: string
 }
 
+async function deleteRemoteSharePayload(shareId: string): Promise<void> {
+  try {
+    await fetch(`/share?id=${shareId}`, { method: 'DELETE' })
+  }
+  catch (error) {
+    console.error('Error deleting share payload:', error)
+  }
+}
+
 async function fetchRemoteFile(file: RemoteFileData): Promise<File> {
   const response = await fetch(file.url)
   if (!response.ok) {
@@ -42,6 +51,7 @@ export function useShareTarget() {
   const [sharedData, setSharedData] = useState<SharedData | null>(null)
   const [sharedFiles, setSharedFiles] = useState<PendingTransferFile[]>([])
   const [sharedText, setSharedText] = useState<string>('')
+  const [shareLoadError, setShareLoadError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
@@ -51,12 +61,14 @@ export function useShareTarget() {
       const shareId = urlParams.get('share_id')
 
       if (!hasShared) {
+        setShareLoadError(null)
         setIsLoading(false)
         return
       }
 
       // Remove the query parameters from URL
       window.history.replaceState({}, '', '/')
+      setShareLoadError(null)
 
       let foundData = false
 
@@ -86,12 +98,29 @@ export function useShareTarget() {
               url: string
             }
 
+            let remainingRemoteFiles = data.files.length
+            let hasDeletedRemotePayload = false
+            const consumeRemotePayload = async () => {
+              if (hasDeletedRemotePayload) {
+                return
+              }
+              hasDeletedRemotePayload = true
+              await deleteRemoteSharePayload(shareId)
+            }
+
             if (data.files.length > 0) {
               setSharedFiles(
                 data.files.map(file => createRemotePendingTransferFile({
                   id: `${shareId}:${file.name}:${file.size}`,
                   name: file.name,
-                  resolveFile: () => fetchRemoteFile(file),
+                  resolveFile: async () => {
+                    const remoteFile = await fetchRemoteFile(file)
+                    remainingRemoteFiles -= 1
+                    if (remainingRemoteFiles <= 0) {
+                      void consumeRemotePayload()
+                    }
+                    return remoteFile
+                  },
                   size: file.size,
                   type: file.type,
                 })),
@@ -104,11 +133,19 @@ export function useShareTarget() {
               setSharedText(text)
               foundData = true
             }
+
+            if (data.files.length === 0) {
+              void consumeRemotePayload()
+            }
           }
         }
         catch (e) {
           console.error('Error fetching share data:', e)
         }
+      }
+
+      if (!foundData) {
+        setShareLoadError('分享内容已过期或导入失败，请重新分享。')
       }
 
       setIsLoading(false)
@@ -127,6 +164,7 @@ export function useShareTarget() {
     sharedData,
     sharedFiles,
     sharedText,
+    shareLoadError,
     isLoading,
     hasSharedContent: sharedFiles.length > 0 || sharedText.length > 0,
     clearSharedData,

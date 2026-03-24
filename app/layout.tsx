@@ -21,10 +21,10 @@ export const metadata: Metadata = {
   },
   icons: {
     icon: [
-      { url: '/logo.svg', sizes: '192x192', type: 'image/svg' },
-      { url: '/logo.svg', sizes: '512x512', type: 'image/svg' },
+      { url: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
+      { url: '/icons/icon-512.png', sizes: '512x512', type: 'image/png' },
     ],
-    apple: '/logo.svg',
+    apple: '/icons/apple-touch-icon.png',
   },
 }
 
