@@ -68,6 +68,7 @@ interface TransferItemsContextType {
   cancelTransfer: (itemId: string) => void
   clearHistory: () => void
   addSystemMessage: (message: string, force?: boolean) => void
+  removeItem: (itemId: string) => void
   sendingCount: number
 }
 
@@ -188,6 +189,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     addItemWithId,
     addSystemMessage: pushSystemMessage,
     updateItemProgress,
+    removeItem,
     clearHistory,
     createTrackedBlobUrl,
     cleanup: cleanupItems,
@@ -444,14 +446,12 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     }
 
     if (screenShareItemIdRef.current) {
-      updateItemProgress(screenShareItemIdRef.current, {
-        status: 'completed',
-      })
+      removeItem(screenShareItemIdRef.current)
       screenShareItemIdRef.current = null
     }
 
     enqueueSystemMessage('已停止屏幕共享', true)
-  }, [updateItemProgress, enqueueSystemMessage])
+  }, [removeItem, enqueueSystemMessage])
 
   stopScreenShareRef.current = stopScreenShare
 
@@ -718,15 +718,13 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       if (incomingScreenShareCallRef.current === call) {
         incomingScreenShareCallRef.current = null
         if (incomingScreenShareItemIdRef.current) {
-          updateItemProgress(incomingScreenShareItemIdRef.current, {
-            status: 'completed',
-          })
+          removeItem(incomingScreenShareItemIdRef.current)
           incomingScreenShareItemIdRef.current = null
         }
         enqueueSystemMessage('屏幕共享已结束', true)
       }
     })
-  }, [addItemWithId, enqueueSystemMessage, updateItemProgress])
+  }, [addItemWithId, enqueueSystemMessage, removeItem])
 
   const roomCallbacks = useMemo<RoomCallbacks>(() => ({
     setIsCreatingRoom,
@@ -992,6 +990,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     cancelTransfer,
     clearHistory,
     addSystemMessage: enqueueSystemMessage,
+    removeItem,
     sendingCount,
   }), [
     items,
@@ -1000,6 +999,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     cancelTransfer,
     clearHistory,
     enqueueSystemMessage,
+    removeItem,
     sendingCount,
   ])
 

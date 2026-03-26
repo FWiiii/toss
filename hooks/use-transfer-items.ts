@@ -121,6 +121,11 @@ export function useTransferItems() {
     })
   }, [])
 
+  // Remove item by ID
+  const removeItem = useCallback((id: string) => {
+    setItems(prev => prev.filter(item => item.id !== id))
+  }, [])
+
   // Clear all items
   const clearHistory = useCallback(() => {
     revokeAllBlobUrls()
@@ -151,6 +156,7 @@ export function useTransferItems() {
     addItemWithId,
     addSystemMessage,
     updateItemProgress,
+    removeItem,
     clearHistory,
     createTrackedBlobUrl,
     revokeAllBlobUrls,
