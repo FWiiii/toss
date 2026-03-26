@@ -358,9 +358,9 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       const displayMediaOptions: DisplayMediaStreamOptions = {
         video: {
           displaySurface: 'browser',
-          width: { ideal: 1920 },
-          height: { ideal: 1080 },
-          frameRate: { ideal: 30 },
+          width: { ideal: 1920, max: 1920 },
+          height: { ideal: 1080, max: 1080 },
+          frameRate: { ideal: 60, min: 30 },
         },
         audio: true,
       }
@@ -369,6 +369,11 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       screenShareStreamRef.current = stream
 
       const videoTrack = stream.getVideoTracks()[0]
+
+      videoTrack.applyConstraints({
+        frameRate: { ideal: 60, min: 30 },
+      }).catch(() => {})
+
       const detectedType = normalizeScreenShareType(videoTrack?.getSettings().displaySurface) ?? streamType
 
       const itemId = addItemWithId({
