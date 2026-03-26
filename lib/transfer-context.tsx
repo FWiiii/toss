@@ -518,6 +518,20 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       if (document.visibilityState === 'visible') {
         tryReconnect()
       }
+      else {
+        // Page entering background - trigger ICE restart to keep NAT mappings alive
+        for (const conn of connectionsRef.current.values()) {
+          if (conn?.open) {
+            const pc = conn.peerConnection as RTCPeerConnection | undefined
+            if (pc) {
+              try {
+                pc.restartIce()
+              }
+              catch {}
+            }
+          }
+        }
+      }
     }
 
     const handleOnline = () => {

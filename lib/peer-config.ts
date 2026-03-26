@@ -26,6 +26,11 @@ function buildIceServers(): RTCIceServer[] {
   const servers: RTCIceServer[] = [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:stun3.l.google.com:19302' },
+    { urls: 'stun:stun4.l.google.com:19302' },
+    { urls: 'stun:stun.stunprotocol.org:3478' },
+    { urls: 'stun:stun.voipgate.com:3478' },
   ]
 
   // Add TURN servers if credentials are configured
@@ -57,7 +62,13 @@ function buildIceServers(): RTCIceServer[] {
  */
 export const ICE_SERVERS = {
   iceServers: buildIceServers(),
-  iceCandidatePoolSize: 10,
+  iceCandidatePoolSize: 20,
+  // Bundle policy for efficient multi-stream handling
+  bundlePolicy: 'max-bundle',
+  // RTCP mux to reduce port usage
+  rtcpMuxPolicy: 'require',
+  // Ice transport policy - 'all' allows both relay and direct
+  iceTransportPolicy: 'all',
 }
 
 /**
@@ -168,7 +179,7 @@ export const FILE_RESUME_WAIT_TIMEOUT = 30000
 /**
  * Maximum reconnection attempts
  */
-export const MAX_RECONNECT_ATTEMPTS = 5
+export const MAX_RECONNECT_ATTEMPTS = 10
 
 /**
  * Connection timeout in milliseconds
@@ -176,6 +187,6 @@ export const MAX_RECONNECT_ATTEMPTS = 5
 export const CONNECTION_TIMEOUT = 40000
 
 /**
- * Allow brief ICE disconnects to recover before restarting.
+ * ICE disconnected grace period - allow brief disconnects to recover
  */
-export const ICE_DISCONNECTED_GRACE_PERIOD_MS = 6000
+export const ICE_DISCONNECTED_GRACE_PERIOD_MS = 8000
