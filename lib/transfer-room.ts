@@ -5,6 +5,7 @@
 
 import type { ConnectionRefs } from './transfer-connection'
 import { generateRoomCode, getPeerOptions, PEER_PREFIX } from './peer-config'
+import { bindIncomingScreenShareCall } from './screen-share'
 
 const ROOM_CODE_SANITIZE_REGEX = /[^A-Z0-9]/g
 
@@ -20,7 +21,7 @@ export interface RoomCallbacks {
   broadcastToConnections: (data: any) => Promise<void>
   setConnectionInfo: (info: any) => void
   setPeerCount: (count: number) => void
-  onIncomingScreenShare?: (call: any) => void
+  onIncomingScreenShare?: (remoteStream: MediaStream, call: any) => void
 }
 
 export function createRoomManagement(
@@ -78,16 +79,7 @@ export function createRoomManagement(
       })
 
       peer.on('call', (call) => {
-        if (call.remoteStream) {
-          call.answer(call.remoteStream)
-          callbacks.onIncomingScreenShare?.(call)
-        }
-        else {
-          call.answer()
-          call.on('stream', () => {
-            callbacks.onIncomingScreenShare?.(call)
-          })
-        }
+        bindIncomingScreenShareCall(call, callbacks.onIncomingScreenShare)
       })
 
       peer.on('error', (err) => {
@@ -174,16 +166,7 @@ export function createRoomManagement(
       })
 
       peer.on('call', (call) => {
-        if (call.remoteStream) {
-          call.answer(call.remoteStream)
-          callbacks.onIncomingScreenShare?.(call)
-        }
-        else {
-          call.answer()
-          call.on('stream', () => {
-            callbacks.onIncomingScreenShare?.(call)
-          })
-        }
+        bindIncomingScreenShareCall(call, callbacks.onIncomingScreenShare)
       })
 
       peer.on('error', (err) => {

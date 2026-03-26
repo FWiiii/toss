@@ -93,6 +93,7 @@ interface TransferItemProps {
   onPreviewImage: (url: string, name: string) => void
   onDownload: (url: string, name?: string) => void
   onCancel?: (itemId: string) => void
+  onStopStream?: (itemId: string) => void
 }
 
 // System message component
@@ -452,7 +453,7 @@ function TextItem({ item }: { item: TransferItem }) {
   )
 }
 
-export const TransferItemComponent = memo(({ item, onPreviewImage, onDownload, onCancel }: TransferItemProps) => {
+export const TransferItemComponent = memo(({ item, onPreviewImage, onDownload, onCancel, onStopStream }: TransferItemProps) => {
   const [showSettleIn, setShowSettleIn] = useReducer(
     (_current: boolean, next: boolean) => next,
     false,
@@ -481,7 +482,7 @@ export const TransferItemComponent = memo(({ item, onPreviewImage, onDownload, o
     return (
       <StreamItem
         item={item}
-        onStop={onCancel}
+        onStop={item.direction === 'sent' ? onStopStream : undefined}
       />
     )
   }

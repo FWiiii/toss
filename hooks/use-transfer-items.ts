@@ -129,7 +129,7 @@ export function useTransferItems() {
   // Clear all items
   const clearHistory = useCallback(() => {
     revokeAllBlobUrls()
-    setItems([])
+    setItems(prev => prev.filter(item => item.status === 'transferring' || item.status === 'pending'))
   }, [revokeAllBlobUrls])
 
   // Cleanup function to be called on unmount

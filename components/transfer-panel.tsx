@@ -84,7 +84,6 @@ export function TransferPanel() {
     false,
   )
   const [dropFeedbackLabel, setDropFeedbackLabel] = useState<string | null>(null)
-  const [isScreenSharing, setIsScreenSharing] = useState(false)
   const hasProcessedShareRef = useRef(false)
   const hasShownShareLoadErrorRef = useRef(false)
   const hasFocusedRef = useRef(false)
@@ -97,6 +96,10 @@ export function TransferPanel() {
   const completedSectionId = useId()
 
   const isConnected = connectionStatus === 'connected' && peerCount > 0
+  const isScreenSharing = useMemo(
+    () => items.some(item => item.type === 'stream' && item.direction === 'sent'),
+    [items],
+  )
 
   useEffect(() => {
     if (!isConnected) {
@@ -466,6 +469,10 @@ export function TransferPanel() {
     }
   }, [isConnected, sendFiles])
 
+  const handleStopStream = useCallback(() => {
+    stopScreenShare()
+  }, [stopScreenShare])
+
   return (
     <div
       className={cn(
@@ -495,12 +502,9 @@ export function TransferPanel() {
               onClick={() => {
                 if (isScreenSharing) {
                   stopScreenShare()
-                  setIsScreenSharing(false)
                 }
                 else {
-                  startScreenShare()
-                    .then(() => setIsScreenSharing(true))
-                    .catch(() => setIsScreenSharing(false))
+                  void startScreenShare()
                 }
               }}
             >
@@ -569,6 +573,7 @@ export function TransferPanel() {
                           onPreviewImage={handlePreviewImage}
                           onDownload={handleDownload}
                           onCancel={cancelTransfer}
+                          onStopStream={handleStopStream}
                         />
                       ))}
                     </div>
@@ -597,6 +602,7 @@ export function TransferPanel() {
                             onPreviewImage={handlePreviewImage}
                             onDownload={handleDownload}
                             onCancel={cancelTransfer}
+                            onStopStream={handleStopStream}
                           />
                         ))}
                       </div>

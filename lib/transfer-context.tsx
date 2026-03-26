@@ -15,6 +15,7 @@ import { useTransferItems as useTransferItemsState } from '@/hooks/use-transfer-
 import { createConnectionAttemptRegistry } from './connection-attempts'
 import { encryptJSON } from './crypto'
 import { PEER_PREFIX } from './peer-config'
+import { normalizeScreenShareType, stopIncomingScreenShare, stopOutgoingScreenShare } from './screen-share'
 import { createAttemptReconnect, createSetupConnection } from './transfer-connection'
 import { createDataTransfer } from './transfer-data'
 import { createRoomManagement } from './transfer-room'
@@ -242,8 +243,10 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
 
   // Screen share state
   const screenShareStreamRef = useRef<MediaStream | null>(null)
-  const screenShareCallRef = useRef<any>(null)
+  const screenShareCallsRef = useRef<any[]>([])
   const screenShareItemIdRef = useRef<string | null>(null)
+  const incomingScreenShareCallRef = useRef<any>(null)
+  const incomingScreenShareItemIdRef = useRef<string | null>(null)
   const stopScreenShareRef = useRef<(() => void) | null>(null)
 
   // Reconnection state
@@ -307,10 +310,43 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     pendingReconnectRef.current = false
   }, [])
 
+  const cleanupScreenShare = useCallback((notify = false) => {
+    const outgoingStream = screenShareStreamRef.current
+    const outgoingCalls = screenShareCallsRef.current
+    const outgoingItemId = screenShareItemIdRef.current
+    const incomingCall = incomingScreenShareCallRef.current
+    const incomingItemId = incomingScreenShareItemIdRef.current
+
+    screenShareStreamRef.current = null
+    screenShareCallsRef.current = []
+    screenShareItemIdRef.current = null
+    incomingScreenShareCallRef.current = null
+    incomingScreenShareItemIdRef.current = null
+
+    const stoppedOutgoing = stopOutgoingScreenShare({
+      stream: outgoingStream,
+      calls: outgoingCalls,
+      itemId: outgoingItemId,
+      removeItem,
+    })
+    const stoppedIncoming = stopIncomingScreenShare({
+      call: incomingCall,
+      itemId: incomingItemId,
+      removeItem,
+    })
+
+    if (notify && stoppedOutgoing) {
+      enqueueSystemMessage('已停止屏幕共享', true)
+    }
+
+    return stoppedOutgoing || stoppedIncoming
+  }, [enqueueSystemMessage, removeItem])
+
   const cleanupAll = useCallback(() => {
+    cleanupScreenShare(false)
     cleanupConnections()
     destroyPeer()
-  }, [cleanupConnections, destroyPeer])
+  }, [cleanupConnections, cleanupScreenShare, destroyPeer])
 
   const suspendAutoReconnect = useCallback((durationMs = 15000) => {
     const safeDuration = Number.isFinite(durationMs) ? Math.max(0, durationMs) : 0
@@ -333,24 +369,14 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       screenShareStreamRef.current = stream
 
       const videoTrack = stream.getVideoTracks()[0]
-      const displaySurface = videoTrack.getSettings().displaySurface
-      let detectedType: 'screen' | 'window' | 'tab' = streamType
-
-      if (displaySurface === 'browser') {
-        detectedType = 'tab'
-      }
-      else if (displaySurface === 'window') {
-        detectedType = 'window'
-      }
-      else if (displaySurface === 'monitor') {
-        detectedType = 'screen'
-      }
+      const detectedType = normalizeScreenShareType(videoTrack?.getSettings().displaySurface) ?? streamType
 
       const itemId = addItemWithId({
         type: 'stream',
         streamType: detectedType,
         content: stream as unknown as string,
         direction: 'sent',
+        status: 'transferring',
       })
 
       screenShareItemIdRef.current = itemId
@@ -387,7 +413,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
           }
         }
         if (calls.length > 0) {
-          screenShareCallRef.current = calls[0]
+          screenShareCallsRef.current = calls
           enqueueSystemMessage(`开始共享${typeName}`, true)
         }
         else {
@@ -400,7 +426,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
         if (hostPeerId) {
           const call = peerRef.current.call(hostPeerId, stream)
           if (call) {
-            screenShareCallRef.current = call
+            screenShareCallsRef.current = [call]
             call.on('error', (err: unknown) => {
               console.error('Screen share call error:', err)
               enqueueSystemMessage(`${typeName}共享连接失败`, true)
@@ -425,33 +451,25 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
   }, [addItemWithId, enqueueSystemMessage, roomCode, isHost])
 
   const stopScreenShare = useCallback(() => {
-    if (screenShareStreamRef.current) {
-      screenShareStreamRef.current.getTracks().forEach(track => track.stop())
-      screenShareStreamRef.current = null
-    }
+    const outgoingStream = screenShareStreamRef.current
+    const outgoingCalls = screenShareCallsRef.current
+    const outgoingItemId = screenShareItemIdRef.current
 
-    if (screenShareCallRef.current) {
-      try {
-        if (Array.isArray(screenShareCallRef.current)) {
-          for (const call of screenShareCallRef.current) {
-            call.close()
-          }
-        }
-        else {
-          screenShareCallRef.current.close()
-        }
-      }
-      catch {}
-      screenShareCallRef.current = null
-    }
+    screenShareStreamRef.current = null
+    screenShareCallsRef.current = []
+    screenShareItemIdRef.current = null
 
-    if (screenShareItemIdRef.current) {
-      removeItem(screenShareItemIdRef.current)
-      screenShareItemIdRef.current = null
-    }
+    const stoppedOutgoing = stopOutgoingScreenShare({
+      stream: outgoingStream,
+      calls: outgoingCalls,
+      itemId: outgoingItemId,
+      removeItem,
+    })
 
-    enqueueSystemMessage('已停止屏幕共享', true)
-  }, [removeItem, enqueueSystemMessage])
+    if (stoppedOutgoing) {
+      enqueueSystemMessage('已停止屏幕共享', true)
+    }
+  }, [enqueueSystemMessage, removeItem])
 
   stopScreenShareRef.current = stopScreenShare
 
@@ -697,22 +715,36 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
   }, [hasHealthyConnections])
 
   // ============ Room Management ============
-  const incomingScreenShareCallRef = useRef<any>(null)
-  const incomingScreenShareItemIdRef = useRef<string | null>(null)
-
-  const handleIncomingScreenShare = useCallback((call: any) => {
-    call.on('stream', (remoteStream: MediaStream) => {
-      const itemId = addItemWithId({
-        type: 'stream',
-        streamType: 'screen',
-        content: remoteStream as unknown as string,
-        direction: 'received',
+  const handleIncomingScreenShare = useCallback((remoteStream: MediaStream, call: any) => {
+    if (incomingScreenShareCallRef.current && incomingScreenShareCallRef.current !== call) {
+      const previousCall = incomingScreenShareCallRef.current
+      const previousItemId = incomingScreenShareItemIdRef.current
+      incomingScreenShareCallRef.current = null
+      incomingScreenShareItemIdRef.current = null
+      stopIncomingScreenShare({
+        call: previousCall,
+        itemId: previousItemId,
+        removeItem,
       })
+    }
 
-      incomingScreenShareCallRef.current = call
-      incomingScreenShareItemIdRef.current = itemId
-      enqueueSystemMessage('收到屏幕共享', true)
+    const existingItemId = incomingScreenShareItemIdRef.current
+    if (incomingScreenShareCallRef.current === call && existingItemId) {
+      return
+    }
+
+    const remoteVideoTrack = remoteStream.getVideoTracks()[0]
+    const itemId = addItemWithId({
+      type: 'stream',
+      streamType: normalizeScreenShareType(remoteVideoTrack?.getSettings().displaySurface),
+      content: remoteStream as unknown as string,
+      direction: 'received',
+      status: 'transferring',
     })
+
+    incomingScreenShareCallRef.current = call
+    incomingScreenShareItemIdRef.current = itemId
+    enqueueSystemMessage('收到屏幕共享', true)
 
     call.on('close', () => {
       if (incomingScreenShareCallRef.current === call) {
@@ -842,6 +874,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
         reconnectTimeoutRef.current = null
       }
 
+      cleanupScreenShare(false)
       cleanupQuality()
 
       activeConnections.forEach(safeClose)
@@ -863,7 +896,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
 
       cleanupItems()
     }
-  }, [cleanupQuality, cleanupItems])
+  }, [cleanupQuality, cleanupItems, cleanupScreenShare])
 
   // ============ Performance Monitoring ============
   const getEncryptionPerformance = useCallback((): EncryptionPerformance | null => {
