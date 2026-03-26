@@ -445,7 +445,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
 
     if (screenShareItemIdRef.current) {
       updateItemProgress(screenShareItemIdRef.current, {
-        status: 'cancelled',
+        status: 'completed',
       })
       screenShareItemIdRef.current = null
     }
@@ -698,10 +698,11 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
 
   // ============ Room Management ============
   const incomingScreenShareCallRef = useRef<any>(null)
+  const incomingScreenShareItemIdRef = useRef<string | null>(null)
 
   const handleIncomingScreenShare = useCallback((call: any) => {
     call.on('stream', (remoteStream: MediaStream) => {
-      addItemWithId({
+      const itemId = addItemWithId({
         type: 'stream',
         streamType: 'screen',
         content: remoteStream as unknown as string,
@@ -709,15 +710,23 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       })
 
       incomingScreenShareCallRef.current = call
+      incomingScreenShareItemIdRef.current = itemId
       enqueueSystemMessage('收到屏幕共享', true)
     })
 
     call.on('close', () => {
       if (incomingScreenShareCallRef.current === call) {
         incomingScreenShareCallRef.current = null
+        if (incomingScreenShareItemIdRef.current) {
+          updateItemProgress(incomingScreenShareItemIdRef.current, {
+            status: 'completed',
+          })
+          incomingScreenShareItemIdRef.current = null
+        }
+        enqueueSystemMessage('屏幕共享已结束', true)
       }
     })
-  }, [addItemWithId, enqueueSystemMessage])
+  }, [addItemWithId, enqueueSystemMessage, updateItemProgress])
 
   const roomCallbacks = useMemo<RoomCallbacks>(() => ({
     setIsCreatingRoom,
