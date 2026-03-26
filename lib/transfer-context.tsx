@@ -344,10 +344,6 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
         detectedType = 'screen'
       }
 
-      stream.addEventListener('inactive', () => {
-        stopScreenShareRef.current?.()
-      })
-
       const itemId = addItemWithId({
         type: 'stream',
         streamType: detectedType,
@@ -357,16 +353,65 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
 
       screenShareItemIdRef.current = itemId
 
-      const hostPeerId = PEER_PREFIX + roomCode
-      if (peerRef.current && !peerRef.current.destroyed && hostPeerId) {
-        const call = peerRef.current.call(hostPeerId, stream)
-        if (call) {
-          screenShareCallRef.current = call
-        }
-      }
+      stream.addEventListener('inactive', () => {
+        stopScreenShareRef.current?.()
+      })
 
       const typeName = detectedType === 'tab' ? '标签页' : detectedType === 'window' ? '窗口' : '屏幕'
-      enqueueSystemMessage(`开始共享${typeName}`, true)
+
+      if (!peerRef.current || peerRef.current.destroyed) {
+        enqueueSystemMessage('屏幕共享启动失败：未连接到对端', true)
+        stopScreenShareRef.current?.()
+        return null
+      }
+
+      const hostPeerId = PEER_PREFIX + roomCode
+
+      if (isHost) {
+        const calls: any[] = []
+        for (const [peerId] of connectionsRef.current.entries()) {
+          try {
+            const call = peerRef.current.call(peerId, stream)
+            if (call) {
+              calls.push(call)
+              call.on('error', (err: unknown) => {
+                console.error('Screen share call error:', err)
+                enqueueSystemMessage(`${typeName}共享连接失败`, true)
+              })
+            }
+          }
+          catch (err) {
+            console.error('Failed to call peer:', peerId, err)
+          }
+        }
+        if (calls.length > 0) {
+          screenShareCallRef.current = calls[0]
+          enqueueSystemMessage(`开始共享${typeName}`, true)
+        }
+        else {
+          enqueueSystemMessage('没有已连接的设备', true)
+          stopScreenShareRef.current?.()
+          return null
+        }
+      }
+      else {
+        if (hostPeerId) {
+          const call = peerRef.current.call(hostPeerId, stream)
+          if (call) {
+            screenShareCallRef.current = call
+            call.on('error', (err: unknown) => {
+              console.error('Screen share call error:', err)
+              enqueueSystemMessage(`${typeName}共享连接失败`, true)
+            })
+            enqueueSystemMessage(`开始共享${typeName}`, true)
+          }
+          else {
+            enqueueSystemMessage('无法创建通话', true)
+            stopScreenShareRef.current?.()
+            return null
+          }
+        }
+      }
 
       return itemId
     }
@@ -375,7 +420,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       enqueueSystemMessage(message, true)
       return null
     }
-  }, [addItemWithId, enqueueSystemMessage, roomCode])
+  }, [addItemWithId, enqueueSystemMessage, roomCode, isHost])
 
   const stopScreenShare = useCallback(() => {
     if (screenShareStreamRef.current) {
@@ -385,7 +430,14 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
 
     if (screenShareCallRef.current) {
       try {
-        screenShareCallRef.current.close()
+        if (Array.isArray(screenShareCallRef.current)) {
+          for (const call of screenShareCallRef.current) {
+            call.close()
+          }
+        }
+        else {
+          screenShareCallRef.current.close()
+        }
       }
       catch {}
       screenShareCallRef.current = null
