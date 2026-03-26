@@ -2,6 +2,7 @@
 
 import type { TransferItem } from '@/lib/types'
 import { useCallback, useRef, useState } from 'react'
+import { collectTrackedBlobUrls, partitionTransferItemsForHistoryClear } from '@/lib/transfer-item-history'
 import { generateUUID } from '@/lib/utils'
 
 /**
@@ -33,6 +34,27 @@ export function useTransferItems() {
       }
     })
     blobUrlsRef.current.clear()
+  }, [])
+
+  const revokeTrackedBlobUrls = useCallback((urls: string[]) => {
+    for (const url of urls) {
+      if (!blobUrlsRef.current.has(url)) {
+        continue
+      }
+
+      try {
+        URL.revokeObjectURL(url)
+      }
+      catch {}
+
+      const cleanup = blobUrlCleanupRef.current.get(url)
+      if (cleanup) {
+        void cleanup()
+        blobUrlCleanupRef.current.delete(url)
+      }
+
+      blobUrlsRef.current.delete(url)
+    }
   }, [])
 
   // Create and track a Blob URL
@@ -128,9 +150,12 @@ export function useTransferItems() {
 
   // Clear all items
   const clearHistory = useCallback(() => {
-    revokeAllBlobUrls()
-    setItems(prev => prev.filter(item => item.status === 'transferring' || item.status === 'pending'))
-  }, [revokeAllBlobUrls])
+    setItems((prev) => {
+      const { kept, removed } = partitionTransferItemsForHistoryClear(prev)
+      revokeTrackedBlobUrls(collectTrackedBlobUrls(removed))
+      return kept
+    })
+  }, [revokeTrackedBlobUrls])
 
   // Cleanup function to be called on unmount
   const cleanup = useCallback(() => {

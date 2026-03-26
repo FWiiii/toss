@@ -86,7 +86,7 @@ export const StreamItem = memo(({ item, onStop }: StreamItemProps) => {
           ref={videoRef}
           autoPlay
           playsInline
-          muted
+          muted={item.direction === 'sent'}
           className="w-full h-full object-contain"
         />
         <div className="absolute top-2 left-2 flex items-center gap-1.5 px-2 py-1 rounded-full bg-black/60 text-white text-xs">

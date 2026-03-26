@@ -9,10 +9,15 @@ interface StreamLike {
 }
 
 interface MediaConnectionLike {
+  peer?: string
   remoteStream?: unknown
   answer: () => void
   on: (...args: any[]) => unknown
   close?: () => void
+}
+
+interface PeerLike {
+  call: (peerId: string, stream: MediaStream) => MediaConnectionLike | null | undefined
 }
 
 export function normalizeScreenShareType(displaySurface?: string): ScreenShareType {
@@ -111,6 +116,40 @@ export function stopIncomingScreenShare({
   }
 
   return changed
+}
+
+export function ensureScreenShareCallForPeer({
+  peer,
+  peerId,
+  stream,
+  calls,
+  onError,
+  onClose,
+}: {
+  peer: PeerLike
+  peerId: string
+  stream: MediaStream
+  calls: MediaConnectionLike[]
+  onError?: (peerId: string, error: unknown) => void
+  onClose?: (peerId: string) => void
+}) {
+  if (calls.some(call => call.peer === peerId)) {
+    return calls
+  }
+
+  const call = peer.call(peerId, stream)
+  if (!call) {
+    return calls
+  }
+
+  call.on('error', (error: unknown) => {
+    onError?.(peerId, error)
+  })
+  call.on('close', () => {
+    onClose?.(peerId)
+  })
+
+  return [...calls, call]
 }
 
 export function isSentScreenShareItem(item: Pick<TransferItem, 'type' | 'direction'>) {

@@ -86,6 +86,7 @@ export interface ConnectionCallbacks {
   recordBandwidth: (peerId: string, speed: number) => void
   removePeerQuality: (peerId: string) => void
   notifyReceived: (type: string, name?: string) => void
+  handlePeerConnectedToScreenShare?: (peerId: string) => void
 }
 
 export function createSetupConnection(
@@ -275,6 +276,7 @@ export function createSetupConnection(
       }
 
       updatePeerCount()
+      callbacks.handlePeerConnectedToScreenShare?.(conn.peer)
 
       if (!isOutgoing) {
         // 延迟广播，等待加密建立

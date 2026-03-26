@@ -15,7 +15,7 @@ import { useTransferItems as useTransferItemsState } from '@/hooks/use-transfer-
 import { createConnectionAttemptRegistry } from './connection-attempts'
 import { encryptJSON } from './crypto'
 import { PEER_PREFIX } from './peer-config'
-import { normalizeScreenShareType, stopIncomingScreenShare, stopOutgoingScreenShare } from './screen-share'
+import { ensureScreenShareCallForPeer, normalizeScreenShareType, stopIncomingScreenShare, stopOutgoingScreenShare } from './screen-share'
 import { createAttemptReconnect, createSetupConnection } from './transfer-connection'
 import { createDataTransfer } from './transfer-data'
 import { createRoomManagement } from './transfer-room'
@@ -245,6 +245,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
   const screenShareStreamRef = useRef<MediaStream | null>(null)
   const screenShareCallsRef = useRef<any[]>([])
   const screenShareItemIdRef = useRef<string | null>(null)
+  const screenShareTypeNameRef = useRef('屏幕')
   const incomingScreenShareCallRef = useRef<any>(null)
   const incomingScreenShareItemIdRef = useRef<string | null>(null)
   const stopScreenShareRef = useRef<(() => void) | null>(null)
@@ -320,6 +321,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     screenShareStreamRef.current = null
     screenShareCallsRef.current = []
     screenShareItemIdRef.current = null
+    screenShareTypeNameRef.current = '屏幕'
     incomingScreenShareCallRef.current = null
     incomingScreenShareItemIdRef.current = null
 
@@ -353,6 +355,35 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     suppressReconnectUntilRef.current = Date.now() + safeDuration
   }, [])
 
+  const removeScreenShareCallsForPeer = useCallback((peerId: string) => {
+    screenShareCallsRef.current = screenShareCallsRef.current.filter(call => call.peer !== peerId)
+  }, [])
+
+  const attachScreenShareToPeer = useCallback((peerId: string) => {
+    const stream = screenShareStreamRef.current
+    const peer = peerRef.current
+
+    if (!stream || !peer || peer.destroyed) {
+      return false
+    }
+
+    const previousCount = screenShareCallsRef.current.length
+    screenShareCallsRef.current = ensureScreenShareCallForPeer({
+      peer,
+      peerId,
+      stream,
+      calls: screenShareCallsRef.current,
+      onError: (failedPeerId, error) => {
+        console.error('Screen share call error:', error)
+        removeScreenShareCallsForPeer(failedPeerId)
+        enqueueSystemMessage(`${screenShareTypeNameRef.current}共享连接失败`, true)
+      },
+      onClose: removeScreenShareCallsForPeer,
+    })
+
+    return screenShareCallsRef.current.length > previousCount
+  }, [enqueueSystemMessage, removeScreenShareCallsForPeer])
+
   const startScreenShare = useCallback(async (streamType: 'screen' | 'window' | 'tab' = 'screen') => {
     try {
       const displayMediaOptions: DisplayMediaStreamOptions = {
@@ -360,7 +391,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
           displaySurface: 'browser',
           width: { ideal: 1920, max: 1920 },
           height: { ideal: 1080, max: 1080 },
-          frameRate: { ideal: 60, min: 30 },
+          frameRate: { ideal: 60 },
         },
         audio: true,
       }
@@ -371,7 +402,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       const videoTrack = stream.getVideoTracks()[0]
 
       videoTrack.applyConstraints({
-        frameRate: { ideal: 60, min: 30 },
+        frameRate: { ideal: 60 },
       }).catch(() => {})
 
       const detectedType = normalizeScreenShareType(videoTrack?.getSettings().displaySurface) ?? streamType
@@ -391,6 +422,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       })
 
       const typeName = detectedType === 'tab' ? '标签页' : detectedType === 'window' ? '窗口' : '屏幕'
+      screenShareTypeNameRef.current = typeName
 
       if (!peerRef.current || peerRef.current.destroyed) {
         enqueueSystemMessage('屏幕共享启动失败：未连接到对端', true)
@@ -401,24 +433,15 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       const hostPeerId = PEER_PREFIX + roomCode
 
       if (isHost) {
-        const calls: any[] = []
         for (const [peerId] of connectionsRef.current.entries()) {
           try {
-            const call = peerRef.current.call(peerId, stream)
-            if (call) {
-              calls.push(call)
-              call.on('error', (err: unknown) => {
-                console.error('Screen share call error:', err)
-                enqueueSystemMessage(`${typeName}共享连接失败`, true)
-              })
-            }
+            attachScreenShareToPeer(peerId)
           }
           catch (err) {
             console.error('Failed to call peer:', peerId, err)
           }
         }
-        if (calls.length > 0) {
-          screenShareCallsRef.current = calls
+        if (screenShareCallsRef.current.length > 0) {
           enqueueSystemMessage(`开始共享${typeName}`, true)
         }
         else {
@@ -429,13 +452,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       }
       else {
         if (hostPeerId) {
-          const call = peerRef.current.call(hostPeerId, stream)
-          if (call) {
-            screenShareCallsRef.current = [call]
-            call.on('error', (err: unknown) => {
-              console.error('Screen share call error:', err)
-              enqueueSystemMessage(`${typeName}共享连接失败`, true)
-            })
+          if (attachScreenShareToPeer(hostPeerId)) {
             enqueueSystemMessage(`开始共享${typeName}`, true)
           }
           else {
@@ -453,7 +470,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       enqueueSystemMessage(message, true)
       return null
     }
-  }, [addItemWithId, enqueueSystemMessage, roomCode, isHost])
+  }, [addItemWithId, attachScreenShareToPeer, enqueueSystemMessage, roomCode, isHost])
 
   const stopScreenShare = useCallback(() => {
     const outgoingStream = screenShareStreamRef.current
@@ -477,6 +494,10 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
   }, [enqueueSystemMessage, removeItem])
 
   stopScreenShareRef.current = stopScreenShare
+
+  const handlePeerConnectedToScreenShare = useCallback((peerId: string) => {
+    attachScreenShareToPeer(peerId)
+  }, [attachScreenShareToPeer])
 
   useEffect(() => {
     if (forceRelayRef.current === connectionSettings.forceRelay) {
@@ -609,6 +630,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     recordBandwidth,
     removePeerQuality: removePeerMetrics,
     notifyReceived: (type: string, name?: string) => notifyReceived(type as 'text' | 'image' | 'file', name),
+    handlePeerConnectedToScreenShare,
   }), [
     addItem,
     addItemWithId,
@@ -621,6 +643,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     notifyReceived,
     recordBandwidth,
     removePeerMetrics,
+    handlePeerConnectedToScreenShare,
     setConnectionInfo,
     setConnectionStatus,
     setError,
