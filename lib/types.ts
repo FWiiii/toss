@@ -4,7 +4,7 @@ export type TransferStatus = 'pending' | 'transferring' | 'completed' | 'error' 
 
 export interface TransferItem {
   id: string
-  type: 'text' | 'file' | 'system'
+  type: 'text' | 'file' | 'system' | 'stream'
   name?: string
   content: string
   size?: number
@@ -16,6 +16,9 @@ export interface TransferItem {
   transferredBytes?: number
   speed?: number // bytes per second
   remainingTime?: number // seconds remaining
+  // Screen share specific
+  streamType?: 'screen' | 'window' | 'tab'
+  duration?: number // seconds for stream
 }
 
 export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'error' | 'dissolved' | 'reconnecting'

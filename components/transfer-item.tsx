@@ -5,6 +5,7 @@ import { Ban, Check, Copy, Download, File as FileIcon, FileText, ImageIcon, Load
 import { memo, useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { ImageThumbnail } from '@/components/image-thumbnail'
 import { LinkPreview } from '@/components/link-preview'
+import { StreamItem } from '@/components/stream-item'
 import { Button } from '@/components/ui/button'
 import { INTERACTIVE_TONES, STATUS_TONES } from '@/lib/design-tokens'
 import { parseTextWithLinks } from '@/lib/link-utils'
@@ -473,6 +474,16 @@ export const TransferItemComponent = memo(({ item, onPreviewImage, onDownload, o
   // System messages
   if (item.type === 'system') {
     return <SystemMessage content={item.content} />
+  }
+
+  // Stream items (screen share)
+  if (item.type === 'stream') {
+    return (
+      <StreamItem
+        item={item}
+        onStop={onCancel}
+      />
+    )
   }
 
   const isImage = item.type === 'file' && isImageFile(item.name || '')

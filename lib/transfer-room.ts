@@ -20,6 +20,7 @@ export interface RoomCallbacks {
   broadcastToConnections: (data: any) => Promise<void>
   setConnectionInfo: (info: any) => void
   setPeerCount: (count: number) => void
+  onIncomingScreenShare?: (call: any) => void
 }
 
 export function createRoomManagement(
@@ -74,6 +75,19 @@ export function createRoomManagement(
 
       peer.on('connection', (conn) => {
         setupConnection(conn, false)
+      })
+
+      peer.on('call', (call) => {
+        if (call.remoteStream) {
+          call.answer(call.remoteStream)
+          callbacks.onIncomingScreenShare?.(call)
+        }
+        else {
+          call.answer()
+          call.on('stream', () => {
+            callbacks.onIncomingScreenShare?.(call)
+          })
+        }
       })
 
       peer.on('error', (err) => {
@@ -157,6 +171,19 @@ export function createRoomManagement(
 
       peer.on('connection', (conn) => {
         setupConnection(conn, false)
+      })
+
+      peer.on('call', (call) => {
+        if (call.remoteStream) {
+          call.answer(call.remoteStream)
+          callbacks.onIncomingScreenShare?.(call)
+        }
+        else {
+          call.answer()
+          call.on('stream', () => {
+            callbacks.onIncomingScreenShare?.(call)
+          })
+        }
       })
 
       peer.on('error', (err) => {

@@ -14,6 +14,7 @@ import { useNotification } from '@/hooks/use-notification'
 import { useTransferItems as useTransferItemsState } from '@/hooks/use-transfer-items'
 import { createConnectionAttemptRegistry } from './connection-attempts'
 import { encryptJSON } from './crypto'
+import { PEER_PREFIX } from './peer-config'
 import { createAttemptReconnect, createSetupConnection } from './transfer-connection'
 import { createDataTransfer } from './transfer-data'
 import { createRoomManagement } from './transfer-room'
@@ -56,6 +57,8 @@ interface TransferContextType {
   encryptionPerformance: EncryptionPerformance | null
   getEncryptionPerformance: () => EncryptionPerformance | null
   suspendAutoReconnect: (durationMs?: number) => void
+  startScreenShare: (streamType?: 'screen' | 'window' | 'tab') => Promise<string | null>
+  stopScreenShare: () => void
 }
 
 interface TransferItemsContextType {
@@ -235,6 +238,12 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     isOutgoing: boolean
   }>>(new Map())
 
+  // Screen share state
+  const screenShareStreamRef = useRef<MediaStream | null>(null)
+  const screenShareCallRef = useRef<any>(null)
+  const screenShareItemIdRef = useRef<string | null>(null)
+  const stopScreenShareRef = useRef<(() => void) | null>(null)
+
   // Reconnection state
   const reconnectAttemptsRef = useRef(0)
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null)
@@ -305,6 +314,94 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     const safeDuration = Number.isFinite(durationMs) ? Math.max(0, durationMs) : 0
     suppressReconnectUntilRef.current = Date.now() + safeDuration
   }, [])
+
+  const startScreenShare = useCallback(async (streamType: 'screen' | 'window' | 'tab' = 'screen') => {
+    try {
+      const displayMediaOptions: DisplayMediaStreamOptions = {
+        video: {
+          displaySurface: 'browser',
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
+          frameRate: { ideal: 30 },
+        },
+        audio: true,
+      }
+
+      const stream = await navigator.mediaDevices.getDisplayMedia(displayMediaOptions)
+      screenShareStreamRef.current = stream
+
+      const videoTrack = stream.getVideoTracks()[0]
+      const displaySurface = videoTrack.getSettings().displaySurface
+      let detectedType: 'screen' | 'window' | 'tab' = streamType
+
+      if (displaySurface === 'browser') {
+        detectedType = 'tab'
+      }
+      else if (displaySurface === 'window') {
+        detectedType = 'window'
+      }
+      else if (displaySurface === 'monitor') {
+        detectedType = 'screen'
+      }
+
+      stream.addEventListener('inactive', () => {
+        stopScreenShareRef.current?.()
+      })
+
+      const itemId = addItemWithId({
+        type: 'stream',
+        streamType: detectedType,
+        content: stream as unknown as string,
+        direction: 'sent',
+      })
+
+      screenShareItemIdRef.current = itemId
+
+      const hostPeerId = PEER_PREFIX + roomCode
+      if (peerRef.current && !peerRef.current.destroyed && hostPeerId) {
+        const call = peerRef.current.call(hostPeerId, stream)
+        if (call) {
+          screenShareCallRef.current = call
+        }
+      }
+
+      const typeName = detectedType === 'tab' ? '标签页' : detectedType === 'window' ? '窗口' : '屏幕'
+      enqueueSystemMessage(`开始共享${typeName}`, true)
+
+      return itemId
+    }
+    catch (error) {
+      const message = error instanceof Error ? error.message : '屏幕共享启动失败'
+      enqueueSystemMessage(message, true)
+      return null
+    }
+  }, [addItemWithId, enqueueSystemMessage, roomCode])
+
+  const stopScreenShare = useCallback(() => {
+    if (screenShareStreamRef.current) {
+      screenShareStreamRef.current.getTracks().forEach(track => track.stop())
+      screenShareStreamRef.current = null
+    }
+
+    if (screenShareCallRef.current) {
+      try {
+        screenShareCallRef.current.close()
+      }
+      catch {}
+      screenShareCallRef.current = null
+    }
+
+    if (screenShareItemIdRef.current) {
+      updateItemProgress(screenShareItemIdRef.current, {
+        status: 'cancelled',
+      })
+      screenShareItemIdRef.current = null
+    }
+
+    enqueueSystemMessage('已停止屏幕共享', true)
+  }, [updateItemProgress, enqueueSystemMessage])
+
+  stopScreenShareRef.current = stopScreenShare
 
   useEffect(() => {
     if (forceRelayRef.current === connectionSettings.forceRelay) {
@@ -548,6 +645,28 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
   }, [hasHealthyConnections])
 
   // ============ Room Management ============
+  const incomingScreenShareCallRef = useRef<any>(null)
+
+  const handleIncomingScreenShare = useCallback((call: any) => {
+    call.on('stream', (remoteStream: MediaStream) => {
+      addItemWithId({
+        type: 'stream',
+        streamType: 'screen',
+        content: remoteStream as unknown as string,
+        direction: 'received',
+      })
+
+      incomingScreenShareCallRef.current = call
+      enqueueSystemMessage('收到屏幕共享', true)
+    })
+
+    call.on('close', () => {
+      if (incomingScreenShareCallRef.current === call) {
+        incomingScreenShareCallRef.current = null
+      }
+    })
+  }, [addItemWithId, enqueueSystemMessage])
+
   const roomCallbacks = useMemo<RoomCallbacks>(() => ({
     setIsCreatingRoom,
     setIsJoiningRoom,
@@ -560,6 +679,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     broadcastToConnections,
     setConnectionInfo,
     setPeerCount,
+    onIncomingScreenShare: handleIncomingScreenShare,
   }), [
     broadcastToConnections,
     cleanupAll,
@@ -570,6 +690,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     setIsHost,
     setPeerCount,
     setRoomCode,
+    handleIncomingScreenShare,
   ])
 
   const {
@@ -773,6 +894,8 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     encryptionPerformance,
     getEncryptionPerformance,
     suspendAutoReconnect,
+    startScreenShare,
+    stopScreenShare,
   }), [
     roomCode,
     connectionStatus,
@@ -797,6 +920,8 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     encryptionPerformance,
     getEncryptionPerformance,
     suspendAutoReconnect,
+    startScreenShare,
+    stopScreenShare,
   ])
 
   const transferItemsValue = useMemo<TransferItemsContextType>(() => ({

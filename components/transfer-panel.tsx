@@ -1,7 +1,7 @@
 'use client'
 
 import type { PendingTransferFile } from '@/lib/pending-transfer-file'
-import { Send, Share2, Trash2, Upload } from 'lucide-react'
+import { Monitor, Send, Share2, Trash2, Upload } from 'lucide-react'
 import { useCallback, useEffect, useId, useMemo, useReducer, useRef, useState } from 'react'
 import { ImagePreviewDialog } from '@/components/image-preview-dialog'
 import { TransferInput } from '@/components/transfer-input'
@@ -54,6 +54,8 @@ export function TransferPanel() {
     connectionStatus,
     peerCount,
     suspendAutoReconnect,
+    startScreenShare,
+    stopScreenShare,
   } = useTransfer()
   const {
     items,
@@ -82,6 +84,7 @@ export function TransferPanel() {
     false,
   )
   const [dropFeedbackLabel, setDropFeedbackLabel] = useState<string | null>(null)
+  const [isScreenSharing, setIsScreenSharing] = useState(false)
   const hasProcessedShareRef = useRef(false)
   const hasShownShareLoadErrorRef = useRef(false)
   const hasFocusedRef = useRef(false)
@@ -484,12 +487,34 @@ export function TransferPanel() {
       {/* Header */}
       <div className={PANEL_HEADER_CLASS}>
         <h3 className="text-sm font-medium text-foreground">传输</h3>
-        {items.length > 0 && (
-          <Button variant="ghost" size="sm" onClick={clearHistory}>
-            <Trash2 className="w-4 h-4 mr-1" />
-            清空
-          </Button>
-        )}
+        <div className="flex items-center gap-1">
+          {isConnected && (
+            <Button
+              variant={isScreenSharing ? 'secondary' : 'ghost'}
+              size="sm"
+              onClick={() => {
+                if (isScreenSharing) {
+                  stopScreenShare()
+                  setIsScreenSharing(false)
+                }
+                else {
+                  startScreenShare()
+                    .then(() => setIsScreenSharing(true))
+                    .catch(() => setIsScreenSharing(false))
+                }
+              }}
+            >
+              <Monitor className="w-4 h-4 mr-1" />
+              {isScreenSharing ? '停止共享' : '共享屏幕'}
+            </Button>
+          )}
+          {items.length > 0 && (
+            <Button variant="ghost" size="sm" onClick={clearHistory}>
+              <Trash2 className="w-4 h-4 mr-1" />
+              清空
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Drag Overlay */}
