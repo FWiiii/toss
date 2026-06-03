@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-test('buildIncomingTransferSummary marks executable, large, and batch risks', async () => {
+test('buildIncomingTransferSummary marks executable and large risks', async () => {
   const { buildIncomingTransferSummary } = await import('../lib/incoming-transfer-risk.ts')
 
   const summary = buildIncomingTransferSummary({
@@ -17,22 +17,22 @@ test('buildIncomingTransferSummary marks executable, large, and batch risks', as
   assert.equal(summary.requiresSecondaryConfirmation, true)
 })
 
-test('buildIncomingTransferSummary truncates sample files to the first three names', async () => {
+test('buildIncomingTransferSummary marks batch risk and truncates sample files to the first three names', async () => {
   const { buildIncomingTransferSummary } = await import('../lib/incoming-transfer-risk.ts')
 
   const summary = buildIncomingTransferSummary({
-    files: Array.from({ length: 5 }, (_, index) => ({
+    files: Array.from({ length: 10 }, (_, index) => ({
       name: `photo-${index + 1}.jpg`,
       size: 1024,
       type: 'image/jpeg',
     })),
   })
 
-  assert.equal(summary.fileCount, 5)
+  assert.equal(summary.fileCount, 10)
   assert.deepEqual(summary.sampleFiles.map(file => file.name), [
     'photo-1.jpg',
     'photo-2.jpg',
     'photo-3.jpg',
   ])
-  assert.deepEqual(summary.riskFlags, [])
+  assert.deepEqual(summary.riskFlags, ['batch'])
 })
