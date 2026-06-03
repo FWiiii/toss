@@ -40,8 +40,6 @@
 - [ ] **步骤 1：先写失败的存储层测试**
 
 ```js
-/* eslint-disable test/no-import-node-test */
-
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
@@ -215,8 +213,6 @@ git commit -m "feat(P2 存储): 增加接收历史持久化基线"
 - [ ] **步骤 1：先写失败的行为测试**
 
 ```js
-/* eslint-disable test/no-import-node-test */
-
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
@@ -358,18 +354,24 @@ void safelyAppendReceiveHistoryEntry({
 - [ ] **步骤 6：在 provider 中暴露收件箱状态与清空能力**
 
 ```ts
-receiveHistoryEntries: ReceiveHistoryEntry[]
-clearReceiveHistory: () => Promise<void>
-reloadReceiveHistory: () => Promise<void>
+interface TransferContextType {
+  receiveHistoryEntries: ReceiveHistoryEntry[]
+  clearReceiveHistory: () => Promise<void>
+  reloadReceiveHistory: () => Promise<void>
+}
 ```
 
 ```ts
-const [receiveHistoryEntries, setReceiveHistoryEntries] = useState<ReceiveHistoryEntry[]>([])
+function useReceiveHistoryState() {
+  const [receiveHistoryEntries, setReceiveHistoryEntries] = useState<ReceiveHistoryEntry[]>([])
 
-const reloadReceiveHistory = useCallback(async () => {
-  const entries = await listReceiveHistoryEntries()
-  setReceiveHistoryEntries(entries)
-}, [])
+  const reloadReceiveHistory = useCallback(async () => {
+    const entries = await listReceiveHistoryEntries()
+    setReceiveHistoryEntries(entries)
+  }, [])
+
+  return { receiveHistoryEntries, reloadReceiveHistory }
+}
 ```
 
 - [ ] **步骤 7：运行行为测试**
@@ -448,20 +450,26 @@ export function ReceiveHistoryPanel({
 - [ ] **步骤 4：在传输面板加入最近接收入口区与展开态切换**
 
 ```tsx
-const [showReceiveHistory, setShowReceiveHistory] = useState(false)
-const recentReceiveEntries = receiveHistoryEntries.slice(0, 5)
+function TransferPanelPreviewExample() {
+  const [showReceiveHistory, setShowReceiveHistory] = useState(false)
+  const recentReceiveEntries = receiveHistoryEntries.slice(0, 5)
 
-{!showReceiveHistory && recentReceiveEntries.length > 0 && (
-  <section className="border-b border-border/70 px-4 py-3">
-    <div className="flex items-center justify-between">
-      <div>
-        <h3 className="text-sm font-medium text-foreground">最近接收</h3>
-        <p className="text-xs text-muted-foreground">最近的接收记录会显示在这里</p>
-      </div>
-      <Button variant="ghost" size="sm" onClick={() => setShowReceiveHistory(true)}>查看全部</Button>
-    </div>
-  </section>
-)}
+  const recentReceiveSection = !showReceiveHistory && recentReceiveEntries.length > 0
+    ? (
+        <section className="border-b border-border/70 px-4 py-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-sm font-medium text-foreground">最近接收</h3>
+              <p className="text-xs text-muted-foreground">最近的接收记录会显示在这里</p>
+            </div>
+            <Button variant="ghost" size="sm" onClick={() => setShowReceiveHistory(true)}>查看全部</Button>
+          </div>
+        </section>
+      )
+    : null
+
+  return recentReceiveSection
+}
 ```
 
 - [ ] **步骤 5：在面板中加入状态筛选与详情展开**
@@ -477,24 +485,28 @@ const OUTCOME_OPTIONS = [
 ```
 
 ```tsx
-{entry.summary.sampleFiles.map(file => (
+const sampleFileItems = entry.summary.sampleFiles.map(file => (
   <p key={`${file.name}-${file.size}`} className="text-xs text-muted-foreground">{file.name}</p>
-))}
+))
 ```
 
 - [ ] **步骤 6：加入清空历史确认**
 
 ```tsx
-const [showClearReceiveHistoryConfirm, setShowClearReceiveHistoryConfirm] = useState(false)
+function ClearReceiveHistoryDialogExample() {
+  const [showClearReceiveHistoryConfirm, setShowClearReceiveHistoryConfirm] = useState(false)
 
-<Dialog open={showClearReceiveHistoryConfirm} onOpenChange={setShowClearReceiveHistoryConfirm}>
-  <DialogContent>
-    <DialogHeader>
-      <DialogTitle>清空收件箱历史</DialogTitle>
-      <DialogDescription>此操作不会影响实时传输，仅移除本地接收记录。</DialogDescription>
-    </DialogHeader>
-  </DialogContent>
-</Dialog>
+  return (
+    <Dialog open={showClearReceiveHistoryConfirm} onOpenChange={setShowClearReceiveHistoryConfirm}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>清空收件箱历史</DialogTitle>
+          <DialogDescription>此操作不会影响实时传输，仅移除本地接收记录。</DialogDescription>
+        </DialogHeader>
+      </DialogContent>
+    </Dialog>
+  )
+}
 ```
 
 - [ ] **步骤 7：运行架构测试**
