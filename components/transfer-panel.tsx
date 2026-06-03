@@ -4,6 +4,7 @@ import type { PendingTransferFile } from '@/lib/pending-transfer-file'
 import { AlertTriangle, Monitor, Send, Share2, ShieldAlert, Trash2, Upload } from 'lucide-react'
 import { useCallback, useEffect, useId, useMemo, useReducer, useRef, useState } from 'react'
 import { ImagePreviewDialog } from '@/components/image-preview-dialog'
+import { ReceiveHistoryPanel } from '@/components/receive-history-panel'
 import { TransferInput } from '@/components/transfer-input'
 import { TransferItemComponent } from '@/components/transfer-item'
 import { Button } from '@/components/ui/button'
@@ -67,6 +68,8 @@ export function TransferPanel() {
     stopScreenShare,
     incomingFileOffers,
     respondToIncomingFileOffer,
+    receiveHistoryEntries,
+    clearReceiveHistory,
   } = useTransfer()
   const {
     items,
@@ -106,6 +109,15 @@ export function TransferPanel() {
     (_current: boolean, next: boolean) => next,
     false,
   )
+  const [showReceiveHistory, setShowReceiveHistory] = useReducer(
+    (_current: boolean, next: boolean) => next,
+    false,
+  )
+  const [activeReceiveHistoryOutcome, setActiveReceiveHistoryOutcome] = useState<'all' | 'completed' | 'rejected' | 'cancelled' | 'failed'>('all')
+  const [showClearReceiveHistoryConfirm, setShowClearReceiveHistoryConfirm] = useReducer(
+    (_current: boolean, next: boolean) => next,
+    false,
+  )
   const [dropFeedbackLabel, setDropFeedbackLabel] = useState<string | null>(null)
   const hasProcessedShareRef = useRef(false)
   const hasShownShareLoadErrorRef = useRef(false)
@@ -124,6 +136,10 @@ export function TransferPanel() {
     [activeIncomingSummary],
   )
   const requiresSecondaryConfirmation = activeIncomingSummary?.requiresSecondaryConfirmation ?? false
+  const recentReceiveEntries = useMemo(
+    () => receiveHistoryEntries.slice(0, 5),
+    [receiveHistoryEntries],
+  )
 
   const isConnected = connectionStatus === 'connected' && peerCount > 0
   const isScreenSharing = useMemo(
@@ -544,6 +560,12 @@ export function TransferPanel() {
     trustIncomingDevice,
   ])
 
+  const handleConfirmClearReceiveHistory = useCallback(async () => {
+    await clearReceiveHistory()
+    setShowClearReceiveHistoryConfirm(false)
+    setActiveReceiveHistoryOutcome('all')
+  }, [clearReceiveHistory])
+
   return (
     <div
       className={cn(
@@ -564,9 +586,9 @@ export function TransferPanel() {
 
       {/* Header */}
       <div className={PANEL_HEADER_CLASS}>
-        <h3 className="text-sm font-medium text-foreground">传输</h3>
+        <h3 className="text-sm font-medium text-foreground">{showReceiveHistory ? '收件箱' : '传输'}</h3>
         <div className="flex items-center gap-1">
-          {isConnected && (
+          {isConnected && !showReceiveHistory && (
             <Button
               variant={isScreenSharing ? 'secondary' : 'ghost'}
               size="sm"
@@ -583,7 +605,7 @@ export function TransferPanel() {
               {isScreenSharing ? '停止共享' : '共享屏幕'}
             </Button>
           )}
-          {items.length > 0 && (
+          {items.length > 0 && !showReceiveHistory && (
             <Button variant="ghost" size="sm" onClick={clearHistory}>
               <Trash2 className="w-4 h-4 mr-1" />
               清空
@@ -603,7 +625,7 @@ export function TransferPanel() {
       )}
 
       {/* Pending Share Notice */}
-      {pendingShare && !isConnected && (
+      {!showReceiveHistory && pendingShare && !isConnected && (
         <div className="mx-4 mt-4 rounded-lg border border-accent/25 bg-accent/10 p-3">
           <div className="flex items-center gap-2 text-sm font-medium text-accent">
             <Share2 className="w-4 h-4" />
@@ -615,6 +637,19 @@ export function TransferPanel() {
             </p>
           )}
         </div>
+      )}
+
+      {!showReceiveHistory && (
+        <ReceiveHistoryPanel
+          entries={recentReceiveEntries}
+          isExpanded={false}
+          activeOutcome={activeReceiveHistoryOutcome}
+          showAllLabel="查看全部"
+          onOutcomeChange={setActiveReceiveHistoryOutcome}
+          onShowAll={() => setShowReceiveHistory(true)}
+          onBack={() => setShowReceiveHistory(false)}
+          onClearHistory={() => setShowClearReceiveHistoryConfirm(true)}
+        />
       )}
 
       <Dialog
@@ -812,89 +847,126 @@ export function TransferPanel() {
         </DialogContent>
       </Dialog>
 
-      {/* Items List */}
-      <div className={SCROLL_AREA_CLASS}>
-        {!hasItems && !pendingShare
-          ? (
-              <EmptyState
-                icon={Send}
-                title={isConnected ? '准备发送' : '等待连接'}
-                description={isConnected ? '发送文本或文件即可开始传输' : '连接设备后即可开始传输'}
-                containerClassName="h-full"
+      {/* Content */}
+      {showReceiveHistory
+        ? (
+            <div className={SCROLL_AREA_CLASS}>
+              <ReceiveHistoryPanel
+                entries={receiveHistoryEntries}
+                isExpanded
+                activeOutcome={activeReceiveHistoryOutcome}
+                showAllLabel="查看全部"
+                onOutcomeChange={setActiveReceiveHistoryOutcome}
+                onShowAll={() => setShowReceiveHistory(true)}
+                onBack={() => setShowReceiveHistory(false)}
+                onClearHistory={() => setShowClearReceiveHistoryConfirm(true)}
               />
-            )
-          : (
-              <div className="space-y-3">
-                {activeItems.length > 0 && (
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between text-sm text-muted-foreground">
-                      <span>进行中</span>
-                      <span>{activeItems.length}</span>
-                    </div>
-                    <div className="space-y-2">
-                      {activeItems.map(item => (
-                        <TransferItemComponent
-                          key={item.id}
-                          item={item}
-                          onPreviewImage={handlePreviewImage}
-                          onDownload={handleDownload}
-                          onCancel={cancelTransfer}
-                          onStopStream={handleStopStream}
-                        />
-                      ))}
-                    </div>
-                    <div ref={activeItemsEndRef} aria-hidden="true" />
-                  </div>
-                )}
+            </div>
+          )
+        : (
+            <>
+              <div className={SCROLL_AREA_CLASS}>
+                {!hasItems && !pendingShare
+                  ? (
+                      <EmptyState
+                        icon={Send}
+                        title={isConnected ? '准备发送' : '等待连接'}
+                        description={isConnected ? '发送文本或文件即可开始传输' : '连接设备后即可开始传输'}
+                        containerClassName="h-full"
+                      />
+                    )
+                  : (
+                      <div className="space-y-3">
+                        {activeItems.length > 0 && (
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between text-sm text-muted-foreground">
+                              <span>进行中</span>
+                              <span>{activeItems.length}</span>
+                            </div>
+                            <div className="space-y-2">
+                              {activeItems.map(item => (
+                                <TransferItemComponent
+                                  key={item.id}
+                                  item={item}
+                                  onPreviewImage={handlePreviewImage}
+                                  onDownload={handleDownload}
+                                  onCancel={cancelTransfer}
+                                  onStopStream={handleStopStream}
+                                />
+                              ))}
+                            </div>
+                            <div ref={activeItemsEndRef} aria-hidden="true" />
+                          </div>
+                        )}
 
-                {completedItems.length > 0 && (
-                  <div className="space-y-2">
-                    <button
-                      type="button"
-                      onClick={() => setShowCompleted(prev => !prev)}
-                      className="w-full flex items-center justify-between text-sm text-muted-foreground hover:text-foreground transition-colors"
-                      aria-expanded={showCompleted}
-                      aria-controls={completedSectionId}
-                    >
-                      <span>已完成</span>
-                      <span>{showCompleted ? '收起' : `展开 ${completedItems.length}`}</span>
-                    </button>
-                    {showCompleted && (
-                      <div id={completedSectionId} className="space-y-2">
-                        {completedItems.map(item => (
-                          <TransferItemComponent
-                            key={item.id}
-                            item={item}
-                            onPreviewImage={handlePreviewImage}
-                            onDownload={handleDownload}
-                            onCancel={cancelTransfer}
-                            onStopStream={handleStopStream}
-                          />
-                        ))}
+                        {completedItems.length > 0 && (
+                          <div className="space-y-2">
+                            <button
+                              type="button"
+                              onClick={() => setShowCompleted(prev => !prev)}
+                              className="w-full flex items-center justify-between text-sm text-muted-foreground hover:text-foreground transition-colors"
+                              aria-expanded={showCompleted}
+                              aria-controls={completedSectionId}
+                            >
+                              <span>已完成</span>
+                              <span>{showCompleted ? '收起' : `展开 ${completedItems.length}`}</span>
+                            </button>
+                            {showCompleted && (
+                              <div id={completedSectionId} className="space-y-2">
+                                {completedItems.map(item => (
+                                  <TransferItemComponent
+                                    key={item.id}
+                                    item={item}
+                                    onPreviewImage={handlePreviewImage}
+                                    onDownload={handleDownload}
+                                    onCancel={cancelTransfer}
+                                    onStopStream={handleStopStream}
+                                  />
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     )}
-                  </div>
-                )}
+                <div ref={itemsEndRef} aria-hidden="true" />
               </div>
-            )}
-        <div ref={itemsEndRef} aria-hidden="true" />
-      </div>
 
-      {/* Input Area */}
-      <TransferInput
-        text={text}
-        onTextChange={setText}
-        onSendText={handleSendText}
-        onSendFiles={sendFiles}
-        onBeforeFilePick={handleBeforeFilePick}
-        onSendClipboard={handleSendClipboard}
-        isSendingClipboard={isSendingClipboard}
-        highlightComposer={highlightComposer}
-        isConnected={isConnected}
-        allowQueueWithoutConnection
-        sendingCount={sendingCount}
-        textInputRef={composerInputRef}
-      />
+              <TransferInput
+                text={text}
+                onTextChange={setText}
+                onSendText={handleSendText}
+                onSendFiles={sendFiles}
+                onBeforeFilePick={handleBeforeFilePick}
+                onSendClipboard={handleSendClipboard}
+                isSendingClipboard={isSendingClipboard}
+                highlightComposer={highlightComposer}
+                isConnected={isConnected}
+                allowQueueWithoutConnection
+                sendingCount={sendingCount}
+                textInputRef={composerInputRef}
+              />
+            </>
+          )}
+
+      <Dialog open={showClearReceiveHistoryConfirm} onOpenChange={setShowClearReceiveHistoryConfirm}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>清空收件箱历史</DialogTitle>
+            <DialogDescription>
+              此操作不会影响实时传输，只会移除本地保存的接收记录。
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowClearReceiveHistoryConfirm(false)}>
+              取消
+            </Button>
+            <Button variant="destructive" onClick={() => void handleConfirmClearReceiveHistory()}>
+              清空历史
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Image Preview Dialog */}
       <ImagePreviewDialog
