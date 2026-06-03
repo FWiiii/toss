@@ -147,6 +147,20 @@ test('transfer panel surfaces incoming file approval UI with a trust option', as
   assert.match(panelSource, /拒绝/)
 })
 
+test('settings expose device identity and trusted device management affordances', async () => {
+  const settingsSource = await readProjectFile('components/notification-settings.tsx')
+  const pageSource = await readProjectFile('components/app-client-page.tsx')
+
+  assert.match(settingsSource, /设备与信任/)
+  assert.match(settingsSource, /本机设备名/)
+  assert.match(settingsSource, /已信任设备/)
+  assert.match(settingsSource, /移除信任/)
+  assert.match(pageSource, /localDeviceProfile/)
+  assert.match(pageSource, /trustedDevices/)
+  assert.match(pageSource, /updateLocalDeviceName/)
+  assert.match(pageSource, /removeTrustedDevice/)
+})
+
 test('host leave action requires confirmation before dissolving room', async () => {
   const roomSource = await readProjectFile('components/room-panel.tsx')
 

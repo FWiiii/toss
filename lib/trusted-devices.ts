@@ -155,6 +155,42 @@ export function loadOrCreateLocalDeviceProfile({
   return profile
 }
 
+export function updateLocalDeviceName({
+  storage,
+  deviceName,
+}: {
+  storage: StorageLike
+  deviceName: string
+}): LocalDeviceProfile {
+  const stored = safeJsonParse<LocalDeviceProfile>(storage.getItem(LOCAL_DEVICE_PROFILE_KEY))
+  const createdAt = typeof stored?.createdAt === 'number' && Number.isFinite(stored.createdAt)
+    ? stored.createdAt
+    : Date.now()
+
+  const nextProfile: LocalDeviceProfile = {
+    deviceId: typeof stored?.deviceId === 'string' && stored.deviceId.length > 0
+      ? stored.deviceId
+      : createFallbackDeviceId(),
+    deviceName: clampDeviceName(deviceName),
+    createdAt,
+  }
+
+  storage.setItem(LOCAL_DEVICE_PROFILE_KEY, JSON.stringify(nextProfile))
+  return nextProfile
+}
+
+export function removeTrustedDevice({
+  storage,
+  deviceId,
+}: {
+  storage: StorageLike
+  deviceId: string
+}) {
+  const nextDevices = getTrustedDevices(storage).filter(device => device.deviceId !== deviceId)
+  storage.setItem(TRUSTED_DEVICES_KEY, JSON.stringify(nextDevices))
+  return nextDevices
+}
+
 export {
   LOCAL_DEVICE_PROFILE_KEY,
   TRUSTED_DEVICES_KEY,

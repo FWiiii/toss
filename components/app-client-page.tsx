@@ -19,6 +19,10 @@ function AppHeader() {
     requestNotificationPermission,
     connectionSettings,
     updateConnectionSettings,
+    localDeviceProfile,
+    trustedDevices,
+    updateLocalDeviceName,
+    removeTrustedDevice,
   } = useTransfer()
 
   return (
@@ -48,6 +52,10 @@ function AppHeader() {
             onRequestPermission={requestNotificationPermission}
             connectionSettings={connectionSettings}
             onUpdateConnectionSettings={updateConnectionSettings}
+            localDeviceProfile={localDeviceProfile}
+            trustedDevices={trustedDevices}
+            onUpdateLocalDeviceName={updateLocalDeviceName}
+            onRemoveTrustedDevice={removeTrustedDevice}
           />
         </div>
       </div>

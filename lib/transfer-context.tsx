@@ -21,7 +21,13 @@ import { createAttemptReconnect, createSetupConnection } from './transfer-connec
 import { createDataTransfer } from './transfer-data'
 import { getFileOfferResponseKey } from './transfer-protocol'
 import { createRoomManagement } from './transfer-room'
-import { getTrustedDevices, loadOrCreateLocalDeviceProfile, rememberTrustedDevice } from './trusted-devices'
+import {
+  getTrustedDevices,
+  loadOrCreateLocalDeviceProfile,
+  rememberTrustedDevice,
+  removeTrustedDevice as removeTrustedDeviceRecord,
+  updateLocalDeviceName as updateLocalDeviceProfileName,
+} from './trusted-devices'
 
 export type { ConnectionInfo, ConnectionQuality, ConnectionStatus, ConnectionType, EncryptionPerformance, TransferItem }
 
@@ -66,6 +72,10 @@ interface TransferContextType {
   stopScreenShare: () => void
   incomingFileOffers: IncomingFileOffer[]
   respondToIncomingFileOffer: (offerId: string, accepted: boolean, trustDevice?: boolean) => Promise<void>
+  localDeviceProfile: LocalDeviceProfile
+  trustedDevices: TrustedDeviceRecord[]
+  updateLocalDeviceName: (deviceName: string) => void
+  removeTrustedDevice: (deviceId: string) => void
 }
 
 interface TransferItemsContextType {
@@ -212,6 +222,12 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     pushSystemMessage(message, force)
   }, [pushSystemMessage])
   const [incomingFileOffers, setIncomingFileOffers] = useState<IncomingFileOffer[]>([])
+  const [localDeviceProfile, setLocalDeviceProfile] = useState<LocalDeviceProfile>({
+    deviceId: 'device-ephemeral',
+    deviceName: 'Device EPHM',
+    createdAt: 0,
+  })
+  const [trustedDevices, setTrustedDevices] = useState<TrustedDeviceRecord[]>([])
 
   const connectionsRef = useRef<Map<string, any>>(new Map())
 
@@ -312,6 +328,8 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
 
   const ensureLocalDeviceProfile = useCallback(() => {
     if (localDeviceProfileRef.current) {
+      // eslint-disable-next-line react-hooks-extra/no-direct-set-state-in-use-effect
+      setLocalDeviceProfile(localDeviceProfileRef.current)
       return localDeviceProfileRef.current
     }
 
@@ -330,6 +348,8 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
             ? () => crypto.randomUUID()
             : undefined,
         })
+        // eslint-disable-next-line react-hooks-extra/no-direct-set-state-in-use-effect
+        setLocalDeviceProfile(localDeviceProfileRef.current)
         return localDeviceProfileRef.current
       }
       catch {}
@@ -340,6 +360,8 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       deviceName: 'Device EPHM',
       createdAt: Date.now(),
     }
+    // eslint-disable-next-line react-hooks-extra/no-direct-set-state-in-use-effect
+    setLocalDeviceProfile(localDeviceProfileRef.current)
     return localDeviceProfileRef.current
   }, [getBrowserStorage])
 
@@ -347,6 +369,8 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     const storage = getBrowserStorage()
     if (!storage) {
       trustedDevicesRef.current.clear()
+      // eslint-disable-next-line react-hooks-extra/no-direct-set-state-in-use-effect
+      setTrustedDevices([])
       return
     }
 
@@ -355,9 +379,13 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       trustedDevicesRef.current = new Map(
         trustedDevices.map(device => [device.deviceId, device]),
       )
+      // eslint-disable-next-line react-hooks-extra/no-direct-set-state-in-use-effect
+      setTrustedDevices(trustedDevices)
     }
     catch {
       trustedDevicesRef.current.clear()
+      // eslint-disable-next-line react-hooks-extra/no-direct-set-state-in-use-effect
+      setTrustedDevices([])
     }
   }, [getBrowserStorage])
 
@@ -458,6 +486,42 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     }
     catch {}
   }, [getBrowserStorage, refreshTrustedDevices])
+
+  const updateLocalDeviceName = useCallback((deviceName: string) => {
+    const storage = getBrowserStorage()
+    if (!storage) {
+      return
+    }
+
+    try {
+      const nextProfile = updateLocalDeviceProfileName({
+        storage,
+        deviceName,
+      })
+      localDeviceProfileRef.current = nextProfile
+      setLocalDeviceProfile(nextProfile)
+    }
+    catch {}
+  }, [getBrowserStorage])
+
+  const removeTrustedDevice = useCallback((deviceId: string) => {
+    const storage = getBrowserStorage()
+    if (!storage) {
+      return
+    }
+
+    try {
+      const remaining = removeTrustedDeviceRecord({
+        storage,
+        deviceId,
+      })
+      trustedDevicesRef.current = new Map(
+        remaining.map(device => [device.deviceId, device]),
+      )
+      setTrustedDevices(remaining)
+    }
+    catch {}
+  }, [getBrowserStorage])
 
   const queueIncomingFileOffer = useCallback((offer: IncomingFileOffer) => {
     pendingIncomingFileOffersRef.current.set(offer.offerId, offer)
@@ -1277,6 +1341,10 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     stopScreenShare,
     incomingFileOffers,
     respondToIncomingFileOffer,
+    localDeviceProfile,
+    trustedDevices,
+    updateLocalDeviceName,
+    removeTrustedDevice,
   }), [
     roomCode,
     connectionStatus,
@@ -1306,6 +1374,10 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     stopScreenShare,
     incomingFileOffers,
     respondToIncomingFileOffer,
+    localDeviceProfile,
+    trustedDevices,
+    updateLocalDeviceName,
+    removeTrustedDevice,
   ])
 
   const transferItemsValue = useMemo<TransferItemsContextType>(() => ({
