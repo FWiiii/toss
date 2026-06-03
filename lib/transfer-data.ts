@@ -13,6 +13,7 @@ import {
   FILE_RESUME_WAIT_TIMEOUT,
 } from './peer-config'
 import { createBinaryFileChunkPayload } from './transfer-chunk'
+import type { FileOfferSummary } from './transfer-protocol'
 import { getFileOfferResponseKey } from './transfer-protocol'
 
 export interface DataTransferCallbacks {
@@ -32,6 +33,22 @@ interface PeerSendResult {
 type PeerConnectionLike = any
 
 type ControlPayload = Record<string, any>
+
+export function buildOutgoingTransferOfferSummary(files: File[]): FileOfferSummary | undefined {
+  if (files.length <= 1) {
+    return undefined
+  }
+
+  return {
+    fileCount: files.length,
+    totalSize: files.reduce((total, file) => total + file.size, 0),
+    sampleFiles: files.slice(0, 3).map(file => ({
+      name: file.name,
+      size: file.size,
+      type: file.type,
+    })),
+  }
+}
 
 export function createDataTransfer(
   refs: ConnectionRefs,
@@ -200,6 +217,7 @@ export function createDataTransfer(
     peerId: string,
     file: File,
     itemId: string,
+    offerSummary: FileOfferSummary | undefined,
     onProgress: (bytesSent: number) => void,
   ): Promise<PeerSendResult> => {
     const totalSize = file.size
@@ -214,6 +232,7 @@ export function createDataTransfer(
       fileType: file.type,
       name: file.name,
       size: totalSize,
+      ...(offerSummary ? { summary: offerSummary } : {}),
     })
 
     if (!offered) {
@@ -321,7 +340,7 @@ export function createDataTransfer(
     return { status: 'completed', bytesSent: totalSize }
   }
 
-  const sendFile = async (file: File): Promise<void> => {
+  const sendFile = async (file: File, offerSummary?: FileOfferSummary): Promise<void> => {
     setSendingCount(prev => prev + 1)
 
     let itemId: string | null = null
@@ -395,7 +414,7 @@ export function createDataTransfer(
 
       const peerResults = await Promise.all(
         targetPeerIds.map(async (peerId) => {
-          const result = await sendFileToPeer(peerId, file, itemId!, (bytesSent) => {
+          const result = await sendFileToPeer(peerId, file, itemId!, offerSummary, (bytesSent) => {
             peerProgress.set(peerId, bytesSent)
             updateAggregateProgress(false)
           })

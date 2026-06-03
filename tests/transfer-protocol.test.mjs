@@ -47,6 +47,15 @@ test('validateIncomingTransferPayload accepts supported control payloads', async
       name: 'demo.txt',
       fileType: 'text/plain',
       size: 12,
+      summary: {
+        fileCount: 12,
+        totalSize: 842 * 1024 * 1024,
+        sampleFiles: [
+          { name: 'a.jpg', size: 1, type: 'image/jpeg' },
+          { name: 'b.jpg', size: 1, type: 'image/jpeg' },
+          { name: 'c.jpg', size: 1, type: 'image/jpeg' },
+        ],
+      },
     }),
     {
       type: 'file-offer',
@@ -54,6 +63,15 @@ test('validateIncomingTransferPayload accepts supported control payloads', async
       name: 'demo.txt',
       fileType: 'text/plain',
       size: 12,
+      summary: {
+        fileCount: 12,
+        totalSize: 842 * 1024 * 1024,
+        sampleFiles: [
+          { name: 'a.jpg', size: 1, type: 'image/jpeg' },
+          { name: 'b.jpg', size: 1, type: 'image/jpeg' },
+          { name: 'c.jpg', size: 1, type: 'image/jpeg' },
+        ],
+      },
     },
   )
 

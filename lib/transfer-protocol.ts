@@ -57,12 +57,25 @@ export interface DeviceIntroPayload {
   deviceName: string
 }
 
+export interface FileOfferSummarySample {
+  name: string
+  size: number
+  type: string
+}
+
+export interface FileOfferSummary {
+  fileCount: number
+  totalSize: number
+  sampleFiles: FileOfferSummarySample[]
+}
+
 export interface FileOfferPayload {
   type: 'file-offer'
   offerId: string
   fileType: string
   name: string
   size: number
+  summary?: FileOfferSummary
 }
 
 export interface FileOfferResponsePayload {
@@ -104,6 +117,33 @@ function isValidOffset(value: unknown) {
 
 function isValidBinaryPayload(value: unknown): value is ArrayBuffer | ArrayBufferView {
   return value instanceof ArrayBuffer || ArrayBuffer.isView(value)
+}
+
+function isValidOfferSummary(summary: unknown): summary is FileOfferSummary {
+  if (!isPlainObject(summary)) {
+    return false
+  }
+
+  if (!Number.isInteger(summary.fileCount) || summary.fileCount <= 0) {
+    return false
+  }
+
+  if (typeof summary.totalSize !== 'number' || !Number.isFinite(summary.totalSize) || summary.totalSize < 0) {
+    return false
+  }
+
+  if (!Array.isArray(summary.sampleFiles) || summary.sampleFiles.length > 3) {
+    return false
+  }
+
+  return summary.sampleFiles.every(file =>
+    isPlainObject(file)
+    && isValidBoundedString(file.name, MAX_TRANSFER_FILE_NAME_LENGTH)
+    && typeof file.type === 'string'
+    && typeof file.size === 'number'
+    && Number.isFinite(file.size)
+    && file.size >= 0,
+  )
 }
 
 function toOwnedArrayBuffer(value: ArrayBuffer | ArrayBufferView): ArrayBuffer {
@@ -194,12 +234,16 @@ export function validateIncomingTransferPayload(data: unknown): TransferPayload 
       if (data.fileType !== undefined && typeof data.fileType !== 'string') {
         return null
       }
+      if (data.summary !== undefined && !isValidOfferSummary(data.summary)) {
+        return null
+      }
       return {
         type: 'file-offer',
         offerId: data.offerId,
         name: data.name,
         fileType: typeof data.fileType === 'string' ? data.fileType : '',
         size: Math.trunc(data.size),
+        summary: data.summary,
       }
 
     case 'file-offer-response':
