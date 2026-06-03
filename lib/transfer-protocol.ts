@@ -124,19 +124,22 @@ function isValidOfferSummary(summary: unknown): summary is FileOfferSummary {
     return false
   }
 
-  if (!Number.isInteger(summary.fileCount) || summary.fileCount <= 0) {
+  const fileCount = summary.fileCount
+  if (typeof fileCount !== 'number' || !Number.isInteger(fileCount) || fileCount <= 0) {
     return false
   }
 
-  if (typeof summary.totalSize !== 'number' || !Number.isFinite(summary.totalSize) || summary.totalSize < 0) {
+  const totalSize = summary.totalSize
+  if (typeof totalSize !== 'number' || !Number.isFinite(totalSize) || totalSize < 0) {
     return false
   }
 
-  if (!Array.isArray(summary.sampleFiles) || summary.sampleFiles.length > 3) {
+  const sampleFiles = summary.sampleFiles
+  if (!Array.isArray(sampleFiles) || sampleFiles.length > 3) {
     return false
   }
 
-  return summary.sampleFiles.every(file =>
+  return sampleFiles.every(file =>
     isPlainObject(file)
     && isValidBoundedString(file.name, MAX_TRANSFER_FILE_NAME_LENGTH)
     && typeof file.type === 'string'
