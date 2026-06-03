@@ -18,6 +18,7 @@ import {
 import { EmptyState } from '@/components/ui/empty-state'
 import { useShareTarget } from '@/hooks/use-share-target'
 import { resolvePendingTransferFile } from '@/lib/pending-transfer-file'
+import { buildOutgoingTransferOfferSummary } from '@/lib/transfer-data'
 import { useTransfer, useTransferItems } from '@/lib/transfer-context'
 import { cn, formatFileSize } from '@/lib/utils'
 
@@ -241,15 +242,26 @@ export function TransferPanel() {
       return
     }
 
-    for (const pendingFile of files) {
+    const resolvedFiles = (await Promise.all(files.map(async (pendingFile) => {
       try {
-        const file = await resolvePendingTransferFile(pendingFile)
-        await sendFile(file)
+        return await resolvePendingTransferFile(pendingFile)
       }
       catch (error) {
         console.error('Failed to resolve shared file:', error)
         addSystemMessage('获取分享文件失败，请重试', true)
+        return null
       }
+    }))).filter((file): file is File => file !== null)
+
+    if (resolvedFiles.length === 0) {
+      return
+    }
+
+    const offerSummary = buildOutgoingTransferOfferSummary(resolvedFiles)
+    const sendFileWithSummary = sendFile as (file: File, offerSummary?: ReturnType<typeof buildOutgoingTransferOfferSummary>) => Promise<void>
+
+    for (const file of resolvedFiles) {
+      await sendFileWithSummary(file, offerSummary)
     }
   }, [addSystemMessage, isConnected, sendFile])
 

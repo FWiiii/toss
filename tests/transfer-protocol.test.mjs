@@ -1,6 +1,7 @@
 /* eslint-disable test/no-import-node-test */
 
 import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 
 test('validateIncomingTransferPayload accepts supported control payloads', async () => {
@@ -135,4 +136,11 @@ test('validateIncomingTransferPayload rejects malformed or oversized payloads', 
     offerId: 'offer-1',
     accepted: 'yes',
   }), null)
+})
+
+test('transfer panel sends multi-file offers with a shared summary', async () => {
+  const source = await readFile(new URL('../components/transfer-panel.tsx', import.meta.url), 'utf8')
+
+  assert.match(source, /buildOutgoingTransferOfferSummary/)
+  assert.match(source, /await sendFileWithSummary\(file, offerSummary\)/)
 })
