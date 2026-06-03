@@ -4,6 +4,7 @@ import type { generateKeyPair, SessionEncryptor } from './crypto'
 import type { ReceiveStorageHandle } from './receive-storage'
 import type { ConnectionCallbacks, ConnectionRefs } from './transfer-connection'
 import type { DataTransferCallbacks } from './transfer-data'
+import type { FileOfferSummary } from './transfer-protocol'
 import type { RoomCallbacks } from './transfer-room'
 import type { LocalDeviceProfile, TrustedDeviceRecord } from './trusted-devices'
 import type { ConnectionInfo, ConnectionQuality, ConnectionStatus, ConnectionType, EncryptionPerformance, IncomingFileOffer, PeerDeviceInfo, TransferItem } from './types'
@@ -81,7 +82,7 @@ interface TransferContextType {
 interface TransferItemsContextType {
   items: TransferItem[]
   sendText: (text: string) => void
-  sendFile: (file: File) => Promise<void>
+  sendFile: (file: File, offerSummary?: FileOfferSummary) => Promise<void>
   cancelTransfer: (itemId: string) => void
   clearHistory: () => void
   addSystemMessage: (message: string, force?: boolean) => void

@@ -258,10 +258,9 @@ export function TransferPanel() {
     }
 
     const offerSummary = buildOutgoingTransferOfferSummary(resolvedFiles)
-    const sendFileWithSummary = sendFile as (file: File, offerSummary?: ReturnType<typeof buildOutgoingTransferOfferSummary>) => Promise<void>
 
     for (const file of resolvedFiles) {
-      await sendFileWithSummary(file, offerSummary)
+      await sendFile(file, offerSummary)
     }
   }, [addSystemMessage, isConnected, sendFile])
 

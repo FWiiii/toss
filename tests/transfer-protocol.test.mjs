@@ -132,15 +132,60 @@ test('validateIncomingTransferPayload rejects malformed or oversized payloads', 
   }), null)
 
   assert.equal(validateIncomingTransferPayload({
+    type: 'file-offer',
+    offerId: 'offer-1',
+    name: 'demo.txt',
+    fileType: 'text/plain',
+    size: 10,
+    summary: {
+      fileCount: 2,
+      totalSize: 10,
+      sampleFiles: [
+        { name: 'a.jpg', size: 1, type: 'image/jpeg' },
+        { name: 'b.jpg', size: 1, type: 'image/jpeg' },
+        { name: 'c.jpg', size: 1, type: 'image/jpeg' },
+        { name: 'd.jpg', size: 1, type: 'image/jpeg' },
+      ],
+    },
+  }), null)
+
+  assert.equal(validateIncomingTransferPayload({
     type: 'file-offer-response',
     offerId: 'offer-1',
     accepted: 'yes',
   }), null)
 })
 
-test('transfer panel sends multi-file offers with a shared summary', async () => {
-  const source = await readFile(new URL('../components/transfer-panel.tsx', import.meta.url), 'utf8')
+test('buildOutgoingTransferOfferSummary omits single files and summarizes batches', async () => {
+  const { buildOutgoingTransferOfferSummary } = await import('../lib/transfer-data.ts')
 
-  assert.match(source, /buildOutgoingTransferOfferSummary/)
-  assert.match(source, /await sendFileWithSummary\(file, offerSummary\)/)
+  const solo = new File([new Uint8Array([1, 2, 3])], 'solo.txt', { type: 'text/plain' })
+  assert.equal(buildOutgoingTransferOfferSummary([solo]), undefined)
+
+  const files = [
+    new File([new Uint8Array([1])], 'a.jpg', { type: 'image/jpeg' }),
+    new File([new Uint8Array([1, 2])], 'b.jpg', { type: 'image/jpeg' }),
+    new File([new Uint8Array([1, 2, 3])], 'c.jpg', { type: 'image/jpeg' }),
+    new File([new Uint8Array([1, 2, 3, 4])], 'd.jpg', { type: 'image/jpeg' }),
+  ]
+
+  assert.deepEqual(buildOutgoingTransferOfferSummary(files), {
+    fileCount: 4,
+    totalSize: 10,
+    sampleFiles: [
+      { name: 'a.jpg', size: 1, type: 'image/jpeg' },
+      { name: 'b.jpg', size: 2, type: 'image/jpeg' },
+      { name: 'c.jpg', size: 3, type: 'image/jpeg' },
+    ],
+  })
+})
+
+test('transfer panel sends multi-file offers through the typed sendFile boundary', async () => {
+  const panelSource = await readFile(new URL('../components/transfer-panel.tsx', import.meta.url), 'utf8')
+  const contextSource = await readFile(new URL('../lib/transfer-context.tsx', import.meta.url), 'utf8')
+
+  assert.match(panelSource, /buildOutgoingTransferOfferSummary/)
+  assert.match(panelSource, /await sendFile\(file, offerSummary\)/)
+  assert.doesNotMatch(panelSource, /sendFileWithSummary/)
+  assert.match(contextSource, /sendFile:\s*\(file: File,\s*offerSummary\?: FileOfferSummary\)\s*=> Promise<void>/)
 })
