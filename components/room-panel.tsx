@@ -381,6 +381,19 @@ export function RoomPanel() {
 
       </div>
 
+      <div
+        className={cn(
+          'mt-6 flex items-start gap-2 rounded-lg border p-3 text-sm leading-relaxed',
+          STATUS_TONES.neutral.calloutSurface,
+          STATUS_TONES.neutral.calloutText,
+        )}
+      >
+        <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+        <p>
+          说明：Toss 默认不在服务端存储传输内容；首次建立连接时会使用信令服务协助建链。连接成功后，可在状态详情中查看加密状态、会话指纹和当前链路类型。
+        </p>
+      </div>
+
       {/* QR Code Scanner Dialog */}
       {showScanner && (
         <QRCodeScanner

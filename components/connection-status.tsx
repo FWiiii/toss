@@ -41,21 +41,21 @@ function getConnectionTypeDisplay(type: ConnectionType) {
     case 'direct':
       return {
         label: '局域网直连',
-        description: '设备间直接通信，最快速度',
+        description: '内容直接在设备间传输，通常速度最快',
         icon: Zap,
         tone: 'success' as const,
       }
     case 'stun':
       return {
         label: 'P2P 穿透',
-        description: 'NAT 穿透后直连',
+        description: '经 NAT 穿透后直连，内容仍在设备间传输',
         icon: Radio,
         tone: 'info' as const,
       }
     case 'relay':
       return {
         label: '服务器中转',
-        description: '通过 TURN 服务器转发',
+        description: '网络受限时通过 TURN 转发，链路仍受 WebRTC 加密保护',
         icon: Server,
         tone: 'warning' as const,
       }
@@ -153,8 +153,8 @@ export function ConnectionStatusDisplay({
           icon: Loader2,
           label: isHost ? '等待连接' : '正在连接',
           description: isHost
-            ? '房间已创建，等待其他设备加入...'
-            : '正在建立 P2P 连接...',
+            ? '房间已创建，等待其他设备加入并协调连接...'
+            : '正在协调信令并建立 WebRTC 连接...',
           tone: 'warning' as const,
           showPulse: true,
           animate: true,
@@ -314,54 +314,60 @@ export function ConnectionStatusDisplay({
             </Button>
 
             {diagnosticsExpanded && (
-              <div className="mt-2 flex items-center gap-4 text-xs text-muted-foreground flex-wrap">
-                <div className="flex items-center gap-1.5" title={connectionTypeDisplay.description} aria-label={`连接方式 ${connectionTypeDisplay.label}`}>
-                  <ConnectionTypeIcon className={cn(
-                    'w-3.5 h-3.5',
-                    connectionTone.inline,
-                    connectionInfo?.type === 'unknown' && 'animate-spin',
+              <div className="mt-2 space-y-2 text-xs text-muted-foreground">
+                <div className="flex items-center gap-4 text-xs text-muted-foreground flex-wrap">
+                  <div className="flex items-center gap-1.5" title={connectionTypeDisplay.description} aria-label={`连接方式 ${connectionTypeDisplay.label}`}>
+                    <ConnectionTypeIcon className={cn(
+                      'w-3.5 h-3.5',
+                      connectionTone.inline,
+                      connectionInfo?.type === 'unknown' && 'animate-spin',
+                    )}
+                    />
+                    <span className={cn('font-medium', connectionTone.inline)}>
+                      {connectionTypeDisplay.label}
+                    </span>
+                  </div>
+
+                  {connectionQuality && connectionQuality.latency !== null && (
+                    <div className="flex items-center gap-1.5" title="网络延迟" aria-label={`网络延迟 ${connectionQuality.latency} 毫秒`}>
+                      <Activity className={cn('h-3.5 w-3.5', qualityTone?.inline)} />
+                      <span className={cn('font-medium', qualityTone?.inline)}>
+                        {connectionQuality.latency}
+                        ms
+                      </span>
+                    </div>
                   )}
-                  />
-                  <span className={cn('font-medium', connectionTone.inline)}>
-                    {connectionTypeDisplay.label}
-                  </span>
+
+                  {connectionQuality && connectionQuality.bandwidth !== null && (
+                    <div className="flex items-center gap-1.5" title="传输速度" aria-label={`传输速度 ${formatFileSize(connectionQuality.bandwidth)} 每秒`}>
+                      <Gauge className="w-3.5 h-3.5" />
+                      <span className="font-medium text-foreground">
+                        {formatFileSize(connectionQuality.bandwidth)}
+                        /s
+                      </span>
+                    </div>
+                  )}
+
+                  {isEncrypted && (
+                    <div className="flex items-center gap-1.5" title="当前传输已加密" aria-label="当前传输已加密">
+                      <Lock className={cn('w-3.5 h-3.5', STATUS_TONES.success.inline)} />
+                      <span className={cn('font-medium', STATUS_TONES.success.inline)}>已加密</span>
+                    </div>
+                  )}
+
+                  {isEncrypted && encryptionFingerprint && (
+                    <div className="flex items-center gap-1.5" title={`会话指纹 ${encryptionFingerprint}，可在两端人工核对`} aria-label={`会话指纹 ${encryptionFingerprint}`}>
+                      <Fingerprint className="h-3.5 w-3.5" />
+                      <span className="font-medium text-foreground">
+                        {encryptionFingerprint}
+                      </span>
+                    </div>
+                  )}
                 </div>
 
-                {connectionQuality && connectionQuality.latency !== null && (
-                  <div className="flex items-center gap-1.5" title="网络延迟" aria-label={`网络延迟 ${connectionQuality.latency} 毫秒`}>
-                    <Activity className={cn('h-3.5 w-3.5', qualityTone?.inline)} />
-                    <span className={cn('font-medium', qualityTone?.inline)}>
-                      {connectionQuality.latency}
-                      ms
-                    </span>
-                  </div>
-                )}
-
-                {connectionQuality && connectionQuality.bandwidth !== null && (
-                  <div className="flex items-center gap-1.5" title="传输速度" aria-label={`传输速度 ${formatFileSize(connectionQuality.bandwidth)} 每秒`}>
-                    <Gauge className="w-3.5 h-3.5" />
-                    <span className="font-medium text-foreground">
-                      {formatFileSize(connectionQuality.bandwidth)}
-                      /s
-                    </span>
-                  </div>
-                )}
-
-                {isEncrypted && (
-                  <div className="flex items-center gap-1.5" title="当前传输已加密" aria-label="当前传输已加密">
-                    <Lock className={cn('w-3.5 h-3.5', STATUS_TONES.success.inline)} />
-                    <span className={cn('font-medium', STATUS_TONES.success.inline)}>已加密</span>
-                  </div>
-                )}
-
-                {isEncrypted && encryptionFingerprint && (
-                  <div className="flex items-center gap-1.5" title={`会话指纹 ${encryptionFingerprint}，可在两端人工核对`} aria-label={`会话指纹 ${encryptionFingerprint}`}>
-                    <Fingerprint className="h-3.5 w-3.5" />
-                    <span className="font-medium text-foreground">
-                      {encryptionFingerprint}
-                    </span>
-                  </div>
-                )}
+                <p className="leading-relaxed text-muted-foreground/90">
+                  说明：传输内容默认不经过 Toss 服务端存储；建立连接时会使用信令服务协调，当前链路是否直连或中转以上方连接方式为准。
+                </p>
               </div>
             )}
           </div>
@@ -377,7 +383,7 @@ export function ConnectionStatusDisplay({
         )}
         >
           <Signal className="mt-0.5 h-4 w-4 shrink-0" />
-          <p>提示：在其他设备上输入房间代码或扫描二维码即可加入</p>
+          <p>提示：让另一台设备输入房间代码或扫描二维码即可加入；建立连接时会先协调信令，再确认实际链路类型。</p>
         </div>
       )}
 
