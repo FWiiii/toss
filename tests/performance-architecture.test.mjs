@@ -74,7 +74,7 @@ test('incoming connection data is processed sequentially to avoid receive races'
   const connectionSource = await readProjectFile('lib/transfer-connection.ts')
 
   assert.match(connectionSource, /createSequentialAsyncProcessor/)
-  assert.match(connectionSource, /conn\.on\('data',\s*\(data: any\) => \{/)
+  assert.match(connectionSource, /conn\.on\('data',\s*\(data: (?:any|unknown)\) => \{/)
   assert.match(connectionSource, /processIncomingData\(\s*async\s*\(\)\s*=>/)
 })
 

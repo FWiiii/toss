@@ -92,3 +92,20 @@ test('expired share payloads are cleaned up from disk', async () => {
 
   await rm(rootDir, { force: true, recursive: true })
 })
+
+test('share storage rejects unsafe identifiers before touching disk', async () => {
+  const {
+    assertSafeShareStorageId,
+    isSafeShareStorageId,
+  } = await loadShareStorage()
+
+  assert.equal(isSafeShareStorageId('550e8400-e29b-41d4-a716-446655440000'), true)
+  assert.equal(isSafeShareStorageId('../escape'), false)
+  assert.equal(isSafeShareStorageId('nested/path'), false)
+  assert.equal(isSafeShareStorageId(''), false)
+
+  assert.throws(
+    () => assertSafeShareStorageId('../escape'),
+    /Invalid share storage identifier/,
+  )
+})

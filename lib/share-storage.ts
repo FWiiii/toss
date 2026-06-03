@@ -5,6 +5,7 @@ import { join } from 'node:path'
 
 export const SHARE_PAYLOAD_TTL_MS = 15 * 60 * 1000
 export const SHARE_STORAGE_ROOT = join(tmpdir(), 'toss-share-target')
+const SHARE_STORAGE_ID_REGEX = /^[\dA-Z][\w-]{0,127}$/i
 
 interface ShareStorageOptions {
   now?: number
@@ -48,7 +49,18 @@ function getRootDir(rootDir?: string) {
   return rootDir ?? SHARE_STORAGE_ROOT
 }
 
+export function isSafeShareStorageId(value: string) {
+  return SHARE_STORAGE_ID_REGEX.test(value)
+}
+
+export function assertSafeShareStorageId(value: string) {
+  if (!isSafeShareStorageId(value)) {
+    throw new Error(`Invalid share storage identifier: ${value}`)
+  }
+}
+
 function getShareDir(shareId: string, rootDir?: string) {
+  assertSafeShareStorageId(shareId)
   return join(getRootDir(rootDir), shareId)
 }
 
@@ -61,6 +73,7 @@ function getFilesDir(shareId: string, rootDir?: string) {
 }
 
 function getFilePath(shareId: string, fileId: string, rootDir?: string) {
+  assertSafeShareStorageId(fileId)
   return join(getFilesDir(shareId, rootDir), fileId)
 }
 
@@ -74,6 +87,7 @@ async function ensureRootDir(rootDir?: string) {
 
 async function readManifestInternal(shareId: string, options: ShareStorageOptions = {}) {
   try {
+    assertSafeShareStorageId(shareId)
     const manifestRaw = await readFile(getManifestPath(shareId, options.rootDir), 'utf8')
     const manifest = JSON.parse(manifestRaw) as SharePayloadManifest
     const now = options.now ?? Date.now()
@@ -178,6 +192,11 @@ export async function cleanupExpiredSharePayloads(options: ShareStorageOptions =
     entries
       .filter(entry => entry.isDirectory())
       .map(async (entry) => {
+        if (!isSafeShareStorageId(entry.name)) {
+          await rm(join(rootDir, entry.name), { force: true, recursive: true })
+          return
+        }
+
         const shareDir = join(rootDir, entry.name)
         const manifestPath = join(shareDir, 'manifest.json')
 

@@ -16,6 +16,7 @@ import {
   encryptJSON,
   exportPublicKey,
   generateKeyPair,
+  getSessionFingerprint,
   importPublicKey,
   SessionEncryptor,
 } from './crypto'
@@ -29,6 +30,7 @@ import {
 import { createReceiveStorage } from './receive-storage'
 import { createSequentialAsyncProcessor } from './serial-async-processor'
 import { readBinaryChunkPayload } from './transfer-chunk'
+import { validateIncomingRawPeerPayload, validateIncomingTransferPayload } from './transfer-protocol'
 
 const IMAGE_FILE_NAME_REGEX = /\.(?:jpg|jpeg|png|gif|webp|svg)$/i
 
@@ -87,6 +89,7 @@ export interface ConnectionCallbacks {
   removePeerQuality: (peerId: string) => void
   notifyReceived: (type: string, name?: string) => void
   handlePeerConnectedToScreenShare?: (peerId: string) => void
+  setPeerEncryptionFingerprint?: (peerId: string, fingerprint: string | null) => void
 }
 
 export function createSetupConnection(
@@ -307,6 +310,7 @@ export function createSetupConnection(
       connectionsRef.current.delete(conn.peer)
       markBuffersPendingForPeer(conn.peer)
       encryptorsRef.current.delete(conn.peer)
+      callbacks.setPeerEncryptionFingerprint?.(conn.peer, null)
       keyExchangePendingRef.current.delete(conn.peer)
       removePeerQuality(conn.peer)
 
@@ -327,6 +331,7 @@ export function createSetupConnection(
       connectionsRef.current.delete(conn.peer)
       markBuffersPendingForPeer(conn.peer)
       encryptorsRef.current.delete(conn.peer)
+      callbacks.setPeerEncryptionFingerprint?.(conn.peer, null)
       keyExchangePendingRef.current.delete(conn.peer)
       removePeerQuality(conn.peer)
 
@@ -340,9 +345,15 @@ export function createSetupConnection(
       }
     })
 
-    const handleIncomingData = async (data: any) => {
+    const handleIncomingData = async (data: unknown) => {
+      const validatedData = validateIncomingRawPeerPayload(data)
+      if (!validatedData) {
+        console.warn(`Dropped invalid peer payload from ${conn.peer}`)
+        return
+      }
+
       // 处理密钥交换
-      if (data.type === 'key-exchange') {
+      if (validatedData.type === 'key-exchange') {
         try {
           const pending = keyExchangePendingRef.current.get(conn.peer)
           if (!pending) {
@@ -350,11 +361,15 @@ export function createSetupConnection(
             return
           }
 
-          const peerPublicKeyData = base64ToArrayBuffer(data.publicKey)
+          const peerPublicKeyData = base64ToArrayBuffer(validatedData.publicKey)
           const peerPublicKey = await importPublicKey(peerPublicKeyData)
 
           // 计算共享密钥
           const sharedSecret = await deriveSharedSecret(pending.keyPair.privateKey, peerPublicKey)
+          callbacks.setPeerEncryptionFingerprint?.(
+            conn.peer,
+            await getSessionFingerprint(sharedSecret),
+          )
 
           // 创建加密器并派生密钥
           const encryptor = new SessionEncryptor()
@@ -388,27 +403,27 @@ export function createSetupConnection(
       const isEncrypted = encryptor?.isReady() ?? false
 
       // 处理文件块（简化后，文件块不加密 JSON，直接处理）
-      if (data.type === 'file-chunk') {
-        const bufferKey = data.itemId ?? findBufferKeyByPeer(conn.peer)
+      if (validatedData.type === 'file-chunk') {
+        const bufferKey = validatedData.itemId ?? findBufferKeyByPeer(conn.peer)
         const buffer = bufferKey ? fileBuffersRef.current.get(bufferKey) : undefined
         if (buffer) {
           const expectedOffset = buffer.received
-          if (typeof data.offset === 'number') {
-            if (data.offset < expectedOffset) {
+          if (typeof validatedData.offset === 'number') {
+            if (validatedData.offset < expectedOffset) {
               return
             }
-            if (data.offset > expectedOffset) {
+            if (validatedData.offset > expectedOffset) {
               return
             }
           }
 
           let bytes: Uint8Array
-          if (isEncrypted && data.encrypted) {
+          if (isEncrypted && validatedData.encrypted) {
             // 直接解密文件块（不再需要解密 JSON）
             try {
               if (!encryptor)
                 return
-              bytes = await decryptBytes(encryptor, readBinaryChunkPayload(data.bytes))
+              bytes = await decryptBytes(encryptor, readBinaryChunkPayload(validatedData.bytes))
             }
             catch (error) {
               console.error('File chunk decryption error:', error)
@@ -416,7 +431,7 @@ export function createSetupConnection(
             }
           }
           else {
-            bytes = readBinaryChunkPayload(data.bytes)
+            bytes = readBinaryChunkPayload(validatedData.bytes)
           }
 
           try {
@@ -469,17 +484,26 @@ export function createSetupConnection(
       }
 
       // 解密其他类型的数据（文本、元数据等）- 这些仍然使用 JSON 加密
-      let decryptedData: any = data
-      if (isEncrypted && data.encrypted) {
+      let decryptedData = validatedData.type === 'encrypted'
+        ? null
+        : validateIncomingTransferPayload(validatedData)
+      if (validatedData.type === 'encrypted') {
         try {
           if (!encryptor)
             return
-          decryptedData = await decryptJSON(encryptor, data.encrypted)
+          decryptedData = validateIncomingTransferPayload(
+            await decryptJSON(encryptor, validatedData.encrypted),
+          )
         }
         catch (error) {
           console.error('Decryption error:', error)
           return
         }
+      }
+
+      if (!decryptedData) {
+        console.warn(`Dropped invalid decrypted payload from ${conn.peer}`)
+        return
       }
 
       if (decryptedData.type === 'text') {
@@ -652,7 +676,7 @@ export function createSetupConnection(
       }
     }
 
-    conn.on('data', (data: any) => {
+    conn.on('data', (data: unknown) => {
       touchPeer(conn.peer)
 
       void processIncomingData(async () => {
