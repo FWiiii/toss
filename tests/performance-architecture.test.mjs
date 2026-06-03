@@ -135,6 +135,10 @@ test('file transfers require explicit receiver approval before chunk streaming b
   assert.match(contextSource, /respondToIncomingFileOffer/)
   assert.match(receiveSource, /type === 'file-offer'/)
   assert.match(receiveSource, /type === 'file-offer-response'/)
+  assert.match(receiveSource, /requiresSecondaryConfirmation/)
+  assert.match(receiveSource, /!offer\.summary\.requiresSecondaryConfirmation/)
+  assert.match(contextSource, /secondaryConfirmed/)
+  assert.match(contextSource, /accepted && offer\.summary\.requiresSecondaryConfirmation && !secondaryConfirmed/)
 })
 
 test('transfer panel surfaces incoming file approval UI with a trust option', async () => {
@@ -145,6 +149,17 @@ test('transfer panel surfaces incoming file approval UI with a trust option', as
   assert.match(panelSource, /信任此设备/)
   assert.match(panelSource, /接受文件|接受接收|接受/)
   assert.match(panelSource, /拒绝/)
+})
+
+test('transfer panel shows summary-first approval states for risky incoming files', async () => {
+  const panelSource = await readProjectFile('components/transfer-panel.tsx')
+
+  assert.match(panelSource, /summary\.fileCount|activeIncomingSummary\.fileCount/)
+  assert.match(panelSource, /summary\.totalSize|activeIncomingSummary\.totalSize/)
+  assert.match(panelSource, /sampleFiles/)
+  assert.match(panelSource, /二次确认|确认后接收/)
+  assert.match(panelSource, /批量文件提醒|超大文件提醒|高风险文件确认/)
+  assert.match(panelSource, /其余[\s\S]*个文件已折叠/)
 })
 
 test('settings expose device identity and trusted device management affordances', async () => {

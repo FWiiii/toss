@@ -1,7 +1,7 @@
 'use client'
 
 import type { PendingTransferFile } from '@/lib/pending-transfer-file'
-import { Monitor, Send, Share2, Trash2, Upload } from 'lucide-react'
+import { AlertTriangle, Monitor, Send, Share2, ShieldAlert, Trash2, Upload } from 'lucide-react'
 import { useCallback, useEffect, useId, useMemo, useReducer, useRef, useState } from 'react'
 import { ImagePreviewDialog } from '@/components/image-preview-dialog'
 import { TransferInput } from '@/components/transfer-input'
@@ -18,8 +18,8 @@ import {
 import { EmptyState } from '@/components/ui/empty-state'
 import { useShareTarget } from '@/hooks/use-share-target'
 import { resolvePendingTransferFile } from '@/lib/pending-transfer-file'
-import { buildOutgoingTransferOfferSummary } from '@/lib/transfer-data'
 import { useTransfer, useTransferItems } from '@/lib/transfer-context'
+import { buildOutgoingTransferOfferSummary } from '@/lib/transfer-data'
 import { cn, formatFileSize } from '@/lib/utils'
 
 const PANEL_CLASS = 'panel-surface relative overflow-hidden transition-colors'
@@ -94,6 +94,14 @@ export function TransferPanel() {
     (_current: boolean, next: boolean) => next,
     false,
   )
+  const [secondaryConfirmed, setSecondaryConfirmed] = useReducer(
+    (_current: boolean, next: boolean) => next,
+    false,
+  )
+  const [isRespondingToIncomingOffer, setIsRespondingToIncomingOffer] = useReducer(
+    (_current: boolean, next: boolean) => next,
+    false,
+  )
   const [highlightComposer, setHighlightComposer] = useReducer(
     (_current: boolean, next: boolean) => next,
     false,
@@ -110,6 +118,12 @@ export function TransferPanel() {
   const shouldAutoScrollRef = useRef(true)
   const completedSectionId = useId()
   const activeIncomingFileOffer = incomingFileOffers[0] ?? null
+  const activeIncomingSummary = activeIncomingFileOffer?.summary ?? null
+  const activeIncomingRiskFlags = useMemo(
+    () => new Set(activeIncomingSummary?.riskFlags ?? []),
+    [activeIncomingSummary],
+  )
+  const requiresSecondaryConfirmation = activeIncomingSummary?.requiresSecondaryConfirmation ?? false
 
   const isConnected = connectionStatus === 'connected' && peerCount > 0
   const isScreenSharing = useMemo(
@@ -164,6 +178,8 @@ export function TransferPanel() {
 
   useEffect(() => {
     setTrustIncomingDevice(false)
+    setSecondaryConfirmed(false)
+    setIsRespondingToIncomingOffer(false)
   }, [activeIncomingFileOffer?.offerId])
 
   useEffect(() => {
@@ -503,6 +519,31 @@ export function TransferPanel() {
     stopScreenShare()
   }, [stopScreenShare])
 
+  const handleRespondToIncomingOffer = useCallback(async (accepted: boolean) => {
+    if (!activeIncomingFileOffer || isRespondingToIncomingOffer) {
+      return
+    }
+
+    setIsRespondingToIncomingOffer(true)
+    try {
+      await respondToIncomingFileOffer(
+        activeIncomingFileOffer.offerId,
+        accepted,
+        accepted ? trustIncomingDevice : false,
+        secondaryConfirmed,
+      )
+    }
+    finally {
+      setIsRespondingToIncomingOffer(false)
+    }
+  }, [
+    activeIncomingFileOffer,
+    isRespondingToIncomingOffer,
+    respondToIncomingFileOffer,
+    secondaryConfirmed,
+    trustIncomingDevice,
+  ])
+
   return (
     <div
       className={cn(
@@ -579,31 +620,83 @@ export function TransferPanel() {
       <Dialog
         open={Boolean(activeIncomingFileOffer)}
         onOpenChange={(open) => {
-          if (!open && activeIncomingFileOffer) {
-            void respondToIncomingFileOffer(activeIncomingFileOffer.offerId, false)
+          if (!open && activeIncomingFileOffer && !isRespondingToIncomingOffer) {
+            void handleRespondToIncomingOffer(false)
           }
         }}
       >
         <DialogContent className="sm:max-w-md" showCloseButton={false}>
           <DialogHeader>
-            <DialogTitle>接收文件确认</DialogTitle>
+            <DialogTitle>{requiresSecondaryConfirmation ? '高风险文件确认' : '接收文件确认'}</DialogTitle>
             <DialogDescription>
-              {activeIncomingFileOffer
-                ? `${activeIncomingFileOffer.deviceName} 想发送 ${activeIncomingFileOffer.fileName}`
+              {activeIncomingFileOffer && activeIncomingSummary
+                ? activeIncomingSummary.fileCount > 1
+                  ? `${activeIncomingFileOffer.deviceName} 想发送 ${activeIncomingSummary.fileCount} 个文件`
+                  : `${activeIncomingFileOffer.deviceName} 想发送 ${activeIncomingFileOffer.fileName}`
                 : '确认是否接收来自对方设备的文件'}
             </DialogDescription>
           </DialogHeader>
 
-          {activeIncomingFileOffer && (
+          {activeIncomingFileOffer && activeIncomingSummary && (
             <div className="space-y-3 text-sm text-muted-foreground">
-              <div className="rounded-lg border border-border/70 bg-muted/30 px-3 py-2">
-                <p className="font-medium text-foreground break-all">{activeIncomingFileOffer.fileName}</p>
-                <p className="mt-1">
-                  {activeIncomingFileOffer.size > 0 ? formatFileSize(activeIncomingFileOffer.size) : '未知大小'}
-                  {activeIncomingFileOffer.fileType ? ` · ${activeIncomingFileOffer.fileType}` : ''}
-                </p>
+              <div className="rounded-lg border border-border/70 bg-muted/30 px-3 py-3">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="space-y-1">
+                    <p className="font-medium text-foreground">
+                      {activeIncomingSummary.fileCount > 1
+                        ? `共 ${activeIncomingSummary.fileCount} 个文件`
+                        : activeIncomingFileOffer.fileName}
+                    </p>
+                    <p className="text-xs">
+                      {activeIncomingSummary.totalSize > 0 ? formatFileSize(activeIncomingSummary.totalSize) : '未知大小'}
+                      {activeIncomingSummary.fileCount === 1 && activeIncomingFileOffer.fileType
+                        ? ` · ${activeIncomingFileOffer.fileType}`
+                        : ''}
+                    </p>
+                  </div>
+                  {activeIncomingRiskFlags.size > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {activeIncomingRiskFlags.has('executable') && (
+                        <span className="rounded-full bg-destructive/10 px-2 py-1 text-xs font-medium text-destructive">
+                          可执行文件
+                        </span>
+                      )}
+                      {activeIncomingRiskFlags.has('large') && (
+                        <span className="rounded-full bg-warning/10 px-2 py-1 text-xs font-medium text-warning">
+                          超大文件提醒
+                        </span>
+                      )}
+                      {activeIncomingRiskFlags.has('batch') && (
+                        <span className="rounded-full bg-warning/10 px-2 py-1 text-xs font-medium text-warning">
+                          批量文件提醒
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-3 space-y-2">
+                  {activeIncomingSummary.sampleFiles.map(file => (
+                    <div key={`${file.name}-${file.size}-${file.type}`} className="flex items-center justify-between gap-3 text-xs">
+                      <p className="min-w-0 flex-1 truncate text-foreground">{file.name}</p>
+                      <span className="shrink-0 text-muted-foreground">
+                        {file.size > 0 ? formatFileSize(file.size) : '未知大小'}
+                      </span>
+                    </div>
+                  ))}
+                  {activeIncomingSummary.fileCount > activeIncomingSummary.sampleFiles.length && (
+                    <p className="text-xs text-muted-foreground">
+                      其余
+                      {' '}
+                      {activeIncomingSummary.fileCount - activeIncomingSummary.sampleFiles.length}
+                      {' '}
+                      个文件已折叠
+                    </p>
+                  )}
+                </div>
+
                 {activeIncomingFileOffer.fingerprint && (
-                  <p className="mt-1 text-xs">
+                  <p className="mt-3 text-xs">
                     会话指纹：
                     <br />
                     {activeIncomingFileOffer.fingerprint}
@@ -620,12 +713,71 @@ export function TransferPanel() {
                 )}
               </div>
 
+              {activeIncomingRiskFlags.has('executable') && (
+                <div className="rounded-lg border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                  <div className="flex items-start gap-2">
+                    <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
+                    <div className="space-y-1">
+                      <p className="font-medium text-foreground">高风险文件确认</p>
+                      <p>
+                        检测到可执行文件，请确认来源可信后再接收。
+                        {activeIncomingSummary.executableFileName
+                          ? ` 可执行文件：${activeIncomingSummary.executableFileName}`
+                          : ''}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {activeIncomingRiskFlags.has('large') && (
+                <div className="rounded-lg border border-warning/20 bg-warning/10 px-3 py-2 text-sm text-warning">
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                    <div className="space-y-1">
+                      <p className="font-medium text-foreground">超大文件提醒</p>
+                      <p>本次接收包含超大文件，传输可能耗时较长，请确认设备空间和网络状态。</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {activeIncomingRiskFlags.has('batch') && (
+                <div className="rounded-lg border border-warning/20 bg-warning/10 px-3 py-2 text-sm text-warning">
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                    <div className="space-y-1">
+                      <p className="font-medium text-foreground">批量文件提醒</p>
+                      <p>本次接收包含较多文件，请确认数量和文件名都符合预期。</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {requiresSecondaryConfirmation && (
+                <label className="flex items-start gap-3 rounded-lg border border-destructive/20 px-3 py-2 text-sm text-foreground">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 h-4 w-4 shrink-0"
+                    checked={secondaryConfirmed}
+                    disabled={isRespondingToIncomingOffer}
+                    onChange={event => setSecondaryConfirmed(event.target.checked)}
+                  />
+                  <span>
+                    {activeIncomingSummary.executableFileName
+                      ? `我已确认要接收 ${activeIncomingSummary.executableFileName}，并知晓这可能带来安全风险`
+                      : '我已确认要接收高风险文件，并知晓这可能带来安全风险'}
+                  </span>
+                </label>
+              )}
+
               {activeIncomingFileOffer.deviceId && (
                 <label className="flex items-start gap-3 rounded-lg border border-border/70 px-3 py-2 text-sm text-foreground">
                   <input
                     type="checkbox"
                     className="mt-0.5 h-4 w-4 shrink-0"
                     checked={trustIncomingDevice}
+                    disabled={isRespondingToIncomingOffer}
                     onChange={event => setTrustIncomingDevice(event.target.checked)}
                   />
                   <span>
@@ -639,22 +791,22 @@ export function TransferPanel() {
           <DialogFooter>
             <Button
               variant="outline"
+              disabled={isRespondingToIncomingOffer}
               onClick={() => {
-                if (activeIncomingFileOffer) {
-                  void respondToIncomingFileOffer(activeIncomingFileOffer.offerId, false)
-                }
+                void handleRespondToIncomingOffer(false)
               }}
             >
-              拒绝
+              {isRespondingToIncomingOffer ? '处理中...' : '拒绝'}
             </Button>
             <Button
+              disabled={isRespondingToIncomingOffer || (requiresSecondaryConfirmation && !secondaryConfirmed)}
               onClick={() => {
-                if (activeIncomingFileOffer) {
-                  void respondToIncomingFileOffer(activeIncomingFileOffer.offerId, true, trustIncomingDevice)
-                }
+                void handleRespondToIncomingOffer(true)
               }}
             >
-              接受
+              {isRespondingToIncomingOffer
+                ? '处理中...'
+                : requiresSecondaryConfirmation ? '确认后接收' : '接受'}
             </Button>
           </DialogFooter>
         </DialogContent>
