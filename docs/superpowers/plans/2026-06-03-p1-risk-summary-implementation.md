@@ -41,7 +41,7 @@
 
 - [ ] **步骤 1：先写失败的风险判定测试**
 
-```js
+```text
 test('buildIncomingTransferSummary marks executable, large, and batch risks', async () => {
   const { buildIncomingTransferSummary } = await import('../lib/incoming-transfer-risk.ts')
 
@@ -87,7 +87,7 @@ test('buildIncomingTransferSummary truncates sample files to the first three nam
 
 - [ ] **步骤 3：实现最小风险判定 helper 与类型**
 
-```ts
+```text
 export type IncomingTransferRiskFlag = 'batch' | 'executable' | 'large'
 
 export interface IncomingTransferSampleFile {
@@ -135,7 +135,7 @@ export function buildIncomingTransferSummary({ files }: { files: IncomingTransfe
 
 - [ ] **步骤 4：回填共享类型**
 
-```ts
+```text
 export interface IncomingFileOffer {
   offerId: string
   peerId: string
@@ -158,7 +158,7 @@ export interface IncomingFileOffer {
 
 - [ ] **步骤 6：提交 helper 基线**
 
-```bash
+```text
 git add lib/incoming-transfer-risk.ts lib/types.ts tests/incoming-transfer-risk.test.mjs
 git commit -m "feat(P1 风险): 增加接收摘要与风险判定 helper"
 ```
@@ -173,7 +173,7 @@ git commit -m "feat(P1 风险): 增加接收摘要与风险判定 helper"
 
 - [ ] **步骤 1：先写失败的协议测试**
 
-```js
+```text
 assert.deepEqual(
   validateIncomingTransferPayload({
     type: 'file-offer',
@@ -218,7 +218,7 @@ assert.deepEqual(
 
 - [ ] **步骤 3：扩展 `file-offer` payload 结构**
 
-```ts
+```text
 export interface FileOfferPayload {
   type: 'file-offer'
   offerId: string
@@ -235,7 +235,7 @@ export interface FileOfferPayload {
 
 - [ ] **步骤 4：在 `validateIncomingTransferPayload` 中校验可选摘要**
 
-```ts
+```text
 function isValidOfferSummary(summary: unknown) {
   if (!isPlainObject(summary)) return false
   if (!Number.isInteger(summary.fileCount) || summary.fileCount <= 0) return false
@@ -254,7 +254,7 @@ function isValidOfferSummary(summary: unknown) {
 
 - [ ] **步骤 5：发送多文件时构造共享摘要**
 
-```ts
+```text
 const sendFiles = useCallback(async (files: PendingTransferInput[]) => {
   const resolvedFiles = await Promise.all(files.map(resolvePendingTransferFile))
   const offerSummary = buildOutgoingTransferOfferSummary(resolvedFiles)
@@ -265,7 +265,7 @@ const sendFiles = useCallback(async (files: PendingTransferInput[]) => {
 }, [sendFile])
 ```
 
-```ts
+```text
 const offered = await sendControlToPeer(peerId, {
   type: 'file-offer',
   offerId: itemId,
@@ -284,7 +284,7 @@ const offered = await sendControlToPeer(peerId, {
 
 - [ ] **步骤 7：提交协议与发送侧改动**
 
-```bash
+```text
 git add lib/transfer-protocol.ts lib/transfer-data.ts tests/transfer-protocol.test.mjs
 git commit -m "feat(P1 协议): 为文件 offer 增加发送摘要元数据"
 ```
@@ -299,7 +299,7 @@ git commit -m "feat(P1 协议): 为文件 offer 增加发送摘要元数据"
 
 - [ ] **步骤 1：先写失败的架构测试**
 
-```js
+```text
 test('trusted devices do not auto-accept executable file offers', async () => {
   const receiveSource = await readProjectFile('lib/transfer-connection.ts')
 
@@ -317,7 +317,7 @@ test('trusted devices do not auto-accept executable file offers', async () => {
 
 - [ ] **步骤 3：在接收 `file-offer` 时统一组装摘要**
 
-```ts
+```text
 const summary = buildIncomingTransferSummary({
   files: decryptedData.summary?.sampleFiles?.length
     ? decryptedData.summary.sampleFiles
@@ -342,7 +342,7 @@ const offer: IncomingFileOffer = {
 
 - [ ] **步骤 4：阻止已信任设备绕过可执行文件保护**
 
-```ts
+```text
 const canAutoAccept = trustedDeviceId
   && trustedDevicesRef.current.has(trustedDeviceId)
   && !offer.summary.requiresSecondaryConfirmation
@@ -359,7 +359,7 @@ else {
 
 - [ ] **步骤 5：在 `respondToIncomingFileOffer` 中保留二次确认口子**
 
-```ts
+```text
 respondToIncomingFileOffer: (
   offerId: string,
   accepted: boolean,
@@ -378,7 +378,7 @@ respondToIncomingFileOffer: (
 
 - [ ] **步骤 7：提交接收链路保护**
 
-```bash
+```text
 git add lib/transfer-connection.ts lib/transfer-context.tsx tests/performance-architecture.test.mjs
 git commit -m "feat(P1 接收): 增加高风险文件自动接收保护"
 ```
@@ -392,7 +392,7 @@ git commit -m "feat(P1 接收): 增加高风险文件自动接收保护"
 
 - [ ] **步骤 1：先写失败的 UI 结构测试**
 
-```js
+```text
 test('transfer panel shows summary-first approval states for risky incoming files', async () => {
   const panelSource = await readProjectFile('components/transfer-panel.tsx')
 
@@ -412,7 +412,7 @@ test('transfer panel shows summary-first approval states for risky incoming file
 
 - [ ] **步骤 3：在确认框中渲染摘要与风险标签**
 
-```tsx
+```textx
 const summary = activeIncomingFileOffer.summary
 const isHighRisk = summary.requiresSecondaryConfirmation
 const riskFlags = new Set(summary.riskFlags)
@@ -427,7 +427,7 @@ const riskFlags = new Set(summary.riskFlags)
 
 - [ ] **步骤 4：加入二次确认勾选与按钮禁用状态**
 
-```tsx
+```textx
 const [secondaryConfirmed, setSecondaryConfirmed] = useState(false)
 
 <Button
@@ -447,7 +447,7 @@ const [secondaryConfirmed, setSecondaryConfirmed] = useState(false)
 
 - [ ] **步骤 5：默认展示前 3 个文件，其余折叠提示**
 
-```tsx
+```textx
 {summary.sampleFiles.map(file => (
   <p key={file.name} className="text-xs text-muted-foreground">{file.name}</p>
 ))}
@@ -466,7 +466,7 @@ const [secondaryConfirmed, setSecondaryConfirmed] = useState(false)
 
 - [ ] **步骤 7：提交确认框 UI 更新**
 
-```bash
+```text
 git add components/transfer-panel.tsx tests/performance-architecture.test.mjs
 git commit -m "feat(P1 交互): 增加风险提醒与摘要优先确认框"
 ```
@@ -483,7 +483,7 @@ git commit -m "feat(P1 交互): 增加风险提醒与摘要优先确认框"
 
 至少确认测试包含：
 
-```js
+```text
 assert.deepEqual(summary.riskFlags, ['batch'])
 assert.equal(summary.requiresSecondaryConfirmation, true)
 assert.match(panelSource, /其余 .* 个文件已折叠/)
@@ -516,7 +516,7 @@ assert.match(receiveSource, /!offer\.summary\.requiresSecondaryConfirmation/)
 
 - [ ] **步骤 6：提交最终收口**
 
-```bash
+```text
 git add tests/incoming-transfer-risk.test.mjs tests/transfer-protocol.test.mjs tests/performance-architecture.test.mjs
 git commit -m "test(P1 风险): 补齐接收摘要与高风险保护回归"
 ```
