@@ -94,6 +94,83 @@ const TransferContext = createContext<TransferContextType | null>(null)
 const TransferItemsContext = createContext<TransferItemsContextType | null>(null)
 const DEFAULT_CONNECTION_INFO: ConnectionInfo = { type: 'unknown' }
 
+interface ProcessIncomingFileOfferResponseOptions {
+  offerId: string
+  accepted: boolean
+  trustDevice?: boolean
+  secondaryConfirmed?: boolean
+  pendingIncomingFileOffers: Map<string, IncomingFileOffer>
+  approvedIncomingFileOffers: Map<string, string>
+  respondingIncomingFileOffers: Set<string>
+  sendControlToPeer: (peerId: string, payload: { type: 'file-offer-response', offerId: string, accepted: boolean }) => Promise<boolean>
+  rememberTrustedPeer: (deviceInfo: PeerDeviceInfo) => void
+  enqueueSystemMessage: (message: string, force?: boolean) => void
+  removeIncomingOffer: (offerId: string) => void
+}
+
+export async function processIncomingFileOfferResponse({
+  offerId,
+  accepted,
+  trustDevice = false,
+  secondaryConfirmed = false,
+  pendingIncomingFileOffers,
+  approvedIncomingFileOffers,
+  respondingIncomingFileOffers,
+  sendControlToPeer,
+  rememberTrustedPeer,
+  enqueueSystemMessage,
+  removeIncomingOffer,
+}: ProcessIncomingFileOfferResponseOptions): Promise<void> {
+  const offer = pendingIncomingFileOffers.get(offerId)
+  if (!offer || respondingIncomingFileOffers.has(offerId)) {
+    return
+  }
+
+  if (accepted && offer.summary.requiresSecondaryConfirmation && !secondaryConfirmed) {
+    enqueueSystemMessage(`来自 ${offer.deviceName} 的文件仍需二次确认`, true)
+    return
+  }
+
+  respondingIncomingFileOffers.add(offerId)
+
+  try {
+    const responseSent = await sendControlToPeer(offer.peerId, {
+      type: 'file-offer-response',
+      offerId,
+      accepted,
+    })
+
+    if (!responseSent) {
+      enqueueSystemMessage(`未能将文件确认结果发送给 ${offer.deviceName}，请重试`, true)
+      return
+    }
+
+    pendingIncomingFileOffers.delete(offerId)
+    removeIncomingOffer(offerId)
+
+    if (accepted) {
+      approvedIncomingFileOffers.set(offerId, offer.peerId)
+
+      if (trustDevice && offer.deviceId) {
+        rememberTrustedPeer({
+          deviceId: offer.deviceId,
+          deviceName: offer.deviceName,
+        })
+        enqueueSystemMessage(`已信任 ${offer.deviceName}，后续文件将自动接收`, true)
+      }
+
+      enqueueSystemMessage(`已接受来自 ${offer.deviceName} 的文件请求`, true)
+    }
+    else {
+      approvedIncomingFileOffers.delete(offerId)
+      enqueueSystemMessage(`已拒绝来自 ${offer.deviceName} 的文件请求`, true)
+    }
+  }
+  finally {
+    respondingIncomingFileOffers.delete(offerId)
+  }
+}
+
 interface ConnectionState {
   roomCode: string | null
   connectionStatus: ConnectionStatus
@@ -531,54 +608,21 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   const respondToIncomingFileOffer = useCallback(async (offerId: string, accepted: boolean, trustDevice = false, secondaryConfirmed = false) => {
-    const offer = pendingIncomingFileOffersRef.current.get(offerId)
-    if (!offer || respondingIncomingFileOffersRef.current.has(offerId)) {
-      return
-    }
-
-    if (accepted && offer.summary.requiresSecondaryConfirmation && !secondaryConfirmed) {
-      enqueueSystemMessage(`来自 ${offer.deviceName} 的文件仍需二次确认`, true)
-      return
-    }
-
-    respondingIncomingFileOffersRef.current.add(offerId)
-
-    try {
-      const responseSent = await sendControlToPeer(offer.peerId, {
-        type: 'file-offer-response',
-        offerId,
-        accepted,
-      })
-
-      if (!responseSent) {
-        enqueueSystemMessage(`未能将文件确认结果发送给 ${offer.deviceName}，请重试`, true)
-        return
-      }
-
-      pendingIncomingFileOffersRef.current.delete(offerId)
-      setIncomingFileOffers(prev => prev.filter(item => item.offerId !== offerId))
-
-      if (accepted) {
-        approvedIncomingFileOffersRef.current.set(offerId, offer.peerId)
-
-        if (trustDevice && offer.deviceId) {
-          rememberTrustedPeer({
-            deviceId: offer.deviceId,
-            deviceName: offer.deviceName,
-          })
-          enqueueSystemMessage(`已信任 ${offer.deviceName}，后续文件将自动接收`, true)
-        }
-
-        enqueueSystemMessage(`已接受来自 ${offer.deviceName} 的文件请求`, true)
-      }
-      else {
-        approvedIncomingFileOffersRef.current.delete(offerId)
-        enqueueSystemMessage(`已拒绝来自 ${offer.deviceName} 的文件请求`, true)
-      }
-    }
-    finally {
-      respondingIncomingFileOffersRef.current.delete(offerId)
-    }
+    await processIncomingFileOfferResponse({
+      offerId,
+      accepted,
+      trustDevice,
+      secondaryConfirmed,
+      pendingIncomingFileOffers: pendingIncomingFileOffersRef.current,
+      approvedIncomingFileOffers: approvedIncomingFileOffersRef.current,
+      respondingIncomingFileOffers: respondingIncomingFileOffersRef.current,
+      sendControlToPeer,
+      rememberTrustedPeer,
+      enqueueSystemMessage,
+      removeIncomingOffer: (activeOfferId) => {
+        setIncomingFileOffers(prev => prev.filter(item => item.offerId !== activeOfferId))
+      },
+    })
   }, [enqueueSystemMessage, rememberTrustedPeer, sendControlToPeer])
 
   const cleanupConnections = useCallback(() => {
