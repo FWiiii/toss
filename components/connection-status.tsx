@@ -6,6 +6,7 @@ import {
   Activity,
   AlertCircle,
   Crown,
+  Fingerprint,
   Gauge,
   Loader2,
   Lock,
@@ -30,6 +31,7 @@ interface ConnectionStatusDisplayProps {
   connectionInfo?: ConnectionInfo
   connectionQuality?: ConnectionQuality
   isEncrypted?: boolean
+  encryptionFingerprint?: string | null
   className?: string
 }
 
@@ -91,6 +93,7 @@ export function ConnectionStatusDisplay({
   connectionInfo,
   connectionQuality,
   isEncrypted = false,
+  encryptionFingerprint,
   className,
 }: ConnectionStatusDisplayProps) {
   const connectionTypeDisplay = getConnectionTypeDisplay(connectionInfo?.type || 'unknown')
@@ -345,9 +348,18 @@ export function ConnectionStatusDisplay({
                 )}
 
                 {isEncrypted && (
-                  <div className="flex items-center gap-1.5" title="端到端加密已启用" aria-label="端到端加密已启用">
+                  <div className="flex items-center gap-1.5" title="当前传输已加密" aria-label="当前传输已加密">
                     <Lock className={cn('w-3.5 h-3.5', STATUS_TONES.success.inline)} />
                     <span className={cn('font-medium', STATUS_TONES.success.inline)}>已加密</span>
+                  </div>
+                )}
+
+                {isEncrypted && encryptionFingerprint && (
+                  <div className="flex items-center gap-1.5" title={`会话指纹 ${encryptionFingerprint}，可在两端人工核对`} aria-label={`会话指纹 ${encryptionFingerprint}`}>
+                    <Fingerprint className="h-3.5 w-3.5" />
+                    <span className="font-medium text-foreground">
+                      {encryptionFingerprint}
+                    </span>
                   </div>
                 )}
               </div>

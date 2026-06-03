@@ -36,6 +36,7 @@ interface TransferContextType {
   isCreatingRoom: boolean
   isJoiningRoom: boolean
   isEncrypted: boolean
+  encryptionFingerprint: string | null
   notificationSettings: {
     soundEnabled: boolean
     browserNotificationEnabled: boolean
@@ -85,6 +86,7 @@ interface ConnectionState {
   peerCount: number
   isHost: boolean
   isEncrypted: boolean
+  encryptionFingerprint: string | null
   encryptionPerformance: EncryptionPerformance | null
 }
 
@@ -96,6 +98,7 @@ const INITIAL_CONNECTION_STATE: ConnectionState = {
   peerCount: 0,
   isHost: false,
   isEncrypted: false,
+  encryptionFingerprint: null,
   encryptionPerformance: null,
 }
 
@@ -142,6 +145,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     peerCount,
     isHost,
     isEncrypted,
+    encryptionFingerprint,
     encryptionPerformance,
   } = connectionState
   const setRoomCode = useCallback((nextRoomCode: string | null) => {
@@ -164,6 +168,9 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
   }, [])
   const setIsEncrypted = useCallback((nextIsEncrypted: boolean) => {
     patchConnectionState({ isEncrypted: nextIsEncrypted })
+  }, [])
+  const setEncryptionFingerprint = useCallback((nextFingerprint: string | null) => {
+    patchConnectionState({ encryptionFingerprint: nextFingerprint })
   }, [])
   const setEncryptionPerformance = useCallback((nextPerformance: EncryptionPerformance | null) => {
     patchConnectionState({ encryptionPerformance: nextPerformance })
@@ -235,6 +242,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
   // 加密相关 refs
 
   const encryptorsRef = useRef<Map<string, SessionEncryptor>>(new Map())
+  const encryptionFingerprintsRef = useRef<Map<string, string>>(new Map())
 
   const keyExchangePendingRef = useRef<Map<string, {
     keyPair: Awaited<ReturnType<typeof generateKeyPair>>
@@ -307,9 +315,11 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     fileBuffersRef.current.clear()
     connectingPeersRef.current.clear()
     encryptorsRef.current.clear()
+    encryptionFingerprintsRef.current.clear()
     keyExchangePendingRef.current.clear()
     pendingReconnectRef.current = false
-  }, [])
+    setEncryptionFingerprint(null)
+  }, [setEncryptionFingerprint])
 
   const cleanupScreenShare = useCallback((notify = false) => {
     const outgoingStream = screenShareStreamRef.current
@@ -354,6 +364,18 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     const safeDuration = Number.isFinite(durationMs) ? Math.max(0, durationMs) : 0
     suppressReconnectUntilRef.current = Date.now() + safeDuration
   }, [])
+
+  const updatePeerEncryptionFingerprint = useCallback((peerId: string, fingerprint: string | null) => {
+    if (fingerprint) {
+      encryptionFingerprintsRef.current.set(peerId, fingerprint)
+    }
+    else {
+      encryptionFingerprintsRef.current.delete(peerId)
+    }
+
+    const [nextFingerprint] = Array.from(encryptionFingerprintsRef.current.values())
+    setEncryptionFingerprint(nextFingerprint ?? null)
+  }, [setEncryptionFingerprint])
 
   const removeScreenShareCallsForPeer = useCallback((peerId: string) => {
     screenShareCallsRef.current = screenShareCallsRef.current.filter(call => call.peer !== peerId)
@@ -515,6 +537,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     setPeerCount(0)
     setIsHost(false)
     setIsEncrypted(false)
+    setEncryptionFingerprint(null)
 
     if (stopQualityMonitoringRef.current) {
       stopQualityMonitoringRef.current()
@@ -529,6 +552,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     setConnectionInfo,
     setConnectionStatus,
     setErrorMessage,
+    setEncryptionFingerprint,
     setIsEncrypted,
     setIsHost,
     setPeerCount,
@@ -580,6 +604,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     }
     else {
       setIsEncrypted(false)
+      setEncryptionFingerprint(null)
       if (roomCode && connectionStatus !== 'reconnecting') {
         setConnectionStatus('connecting')
       }
@@ -587,7 +612,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
         stopQualityMonitoringRef.current()
       }
     }
-  }, [connectionStatus, roomCode, setConnectionStatus, setErrorMessage, setIsEncrypted, setPeerCount])
+  }, [connectionStatus, roomCode, setConnectionStatus, setEncryptionFingerprint, setErrorMessage, setIsEncrypted, setPeerCount])
 
   // ============ Connection Refs Setup ============
   const connectionRefs = useMemo<ConnectionRefs>(() => ({
@@ -631,6 +656,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     removePeerQuality: removePeerMetrics,
     notifyReceived: (type: string, name?: string) => notifyReceived(type as 'text' | 'image' | 'file', name),
     handlePeerConnectedToScreenShare,
+    setPeerEncryptionFingerprint: updatePeerEncryptionFingerprint,
   }), [
     addItem,
     addItemWithId,
@@ -644,6 +670,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     recordBandwidth,
     removePeerMetrics,
     handlePeerConnectedToScreenShare,
+    updatePeerEncryptionFingerprint,
     setConnectionInfo,
     setConnectionStatus,
     setError,
@@ -1004,6 +1031,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     isCreatingRoom,
     isJoiningRoom,
     isEncrypted,
+    encryptionFingerprint,
     notificationSettings,
     notificationPermission,
     updateNotificationSettings,
@@ -1030,6 +1058,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     isCreatingRoom,
     isJoiningRoom,
     isEncrypted,
+    encryptionFingerprint,
     notificationSettings,
     notificationPermission,
     updateNotificationSettings,

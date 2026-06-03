@@ -47,6 +47,7 @@ export function RoomPanel() {
     isCreatingRoom,
     isJoiningRoom,
     isEncrypted,
+    encryptionFingerprint,
   } = useTransfer()
   const { joinCode, clearJoinCode } = useJoinCode()
   const [inputCode, setInputCode] = useState('')
@@ -223,6 +224,7 @@ export function RoomPanel() {
           connectionInfo={connectionInfo}
           connectionQuality={connectionQuality}
           isEncrypted={isEncrypted}
+          encryptionFingerprint={encryptionFingerprint}
           className="mb-5"
         />
 

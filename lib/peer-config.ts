@@ -12,6 +12,12 @@ export const PEER_PREFIX = 'snapdrop-room-'
  */
 export function generateRoomCode(): string {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+  const cryptoRef = globalThis.crypto
+  if (cryptoRef?.getRandomValues) {
+    const randomValues = cryptoRef.getRandomValues(new Uint8Array(6))
+    return Array.from(randomValues, value => chars[value % chars.length]).join('')
+  }
+
   let code = ''
   for (let i = 0; i < 6; i++) {
     code += chars[Math.floor(Math.random() * chars.length)]

@@ -13,6 +13,7 @@ const AES_GCM_ALGORITHM = {
   name: 'AES-GCM',
   length: 256,
 } as const
+const SESSION_FINGERPRINT_GROUP_REGEX = /.{1,4}/g
 
 function getSubtleCrypto(): SubtleCrypto {
   const cryptoRef = globalThis.crypto
@@ -302,6 +303,19 @@ export async function deriveSharedSecret(
     privateKey,
     256, // 256 位共享密钥
   )
+}
+
+export async function getSessionFingerprint(sharedSecret: ArrayBufferLike): Promise<string> {
+  const subtle = getSubtleCrypto()
+  const digestInput = new Uint8Array(new ArrayBuffer(sharedSecret.byteLength))
+  digestInput.set(new Uint8Array(sharedSecret))
+  const digest = await subtle.digest('SHA-256', digestInput)
+  const hex = Array.from(new Uint8Array(digest))
+    .slice(0, 6)
+    .map(byte => byte.toString(16).padStart(2, '0').toUpperCase())
+    .join('')
+
+  return hex.match(SESSION_FINGERPRINT_GROUP_REGEX)?.join(' ') ?? hex
 }
 
 /**
