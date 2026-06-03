@@ -1,13 +1,12 @@
 'use client'
 
 import type { generateKeyPair, SessionEncryptor } from './crypto'
-import type { ReceiveStorageHandle } from './receive-storage'
-import type { ConnectionCallbacks, ConnectionRefs } from './transfer-connection'
+import type { ActiveReceiveBuffer, ConnectionCallbacks, ConnectionRefs } from './transfer-connection'
 import type { DataTransferCallbacks } from './transfer-data'
 import type { FileOfferSummary } from './transfer-protocol'
 import type { RoomCallbacks } from './transfer-room'
 import type { LocalDeviceProfile, TrustedDeviceRecord } from './trusted-devices'
-import type { ConnectionInfo, ConnectionQuality, ConnectionStatus, ConnectionType, EncryptionPerformance, IncomingFileOffer, PeerDeviceInfo, TransferItem } from './types'
+import type { ConnectionInfo, ConnectionQuality, ConnectionStatus, ConnectionType, EncryptionPerformance, IncomingFileOffer, PeerDeviceInfo, ReceiveHistoryEntry, ReceiveHistoryOutcome, TransferItem } from './types'
 import * as React from 'react'
 import { createContext, use, useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { useConnectionQuality } from '@/hooks/use-connection-quality'
@@ -17,6 +16,7 @@ import { useTransferItems as useTransferItemsState } from '@/hooks/use-transfer-
 import { createConnectionAttemptRegistry } from './connection-attempts'
 import { encryptJSON } from './crypto'
 import { PEER_PREFIX } from './peer-config'
+import { appendReceiveHistoryEntry, clearReceiveHistoryEntries, listReceiveHistoryEntries } from './receive-history-storage'
 import { ensureScreenShareCallForPeer, normalizeScreenShareType, stopIncomingScreenShare, stopOutgoingScreenShare } from './screen-share'
 import { createAttemptReconnect, createSetupConnection } from './transfer-connection'
 import { createDataTransfer } from './transfer-data'
@@ -29,6 +29,7 @@ import {
   removeTrustedDevice as removeTrustedDeviceRecord,
   updateLocalDeviceName as updateLocalDeviceProfileName,
 } from './trusted-devices'
+import { generateUUID } from './utils'
 
 export type { ConnectionInfo, ConnectionQuality, ConnectionStatus, ConnectionType, EncryptionPerformance, TransferItem }
 
@@ -73,6 +74,9 @@ interface TransferContextType {
   stopScreenShare: () => void
   incomingFileOffers: IncomingFileOffer[]
   respondToIncomingFileOffer: (offerId: string, accepted: boolean, trustDevice?: boolean, secondaryConfirmed?: boolean) => Promise<void>
+  receiveHistoryEntries: ReceiveHistoryEntry[]
+  clearReceiveHistory: () => Promise<void>
+  reloadReceiveHistory: () => Promise<void>
   localDeviceProfile: LocalDeviceProfile
   trustedDevices: TrustedDeviceRecord[]
   updateLocalDeviceName: (deviceName: string) => void
@@ -100,12 +104,61 @@ interface ProcessIncomingFileOfferResponseOptions {
   trustDevice?: boolean
   secondaryConfirmed?: boolean
   pendingIncomingFileOffers: Map<string, IncomingFileOffer>
+  acceptedIncomingFileOffers: Map<string, IncomingFileOffer>
   approvedIncomingFileOffers: Map<string, string>
   respondingIncomingFileOffers: Set<string>
   sendControlToPeer: (peerId: string, payload: { type: 'file-offer-response', offerId: string, accepted: boolean }) => Promise<boolean>
   rememberTrustedPeer: (deviceInfo: PeerDeviceInfo) => void
   enqueueSystemMessage: (message: string, force?: boolean) => void
   removeIncomingOffer: (offerId: string) => void
+  recordReceiveHistory?: (options: {
+    offer: IncomingFileOffer
+    outcome: ReceiveHistoryOutcome
+    failureReason: string | null
+  }) => void
+}
+
+export function buildReceiveHistoryEntryFromOffer({
+  offer,
+  outcome,
+  failureReason,
+  now,
+}: {
+  offer: IncomingFileOffer
+  outcome: ReceiveHistoryOutcome
+  failureReason: string | null
+  now?: number
+}): ReceiveHistoryEntry {
+  return {
+    id: generateUUID(),
+    offerId: offer.offerId,
+    deviceId: offer.deviceId,
+    deviceName: offer.deviceName,
+    timestamp: now ?? Date.now(),
+    outcome,
+    summary: offer.summary,
+    primaryFileName: offer.fileName,
+    fileType: offer.fileType || null,
+    failureReason,
+  }
+}
+
+export async function safelyAppendReceiveHistoryEntry({
+  appendEntry,
+  entry,
+  onError,
+}: {
+  appendEntry: () => Promise<void>
+  entry: { id: string }
+  onError: (error: unknown) => void
+}) {
+  try {
+    await appendEntry()
+  }
+  catch (error) {
+    void entry.id
+    onError(error)
+  }
 }
 
 export async function processIncomingFileOfferResponse({
@@ -114,12 +167,14 @@ export async function processIncomingFileOfferResponse({
   trustDevice = false,
   secondaryConfirmed = false,
   pendingIncomingFileOffers,
+  acceptedIncomingFileOffers,
   approvedIncomingFileOffers,
   respondingIncomingFileOffers,
   sendControlToPeer,
   rememberTrustedPeer,
   enqueueSystemMessage,
   removeIncomingOffer,
+  recordReceiveHistory,
 }: ProcessIncomingFileOfferResponseOptions): Promise<void> {
   const offer = pendingIncomingFileOffers.get(offerId)
   if (!offer || respondingIncomingFileOffers.has(offerId)) {
@@ -150,6 +205,7 @@ export async function processIncomingFileOfferResponse({
 
     if (accepted) {
       approvedIncomingFileOffers.set(offerId, offer.peerId)
+      acceptedIncomingFileOffers.set(offerId, offer)
 
       if (trustDevice && offer.deviceId) {
         rememberTrustedPeer({
@@ -162,8 +218,14 @@ export async function processIncomingFileOfferResponse({
       enqueueSystemMessage(`已接受来自 ${offer.deviceName} 的文件请求`, true)
     }
     else {
+      acceptedIncomingFileOffers.delete(offerId)
       approvedIncomingFileOffers.delete(offerId)
       enqueueSystemMessage(`已拒绝来自 ${offer.deviceName} 的文件请求`, true)
+      recordReceiveHistory?.({
+        offer,
+        outcome: 'rejected',
+        failureReason: null,
+      })
     }
   }
   finally {
@@ -230,6 +292,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
   const [isCreatingRoom, setIsCreatingRoom] = useState(false)
   const [isJoiningRoom, setIsJoiningRoom] = useState(false)
   const [sendingCount, setSendingCount] = useState(0)
+  const [receiveHistoryEntries, setReceiveHistoryEntries] = useState<ReceiveHistoryEntry[]>([])
   const {
     roomCode,
     connectionStatus,
@@ -328,25 +391,14 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
   const peerDevicesRef = useRef<Map<string, PeerDeviceInfo>>(new Map())
   const localDeviceProfileRef = useRef<LocalDeviceProfile | null>(null)
   const trustedDevicesRef = useRef<Map<string, TrustedDeviceRecord>>(new Map())
-  const fileBuffersRef = useRef<Map<string, {
-    peerId: string
-    name: string
-    size: number
-    type: string
-    received: number
-    localItemId: string
-    remoteItemId: string
-    lastTime: number
-    lastBytes: number
-    smoothedSpeed: number
-    storage: ReceiveStorageHandle
-  }>>(new Map())
+  const fileBuffersRef = useRef<Map<string, ActiveReceiveBuffer>>(new Map())
 
   // 加密相关 refs
 
   const encryptorsRef = useRef<Map<string, SessionEncryptor>>(new Map())
   const encryptionFingerprintsRef = useRef<Map<string, string>>(new Map())
   const pendingIncomingFileOffersRef = useRef<Map<string, IncomingFileOffer>>(new Map())
+  const acceptedIncomingFileOffersRef = useRef<Map<string, IncomingFileOffer>>(new Map())
   const approvedIncomingFileOffersRef = useRef<Map<string, string>>(new Map())
   const respondingIncomingFileOffersRef = useRef<Set<string>>(new Set())
   const pendingFileOfferResponsesRef = useRef<Map<string, {
@@ -373,6 +425,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
   const shouldReconnectRef = useRef(true)
   const pendingReconnectRef = useRef(false)
   const connectingPeersRef = useRef(createConnectionAttemptRegistry())
+  const receiveHistoryReloadSequenceRef = useRef(0)
 
   const setupConnectionRef = useRef<((conn: any, isOutgoing?: boolean) => void) | null>(null)
   const attemptReconnectRef = useRef<(() => void) | null>(null)
@@ -529,6 +582,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
         continue
       }
       pendingIncomingFileOffersRef.current.delete(offerId)
+      acceptedIncomingFileOffersRef.current.delete(offerId)
       approvedIncomingFileOffersRef.current.delete(offerId)
       changed = true
     }
@@ -537,6 +591,50 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       setIncomingFileOffers(prev => prev.filter(offer => offer.peerId !== peerId))
     }
   }, [])
+
+  const reloadReceiveHistory = useCallback(async () => {
+    const sequence = ++receiveHistoryReloadSequenceRef.current
+    const entries = await listReceiveHistoryEntries()
+    if (sequence === receiveHistoryReloadSequenceRef.current) {
+      setReceiveHistoryEntries(entries)
+    }
+  }, [])
+
+  const clearReceiveHistory = useCallback(async () => {
+    await clearReceiveHistoryEntries()
+    await reloadReceiveHistory()
+  }, [reloadReceiveHistory])
+
+  const recordReceiveHistory = useCallback(({
+    offer,
+    outcome,
+    failureReason,
+  }: {
+    offer: IncomingFileOffer
+    outcome: ReceiveHistoryOutcome
+    failureReason: string | null
+  }) => {
+    const entry = buildReceiveHistoryEntryFromOffer({
+      offer,
+      outcome,
+      failureReason,
+    })
+
+    void safelyAppendReceiveHistoryEntry({
+      appendEntry: async () => {
+        await appendReceiveHistoryEntry(entry)
+        await reloadReceiveHistory()
+      },
+      entry,
+      onError: (error) => {
+        console.error(`Failed to persist ${outcome} receive history:`, error)
+      },
+    })
+  }, [reloadReceiveHistory])
+
+  useEffect(() => {
+    void reloadReceiveHistory()
+  }, [reloadReceiveHistory])
 
   const resolvePendingFileOfferResponse = useCallback((peerId: string, offerId: string, accepted: boolean) => {
     const responseKey = getFileOfferResponseKey(peerId, offerId)
@@ -614,6 +712,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       trustDevice,
       secondaryConfirmed,
       pendingIncomingFileOffers: pendingIncomingFileOffersRef.current,
+      acceptedIncomingFileOffers: acceptedIncomingFileOffersRef.current,
       approvedIncomingFileOffers: approvedIncomingFileOffersRef.current,
       respondingIncomingFileOffers: respondingIncomingFileOffersRef.current,
       sendControlToPeer,
@@ -622,8 +721,9 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       removeIncomingOffer: (activeOfferId) => {
         setIncomingFileOffers(prev => prev.filter(item => item.offerId !== activeOfferId))
       },
+      recordReceiveHistory,
     })
-  }, [enqueueSystemMessage, rememberTrustedPeer, sendControlToPeer])
+  }, [enqueueSystemMessage, recordReceiveHistory, rememberTrustedPeer, sendControlToPeer])
 
   const cleanupConnections = useCallback(() => {
     connectionsRef.current.forEach(safeClose)
@@ -637,6 +737,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     encryptionFingerprintsRef.current.clear()
     peerDevicesRef.current.clear()
     pendingIncomingFileOffersRef.current.clear()
+    acceptedIncomingFileOffersRef.current.clear()
     approvedIncomingFileOffersRef.current.clear()
     respondingIncomingFileOffersRef.current.clear()
     pendingFileOfferResponsesRef.current.forEach((pendingResponse) => {
@@ -953,6 +1054,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     localDeviceProfileRef,
     trustedDevicesRef,
     pendingIncomingFileOffersRef,
+    acceptedIncomingFileOffersRef,
     approvedIncomingFileOffersRef,
     pendingFileOfferResponsesRef,
     reconnectAttemptsRef,
@@ -997,6 +1099,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     resolvePendingFileOfferResponse,
     discardIncomingFileOffersForPeer,
     rememberTrustedPeer,
+    recordReceiveHistory,
   }), [
     addItem,
     addItemWithId,
@@ -1016,6 +1119,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     resolvePendingFileOfferResponse,
     discardIncomingFileOffersForPeer,
     rememberTrustedPeer,
+    recordReceiveHistory,
     setConnectionInfo,
     setConnectionStatus,
     setError,
@@ -1242,6 +1346,11 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     else if (item.direction === 'received') {
       for (const [peerId, buffer] of fileBuffersRef.current.entries()) {
         if (buffer.localItemId === itemId) {
+          recordReceiveHistory({
+            offer: buffer.historyOffer,
+            outcome: 'cancelled',
+            failureReason: null,
+          })
           void buffer.storage.abort()
           fileBuffersRef.current.delete(peerId)
 
@@ -1261,7 +1370,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
         speed: undefined,
       })
     }
-  }, [items, updateItemProgress])
+  }, [items, recordReceiveHistory, updateItemProgress])
 
   // ============ Cleanup ============
   useEffect(() => {
@@ -1270,6 +1379,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     const activeConnectionAttempts = connectingPeersRef.current
     const activePeerDevices = peerDevicesRef.current
     const activePendingIncomingFileOffers = pendingIncomingFileOffersRef.current
+    const activeAcceptedIncomingFileOffers = acceptedIncomingFileOffersRef.current
     const activeApprovedIncomingFileOffers = approvedIncomingFileOffersRef.current
     const activeRespondingIncomingFileOffers = respondingIncomingFileOffersRef.current
     const activePendingFileOfferResponses = pendingFileOfferResponsesRef.current
@@ -1293,6 +1403,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       activeConnectionAttempts.clear()
       activePeerDevices.clear()
       activePendingIncomingFileOffers.clear()
+      activeAcceptedIncomingFileOffers.clear()
       activeApprovedIncomingFileOffers.clear()
       activeRespondingIncomingFileOffers.clear()
       activePendingFileOfferResponses.forEach((pendingResponse) => {
@@ -1407,6 +1518,9 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     stopScreenShare,
     incomingFileOffers,
     respondToIncomingFileOffer,
+    receiveHistoryEntries,
+    clearReceiveHistory,
+    reloadReceiveHistory,
     localDeviceProfile,
     trustedDevices,
     updateLocalDeviceName,
@@ -1440,6 +1554,9 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     stopScreenShare,
     incomingFileOffers,
     respondToIncomingFileOffer,
+    receiveHistoryEntries,
+    clearReceiveHistory,
+    reloadReceiveHistory,
     localDeviceProfile,
     trustedDevices,
     updateLocalDeviceName,

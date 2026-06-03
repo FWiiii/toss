@@ -207,6 +207,7 @@ test('processIncomingFileOfferResponse sends only one response for concurrent de
     }],
   ])
   const approvedIncomingFileOffers = new Map()
+  const acceptedIncomingFileOffers = new Map()
   const respondingIncomingFileOffers = new Set()
   const sentPayloads = []
   const messages = []
@@ -218,6 +219,7 @@ test('processIncomingFileOfferResponse sends only one response for concurrent de
     trustDevice: true,
     secondaryConfirmed: true,
     pendingIncomingFileOffers,
+    acceptedIncomingFileOffers,
     approvedIncomingFileOffers,
     respondingIncomingFileOffers,
     sendControlToPeer: async (peerId, payload) => {
@@ -240,6 +242,64 @@ test('processIncomingFileOfferResponse sends only one response for concurrent de
 
   assert.equal(sentPayloads.length, 1)
   assert.equal(approvedIncomingFileOffers.get('offer-1'), 'peer-1')
+  assert.equal(acceptedIncomingFileOffers.get('offer-1')?.deviceName, 'Trusted Mac')
   assert.equal(trustedPeers.length, 1)
   assert.ok(messages.some(message => message.includes('已接受来自 Trusted Mac')))
+})
+
+test('processIncomingFileOfferResponse records rejected receive history without blocking rejection', async () => {
+  const { processIncomingFileOfferResponse } = await import('../lib/transfer-context.tsx')
+
+  const pendingIncomingFileOffers = new Map([
+    ['offer-2', {
+      offerId: 'offer-2',
+      peerId: 'peer-2',
+      deviceId: 'device-2',
+      deviceName: 'Alice Mac',
+      fileName: 'photo.jpg',
+      fileType: 'image/jpeg',
+      size: 24,
+      fingerprint: null,
+      requestedAt: Date.now(),
+      summary: {
+        fileCount: 1,
+        totalSize: 24,
+        sampleFiles: [{ name: 'photo.jpg', size: 24, type: 'image/jpeg' }],
+        riskFlags: [],
+        requiresSecondaryConfirmation: false,
+        executableFileName: null,
+      },
+    }],
+  ])
+  const acceptedIncomingFileOffers = new Map()
+  const approvedIncomingFileOffers = new Map()
+  const respondingIncomingFileOffers = new Set()
+  const sentPayloads = []
+  const historyWrites = []
+
+  await processIncomingFileOfferResponse({
+    offerId: 'offer-2',
+    accepted: false,
+    pendingIncomingFileOffers,
+    acceptedIncomingFileOffers,
+    approvedIncomingFileOffers,
+    respondingIncomingFileOffers,
+    sendControlToPeer: async (peerId, payload) => {
+      sentPayloads.push({ peerId, payload })
+      return true
+    },
+    rememberTrustedPeer() {},
+    enqueueSystemMessage() {},
+    removeIncomingOffer: (offerId) => {
+      pendingIncomingFileOffers.delete(offerId)
+    },
+    recordReceiveHistory: (entry) => {
+      historyWrites.push(entry)
+    },
+  })
+
+  assert.equal(sentPayloads.length, 1)
+  assert.equal(historyWrites.length, 1)
+  assert.equal(historyWrites[0].outcome, 'rejected')
+  assert.equal(historyWrites[0].offer.deviceName, 'Alice Mac')
 })
