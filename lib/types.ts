@@ -74,6 +74,23 @@ export interface PeerDeviceInfo {
   deviceName: string
 }
 
+export type IncomingTransferRiskFlag = 'batch' | 'executable' | 'large'
+
+export interface IncomingTransferSampleFile {
+  name: string
+  size: number
+  type: string
+}
+
+export interface IncomingTransferSummary {
+  fileCount: number
+  totalSize: number
+  sampleFiles: IncomingTransferSampleFile[]
+  riskFlags: IncomingTransferRiskFlag[]
+  requiresSecondaryConfirmation: boolean
+  executableFileName: string | null
+}
+
 export interface IncomingFileOffer {
   offerId: string
   peerId: string
@@ -84,4 +101,20 @@ export interface IncomingFileOffer {
   size: number
   fingerprint: string | null
   requestedAt: number
+  summary: IncomingTransferSummary
+}
+
+export type ReceiveHistoryOutcome = 'completed' | 'rejected' | 'cancelled' | 'failed'
+
+export interface ReceiveHistoryEntry {
+  id: string
+  offerId: string | null
+  deviceId: string | null
+  deviceName: string
+  timestamp: number
+  outcome: ReceiveHistoryOutcome
+  summary: IncomingTransferSummary
+  primaryFileName: string
+  fileType: string | null
+  failureReason: string | null
 }

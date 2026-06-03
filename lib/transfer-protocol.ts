@@ -1,4 +1,5 @@
 import type { BinaryFileChunkPayload } from './transfer-chunk'
+import type { IncomingTransferRiskFlag } from './types'
 
 export const MAX_TRANSFER_TEXT_LENGTH = 256 * 1024
 const MAX_PROTOCOL_ID_LENGTH = 128
@@ -27,7 +28,7 @@ export interface FileStartPayload {
   fileType: string
   name: string
   size: number
-  itemId?: string
+  itemId: string
   offset?: number
   resume?: boolean
 }
@@ -57,12 +58,28 @@ export interface DeviceIntroPayload {
   deviceName: string
 }
 
+export interface FileOfferSummarySample {
+  name: string
+  size: number
+  type: string
+}
+
+export interface FileOfferSummary {
+  fileCount: number
+  totalSize: number
+  sampleFiles: FileOfferSummarySample[]
+  riskFlags?: IncomingTransferRiskFlag[]
+  requiresSecondaryConfirmation?: boolean
+  executableFileName?: string | null
+}
+
 export interface FileOfferPayload {
   type: 'file-offer'
   offerId: string
   fileType: string
   name: string
   size: number
+  summary?: FileOfferSummary
 }
 
 export interface FileOfferResponsePayload {
@@ -106,6 +123,57 @@ function isValidBinaryPayload(value: unknown): value is ArrayBuffer | ArrayBuffe
   return value instanceof ArrayBuffer || ArrayBuffer.isView(value)
 }
 
+function isValidOfferSummary(summary: unknown): summary is FileOfferSummary {
+  if (!isPlainObject(summary)) {
+    return false
+  }
+
+  const fileCount = summary.fileCount
+  if (typeof fileCount !== 'number' || !Number.isInteger(fileCount) || fileCount <= 0) {
+    return false
+  }
+
+  const totalSize = summary.totalSize
+  if (typeof totalSize !== 'number' || !Number.isFinite(totalSize) || totalSize < 0) {
+    return false
+  }
+
+  const sampleFiles = summary.sampleFiles
+  if (!Array.isArray(sampleFiles) || sampleFiles.length > 3) {
+    return false
+  }
+
+  if (summary.riskFlags !== undefined) {
+    if (!Array.isArray(summary.riskFlags)) {
+      return false
+    }
+    if (!summary.riskFlags.every(flag => flag === 'batch' || flag === 'executable' || flag === 'large')) {
+      return false
+    }
+  }
+
+  if (summary.requiresSecondaryConfirmation !== undefined && typeof summary.requiresSecondaryConfirmation !== 'boolean') {
+    return false
+  }
+
+  if (
+    summary.executableFileName !== undefined
+    && summary.executableFileName !== null
+    && !isValidBoundedString(summary.executableFileName, MAX_TRANSFER_FILE_NAME_LENGTH)
+  ) {
+    return false
+  }
+
+  return sampleFiles.every(file =>
+    isPlainObject(file)
+    && isValidBoundedString(file.name, MAX_TRANSFER_FILE_NAME_LENGTH)
+    && typeof file.type === 'string'
+    && typeof file.size === 'number'
+    && Number.isFinite(file.size)
+    && file.size >= 0,
+  )
+}
+
 function toOwnedArrayBuffer(value: ArrayBuffer | ArrayBufferView): ArrayBuffer {
   if (value instanceof ArrayBuffer) {
     return value
@@ -137,7 +205,7 @@ export function validateIncomingTransferPayload(data: unknown): TransferPayload 
       if (data.fileType !== undefined && typeof data.fileType !== 'string') {
         return null
       }
-      if (data.itemId !== undefined && !isValidBoundedString(data.itemId)) {
+      if (!isValidBoundedString(data.itemId)) {
         return null
       }
       if (data.offset !== undefined && !isValidOffset(data.offset)) {
@@ -151,7 +219,7 @@ export function validateIncomingTransferPayload(data: unknown): TransferPayload 
         fileType: typeof data.fileType === 'string' ? data.fileType : '',
         name: data.name,
         size,
-        itemId: typeof data.itemId === 'string' ? data.itemId : undefined,
+        itemId: data.itemId,
         offset: typeof data.offset === 'number' ? Math.trunc(data.offset) : undefined,
         resume: typeof data.resume === 'boolean' ? data.resume : undefined,
       }
@@ -194,12 +262,16 @@ export function validateIncomingTransferPayload(data: unknown): TransferPayload 
       if (data.fileType !== undefined && typeof data.fileType !== 'string') {
         return null
       }
+      if (data.summary !== undefined && !isValidOfferSummary(data.summary)) {
+        return null
+      }
       return {
         type: 'file-offer',
         offerId: data.offerId,
         name: data.name,
         fileType: typeof data.fileType === 'string' ? data.fileType : '',
         size: Math.trunc(data.size),
+        summary: data.summary,
       }
 
     case 'file-offer-response':

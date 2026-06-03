@@ -6,7 +6,7 @@
 import type { ConnectionAttemptRegistry } from './connection-attempts'
 import type { ReceiveStorageHandle } from './receive-storage'
 import type { LocalDeviceProfile, TrustedDeviceRecord } from './trusted-devices'
-import type { ConnectionInfo, IncomingFileOffer, PeerDeviceInfo } from './types'
+import type { ConnectionInfo, IncomingFileOffer, PeerDeviceInfo, ReceiveHistoryOutcome } from './types'
 import { HEARTBEAT_TIMEOUT_MS } from './connection-quality'
 import {
   arrayBufferToBase64,
@@ -21,6 +21,7 @@ import {
   importPublicKey,
   SessionEncryptor,
 } from './crypto'
+import { buildIncomingTransferSummary } from './incoming-transfer-risk'
 import {
   CONNECTION_TIMEOUT,
   detectConnectionType,
@@ -35,6 +36,21 @@ import { validateIncomingRawPeerPayload, validateIncomingTransferPayload } from 
 
 const IMAGE_FILE_NAME_REGEX = /\.(?:jpg|jpeg|png|gif|webp|svg)$/i
 
+export interface ActiveReceiveBuffer {
+  peerId: string
+  name: string
+  size: number
+  type: string
+  received: number
+  localItemId: string
+  remoteItemId: string
+  lastTime: number
+  lastBytes: number
+  smoothedSpeed: number
+  storage: ReceiveStorageHandle
+  historyOffer: IncomingFileOffer
+}
+
 export interface ConnectionRefs {
   connectionsRef: React.MutableRefObject<Map<string, any>>
   encryptorsRef: React.MutableRefObject<Map<string, SessionEncryptor>>
@@ -43,23 +59,12 @@ export interface ConnectionRefs {
     keyPair: Awaited<ReturnType<typeof generateKeyPair>>
     isOutgoing: boolean
   }>>
-  fileBuffersRef: React.MutableRefObject<Map<string, {
-    peerId: string
-    name: string
-    size: number
-    type: string
-    received: number
-    localItemId: string
-    remoteItemId: string
-    lastTime: number
-    lastBytes: number
-    smoothedSpeed: number
-    storage: ReceiveStorageHandle
-  }>>
+  fileBuffersRef: React.MutableRefObject<Map<string, ActiveReceiveBuffer>>
   peerDevicesRef: React.MutableRefObject<Map<string, PeerDeviceInfo>>
   localDeviceProfileRef: React.MutableRefObject<LocalDeviceProfile | null>
   trustedDevicesRef: React.MutableRefObject<Map<string, TrustedDeviceRecord>>
   pendingIncomingFileOffersRef: React.MutableRefObject<Map<string, IncomingFileOffer>>
+  acceptedIncomingFileOffersRef: React.MutableRefObject<Map<string, IncomingFileOffer>>
   approvedIncomingFileOffersRef: React.MutableRefObject<Map<string, string>>
   pendingFileOfferResponsesRef: React.MutableRefObject<Map<string, {
     resolve: (accepted: boolean) => void
@@ -105,6 +110,11 @@ export interface ConnectionCallbacks {
   resolvePendingFileOfferResponse?: (peerId: string, offerId: string, accepted: boolean) => void
   discardIncomingFileOffersForPeer?: (peerId: string) => void
   rememberTrustedPeer?: (deviceInfo: PeerDeviceInfo) => void
+  recordReceiveHistory?: (options: {
+    offer: IncomingFileOffer
+    outcome: ReceiveHistoryOutcome
+    failureReason: string | null
+  }) => void
 }
 
 export function createSetupConnection(
@@ -121,6 +131,7 @@ export function createSetupConnection(
     peerDevicesRef,
     trustedDevicesRef,
     pendingIncomingFileOffersRef,
+    acceptedIncomingFileOffersRef,
     approvedIncomingFileOffersRef,
   } = refs
 
@@ -147,6 +158,7 @@ export function createSetupConnection(
     resolvePendingFileOfferResponse,
     discardIncomingFileOffersForPeer,
     rememberTrustedPeer,
+    recordReceiveHistory,
   } = callbacks
 
   const markBuffersPendingForPeer = (peerId: string) => {
@@ -212,6 +224,67 @@ export function createSetupConnection(
 
       refs.pendingFileOfferResponsesRef.current.delete(responseKey)
       pendingResponse.resolve(false)
+    }
+  }
+
+  const buildIncomingOfferSummary = (decryptedData: Extract<ReturnType<typeof validateIncomingTransferPayload>, { type: 'file-offer' }>) => {
+    const summaryFiles = decryptedData.summary?.sampleFiles?.length
+      ? decryptedData.summary.sampleFiles
+      : [{
+          name: decryptedData.name,
+          size: decryptedData.size,
+          type: decryptedData.fileType || '',
+        }]
+    const summary = buildIncomingTransferSummary({
+      files: summaryFiles,
+      declaredFileCount: decryptedData.summary?.fileCount,
+      declaredTotalSize: decryptedData.summary?.totalSize,
+    })
+    const declaredRiskFlags = decryptedData.summary?.riskFlags ?? []
+    const riskFlags = Array.from(new Set([
+      ...summary.riskFlags,
+      ...declaredRiskFlags,
+    ]))
+
+    return {
+      ...summary,
+      riskFlags,
+      requiresSecondaryConfirmation:
+        summary.requiresSecondaryConfirmation
+        || decryptedData.summary?.requiresSecondaryConfirmation === true
+        || riskFlags.includes('executable'),
+      executableFileName: decryptedData.summary?.executableFileName ?? summary.executableFileName,
+    }
+  }
+
+  const buildFallbackHistoryOffer = ({
+    offerId,
+    peerId,
+    fileName,
+    fileType,
+    size,
+  }: {
+    offerId: string
+    peerId: string
+    fileName: string
+    fileType: string
+    size: number
+  }): IncomingFileOffer => {
+    const peerDevice = peerDevicesRef.current.get(peerId)
+
+    return {
+      offerId,
+      peerId,
+      deviceId: peerDevice?.deviceId ?? null,
+      deviceName: peerDevice?.deviceName || '对方设备',
+      fileName,
+      fileType,
+      size,
+      fingerprint: encryptionFingerprintsRef.current.get(peerId) ?? null,
+      requestedAt: Date.now(),
+      summary: buildIncomingTransferSummary({
+        files: [{ name: fileName, size, type: fileType }],
+      }),
     }
   }
 
@@ -522,6 +595,11 @@ export function createSetupConnection(
             })
             void buffer.storage.abort()
             fileBuffersRef.current.delete(buffer.remoteItemId)
+            recordReceiveHistory?.({
+              offer: buffer.historyOffer,
+              outcome: 'failed',
+              failureReason: '写入文件片段失败',
+            })
             return
           }
 
@@ -594,6 +672,7 @@ export function createSetupConnection(
       else if (decryptedData.type === 'file-offer') {
         const peerDevice = peerDevicesRef.current.get(conn.peer)
         const trustedDeviceId = peerDevice?.deviceId
+        const summary = buildIncomingOfferSummary(decryptedData)
         const offer: IncomingFileOffer = {
           offerId: decryptedData.offerId,
           peerId: conn.peer,
@@ -604,20 +683,33 @@ export function createSetupConnection(
           size: decryptedData.size,
           fingerprint: encryptionFingerprintsRef.current.get(conn.peer) ?? null,
           requestedAt: Date.now(),
+          summary,
         }
 
-        if (trustedDeviceId && trustedDevicesRef.current.has(trustedDeviceId)) {
-          approvedIncomingFileOffersRef.current.set(decryptedData.offerId, conn.peer)
-          rememberTrustedPeer?.({
-            deviceId: trustedDeviceId,
-            deviceName: peerDevice?.deviceName || '对方设备',
-          })
-          await sendPeerControl(conn.peer, {
+        if (
+          trustedDeviceId
+          && trustedDevicesRef.current.has(trustedDeviceId)
+          && !offer.summary.requiresSecondaryConfirmation
+        ) {
+          const autoAccepted = await sendPeerControl(conn.peer, {
             type: 'file-offer-response',
             offerId: decryptedData.offerId,
             accepted: true,
           })
-          addSystemMessage(`已自动接受来自 ${offer.deviceName} 的文件请求`)
+
+          if (autoAccepted) {
+            acceptedIncomingFileOffersRef.current.set(decryptedData.offerId, offer)
+            approvedIncomingFileOffersRef.current.set(decryptedData.offerId, conn.peer)
+            rememberTrustedPeer?.({
+              deviceId: trustedDeviceId,
+              deviceName: peerDevice?.deviceName || '对方设备',
+            })
+            addSystemMessage(`已自动接受来自 ${offer.deviceName} 的文件请求`)
+          }
+          else {
+            pendingIncomingFileOffersRef.current.set(decryptedData.offerId, offer)
+            queueIncomingFileOffer?.(offer)
+          }
         }
         else {
           pendingIncomingFileOffersRef.current.set(decryptedData.offerId, offer)
@@ -667,11 +759,6 @@ export function createSetupConnection(
           })
         }
         else {
-          if (hasRemoteId) {
-            approvedIncomingFileOffersRef.current.delete(remoteItemId)
-            pendingIncomingFileOffersRef.current.delete(remoteItemId)
-          }
-
           const localItemId = addItemWithId({
             type: 'file',
             name: decryptedData.name,
@@ -684,6 +771,24 @@ export function createSetupConnection(
           })
 
           const newRemoteItemId = hasRemoteId ? remoteItemId : localItemId
+          const historyOffer = (
+            (hasRemoteId ? acceptedIncomingFileOffersRef.current.get(remoteItemId) : undefined)
+            ?? (hasRemoteId ? pendingIncomingFileOffersRef.current.get(remoteItemId) : undefined)
+            ?? buildFallbackHistoryOffer({
+              offerId: newRemoteItemId,
+              peerId: conn.peer,
+              fileName: decryptedData.name,
+              fileType: decryptedData.fileType || '',
+              size: decryptedData.size,
+            })
+          )
+
+          if (hasRemoteId) {
+            acceptedIncomingFileOffersRef.current.delete(remoteItemId)
+            approvedIncomingFileOffersRef.current.delete(remoteItemId)
+            pendingIncomingFileOffersRef.current.delete(remoteItemId)
+          }
+
           let storage: ReceiveStorageHandle
 
           try {
@@ -700,6 +805,11 @@ export function createSetupConnection(
               speed: undefined,
               remainingTime: undefined,
             })
+            recordReceiveHistory?.({
+              offer: historyOffer,
+              outcome: 'failed',
+              failureReason: '存储初始化失败',
+            })
             return
           }
 
@@ -715,6 +825,7 @@ export function createSetupConnection(
             lastBytes: 0,
             smoothedSpeed: 0,
             storage,
+            historyOffer,
           })
         }
       }
@@ -722,6 +833,7 @@ export function createSetupConnection(
         const bufferKey = decryptedData.itemId || findBufferKeyByPeer(conn.peer)
         const buffer = bufferKey ? fileBuffersRef.current.get(bufferKey) : undefined
         if (decryptedData.itemId) {
+          acceptedIncomingFileOffersRef.current.delete(decryptedData.itemId)
           approvedIncomingFileOffersRef.current.delete(decryptedData.itemId)
           pendingIncomingFileOffersRef.current.delete(decryptedData.itemId)
         }
@@ -734,6 +846,11 @@ export function createSetupConnection(
             })
             void buffer.storage.abort()
             fileBuffersRef.current.delete(buffer.remoteItemId)
+            recordReceiveHistory?.({
+              offer: buffer.historyOffer,
+              outcome: 'failed',
+              failureReason: '接收未完成即结束',
+            })
             return
           }
 
@@ -750,6 +867,11 @@ export function createSetupConnection(
             })
             void buffer.storage.abort()
             fileBuffersRef.current.delete(buffer.remoteItemId)
+            recordReceiveHistory?.({
+              offer: buffer.historyOffer,
+              outcome: 'failed',
+              failureReason: '接收完成后保存失败',
+            })
             return
           }
 
@@ -768,6 +890,11 @@ export function createSetupConnection(
           notifyReceived(fileType, buffer.name)
 
           fileBuffersRef.current.delete(buffer.remoteItemId)
+          recordReceiveHistory?.({
+            offer: buffer.historyOffer,
+            outcome: 'completed',
+            failureReason: null,
+          })
         }
       }
       else if (decryptedData.type === 'room-dissolved') {
@@ -801,6 +928,7 @@ export function createSetupConnection(
         const bufferKey = decryptedData.itemId || findBufferKeyByPeer(conn.peer)
         const buffer = bufferKey ? fileBuffersRef.current.get(bufferKey) : undefined
         if (decryptedData.itemId) {
+          acceptedIncomingFileOffersRef.current.delete(decryptedData.itemId)
           approvedIncomingFileOffersRef.current.delete(decryptedData.itemId)
           pendingIncomingFileOffersRef.current.delete(decryptedData.itemId)
         }
@@ -812,6 +940,11 @@ export function createSetupConnection(
 
           void buffer.storage.abort()
           fileBuffersRef.current.delete(buffer.remoteItemId)
+          recordReceiveHistory?.({
+            offer: buffer.historyOffer,
+            outcome: 'cancelled',
+            failureReason: null,
+          })
         }
 
         if (decryptedData.itemId) {

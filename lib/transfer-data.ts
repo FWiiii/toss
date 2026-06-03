@@ -5,7 +5,9 @@
 
 import type { SessionEncryptor } from './crypto'
 import type { ConnectionRefs } from './transfer-connection'
+import type { FileOfferSummary } from './transfer-protocol'
 import { encryptBytes, encryptJSON } from './crypto'
+import { buildIncomingTransferSummary } from './incoming-transfer-risk'
 import {
   FILE_CHUNK_MAX_SIZE,
   FILE_CHUNK_MIN_SIZE,
@@ -32,6 +34,29 @@ interface PeerSendResult {
 type PeerConnectionLike = any
 
 type ControlPayload = Record<string, any>
+
+export function buildOutgoingTransferOfferSummary(files: File[]): FileOfferSummary | undefined {
+  if (files.length <= 1) {
+    return undefined
+  }
+
+  const summary = buildIncomingTransferSummary({
+    files: files.map(file => ({
+      name: file.name,
+      size: file.size,
+      type: file.type,
+    })),
+  })
+
+  return {
+    fileCount: summary.fileCount,
+    totalSize: summary.totalSize,
+    sampleFiles: summary.sampleFiles,
+    ...(summary.riskFlags.length > 0 ? { riskFlags: summary.riskFlags } : {}),
+    ...(summary.requiresSecondaryConfirmation ? { requiresSecondaryConfirmation: true } : {}),
+    ...(summary.executableFileName ? { executableFileName: summary.executableFileName } : {}),
+  }
+}
 
 export function createDataTransfer(
   refs: ConnectionRefs,
@@ -200,6 +225,7 @@ export function createDataTransfer(
     peerId: string,
     file: File,
     itemId: string,
+    offerSummary: FileOfferSummary | undefined,
     onProgress: (bytesSent: number) => void,
   ): Promise<PeerSendResult> => {
     const totalSize = file.size
@@ -214,6 +240,7 @@ export function createDataTransfer(
       fileType: file.type,
       name: file.name,
       size: totalSize,
+      ...(offerSummary ? { summary: offerSummary } : {}),
     })
 
     if (!offered) {
@@ -321,7 +348,7 @@ export function createDataTransfer(
     return { status: 'completed', bytesSent: totalSize }
   }
 
-  const sendFile = async (file: File): Promise<void> => {
+  const sendFile = async (file: File, offerSummary?: FileOfferSummary): Promise<void> => {
     setSendingCount(prev => prev + 1)
 
     let itemId: string | null = null
@@ -395,7 +422,7 @@ export function createDataTransfer(
 
       const peerResults = await Promise.all(
         targetPeerIds.map(async (peerId) => {
-          const result = await sendFileToPeer(peerId, file, itemId!, (bytesSent) => {
+          const result = await sendFileToPeer(peerId, file, itemId!, offerSummary, (bytesSent) => {
             peerProgress.set(peerId, bytesSent)
             updateAggregateProgress(false)
           })

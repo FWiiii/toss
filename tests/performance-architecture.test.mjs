@@ -135,6 +135,10 @@ test('file transfers require explicit receiver approval before chunk streaming b
   assert.match(contextSource, /respondToIncomingFileOffer/)
   assert.match(receiveSource, /type === 'file-offer'/)
   assert.match(receiveSource, /type === 'file-offer-response'/)
+  assert.match(receiveSource, /requiresSecondaryConfirmation/)
+  assert.match(receiveSource, /!offer\.summary\.requiresSecondaryConfirmation/)
+  assert.match(contextSource, /secondaryConfirmed/)
+  assert.match(contextSource, /accepted && offer\.summary\.requiresSecondaryConfirmation && !secondaryConfirmed/)
 })
 
 test('transfer panel surfaces incoming file approval UI with a trust option', async () => {
@@ -145,6 +149,17 @@ test('transfer panel surfaces incoming file approval UI with a trust option', as
   assert.match(panelSource, /信任此设备/)
   assert.match(panelSource, /接受文件|接受接收|接受/)
   assert.match(panelSource, /拒绝/)
+})
+
+test('transfer panel shows summary-first approval states for risky incoming files', async () => {
+  const panelSource = await readProjectFile('components/transfer-panel.tsx')
+
+  assert.match(panelSource, /summary\.fileCount|activeIncomingSummary\.fileCount/)
+  assert.match(panelSource, /summary\.totalSize|activeIncomingSummary\.totalSize/)
+  assert.match(panelSource, /sampleFiles/)
+  assert.match(panelSource, /二次确认|确认后接收/)
+  assert.match(panelSource, /批量文件提醒|超大文件提醒|高风险文件确认/)
+  assert.match(panelSource, /其余[\s\S]*个文件已折叠/)
 })
 
 test('settings expose device identity and trusted device management affordances', async () => {
@@ -170,4 +185,23 @@ test('host leave action requires confirmation before dissolving room', async () 
   assert.match(roomSource, /onClick=\{handleConfirmLeaveRoom\}/)
   assert.doesNotMatch(roomSource, /window\.confirm\(/)
   assert.match(roomSource, /onClick=\{handleLeaveRoom\}/)
+})
+
+test('transfer panel exposes inbox entry point and expandable receive history view', async () => {
+  const panelSource = await readProjectFile('components/transfer-panel.tsx')
+  const historySource = await readProjectFile('components/receive-history-panel.tsx')
+
+  assert.match(panelSource, /收件箱|最近接收/)
+  assert.match(panelSource, /查看全部/)
+  assert.match(panelSource, /showReceiveHistory/)
+  assert.match(panelSource, /setShowReceiveHistory\(true\)/)
+  assert.match(panelSource, /showClearReceiveHistoryConfirm/)
+  assert.match(panelSource, /handleConfirmClearReceiveHistory/)
+  assert.match(panelSource, /activeReceiveHistoryOutcome/)
+  assert.match(historySource, /已接收|已拒绝|已取消|失败/)
+  assert.match(historySource, /清空历史/)
+  assert.match(historySource, /aria-expanded/)
+  assert.match(historySource, /onOutcomeChange/)
+  assert.match(historySource, /onClearHistory/)
+  assert.match(historySource, /sampleFiles|riskFlags/)
 })
