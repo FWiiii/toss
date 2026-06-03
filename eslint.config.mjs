@@ -3,6 +3,7 @@ import antfu from '@antfu/eslint-config'
 export default antfu({
   gitignore: true,
   ignores: [
+    '.codex',
     '.superpowers',
   ],
   nextjs: true,
