@@ -68,3 +68,20 @@ export interface SharedData {
   files: SharedDataFile[]
   timestamp: number
 }
+
+export interface PeerDeviceInfo {
+  deviceId: string
+  deviceName: string
+}
+
+export interface IncomingFileOffer {
+  offerId: string
+  peerId: string
+  deviceId: string | null
+  deviceName: string
+  fileName: string
+  fileType: string
+  size: number
+  fingerprint: string | null
+  requestedAt: number
+}

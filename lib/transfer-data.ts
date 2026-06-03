@@ -13,6 +13,7 @@ import {
   FILE_RESUME_WAIT_TIMEOUT,
 } from './peer-config'
 import { createBinaryFileChunkPayload } from './transfer-chunk'
+import { getFileOfferResponseKey } from './transfer-protocol'
 
 export interface DataTransferCallbacks {
   setSendingCount: (updater: (prev: number) => number) => void
@@ -20,10 +21,11 @@ export interface DataTransferCallbacks {
   addItemWithId: (item: any) => string
   updateItemProgress: (id: string, updates: any) => void
   createTrackedBlobUrl: (blob: Blob | File, cleanup?: () => Promise<void> | void) => string
+  addSystemMessage: (message: string, force?: boolean) => void
 }
 
 interface PeerSendResult {
-  status: 'completed' | 'failed' | 'cancelled'
+  status: 'completed' | 'failed' | 'cancelled' | 'rejected'
   bytesSent: number
 }
 
@@ -42,9 +44,11 @@ export function createDataTransfer(
     addItemWithId,
     updateItemProgress,
     createTrackedBlobUrl,
+    addSystemMessage,
   } = callbacks
 
   const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
+  const FILE_OFFER_RESPONSE_TIMEOUT_MS = 60_000
 
   const sendText = async (text: string) => {
     if (!text.trim())
@@ -157,6 +161,28 @@ export function createDataTransfer(
     return null
   }
 
+  const waitForFileOfferResponse = async (
+    peerId: string,
+    offerId: string,
+  ): Promise<boolean> => {
+    const responseKey = getFileOfferResponseKey(peerId, offerId)
+
+    return await new Promise<boolean>((resolve) => {
+      const timeoutId = setTimeout(() => {
+        refs.pendingFileOfferResponsesRef.current.delete(responseKey)
+        resolve(false)
+      }, FILE_OFFER_RESPONSE_TIMEOUT_MS)
+
+      refs.pendingFileOfferResponsesRef.current.set(responseKey, {
+        resolve: (accepted) => {
+          clearTimeout(timeoutId)
+          refs.pendingFileOfferResponsesRef.current.delete(responseKey)
+          resolve(accepted)
+        },
+      })
+    })
+  }
+
   const tuneChunkSize = (current: number, sendDurationMs: number, bufferedAmount: number) => {
     let next = current
 
@@ -181,6 +207,23 @@ export function createDataTransfer(
     let chunkSize = FILE_CHUNK_SIZE
     let chunkIndex = 0
     let hasSentStart = false
+
+    const offered = await sendControlToPeer(peerId, {
+      type: 'file-offer',
+      offerId: itemId,
+      fileType: file.type,
+      name: file.name,
+      size: totalSize,
+    })
+
+    if (!offered) {
+      return { status: 'failed', bytesSent: 0 }
+    }
+
+    const accepted = await waitForFileOfferResponse(peerId, itemId)
+    if (!accepted) {
+      return { status: 'rejected', bytesSent: 0 }
+    }
 
     while (offset < totalSize) {
       if (refs.cancelledTransfersRef.current.has(itemId)) {
@@ -293,7 +336,7 @@ export function createDataTransfer(
         content: url,
         size: file.size,
         direction: 'sent',
-        status: 'transferring',
+        status: 'pending',
         progress: 0,
         transferredBytes: 0,
       })
@@ -376,6 +419,7 @@ export function createDataTransfer(
 
       const completedCount = peerResults.filter(result => result.status === 'completed').length
       const failedCount = peerResults.filter(result => result.status === 'failed').length
+      const rejectedCount = peerResults.filter(result => result.status === 'rejected').length
 
       if (cancelled) {
         updateItemProgress(itemId, {
@@ -389,11 +433,22 @@ export function createDataTransfer(
         if (failedCount > 0) {
           console.warn(`Partial delivery: ${failedCount} peer(s) failed to receive ${file.name}`)
         }
+        if (rejectedCount > 0) {
+          addSystemMessage(`${rejectedCount} 个设备拒绝接收 ${file.name}`, true)
+        }
 
         updateItemProgress(itemId, {
           status: 'completed',
           progress: 100,
           transferredBytes: totalSize,
+          speed: undefined,
+          remainingTime: undefined,
+        })
+      }
+      else if (rejectedCount > 0) {
+        addSystemMessage(`对方拒绝接收 ${file.name}`, true)
+        updateItemProgress(itemId, {
+          status: 'error',
           speed: undefined,
           remainingTime: undefined,
         })

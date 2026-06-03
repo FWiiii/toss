@@ -26,6 +26,49 @@ test('validateIncomingTransferPayload accepts supported control payloads', async
       resume: false,
     },
   )
+
+  assert.deepEqual(
+    validateIncomingTransferPayload({
+      type: 'device-intro',
+      deviceId: 'device-123',
+      deviceName: '我的 MacBook',
+    }),
+    {
+      type: 'device-intro',
+      deviceId: 'device-123',
+      deviceName: '我的 MacBook',
+    },
+  )
+
+  assert.deepEqual(
+    validateIncomingTransferPayload({
+      type: 'file-offer',
+      offerId: 'offer-1',
+      name: 'demo.txt',
+      fileType: 'text/plain',
+      size: 12,
+    }),
+    {
+      type: 'file-offer',
+      offerId: 'offer-1',
+      name: 'demo.txt',
+      fileType: 'text/plain',
+      size: 12,
+    },
+  )
+
+  assert.deepEqual(
+    validateIncomingTransferPayload({
+      type: 'file-offer-response',
+      offerId: 'offer-1',
+      accepted: true,
+    }),
+    {
+      type: 'file-offer-response',
+      offerId: 'offer-1',
+      accepted: true,
+    },
+  )
 })
 
 test('validateIncomingTransferPayload rejects malformed or oversized payloads', async () => {
@@ -53,5 +96,25 @@ test('validateIncomingTransferPayload rejects malformed or oversized payloads', 
   assert.equal(validateIncomingTransferPayload({
     type: 'ping',
     id: '',
+  }), null)
+
+  assert.equal(validateIncomingTransferPayload({
+    type: 'device-intro',
+    deviceId: '',
+    deviceName: '设备',
+  }), null)
+
+  assert.equal(validateIncomingTransferPayload({
+    type: 'file-offer',
+    offerId: 'offer-1',
+    name: '',
+    fileType: 'text/plain',
+    size: 10,
+  }), null)
+
+  assert.equal(validateIncomingTransferPayload({
+    type: 'file-offer-response',
+    offerId: 'offer-1',
+    accepted: 'yes',
   }), null)
 })

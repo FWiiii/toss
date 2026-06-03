@@ -124,6 +124,29 @@ test('transfer panel keeps composer available while disconnected and queues text
   assert.match(inputSource, /allowQueueWithoutConnection/)
 })
 
+test('file transfers require explicit receiver approval before chunk streaming begins', async () => {
+  const sendSource = await readProjectFile('lib/transfer-data.ts')
+  const contextSource = await readProjectFile('lib/transfer-context.tsx')
+  const receiveSource = await readProjectFile('lib/transfer-connection.ts')
+
+  assert.match(sendSource, /type:\s*'file-offer'/)
+  assert.match(sendSource, /waitForPeerFileOfferResponse|waitForFileOfferResponse/)
+  assert.match(contextSource, /incomingFileOffers/)
+  assert.match(contextSource, /respondToIncomingFileOffer/)
+  assert.match(receiveSource, /type === 'file-offer'/)
+  assert.match(receiveSource, /type === 'file-offer-response'/)
+})
+
+test('transfer panel surfaces incoming file approval UI with a trust option', async () => {
+  const panelSource = await readProjectFile('components/transfer-panel.tsx')
+
+  assert.match(panelSource, /incomingFileOffers/)
+  assert.match(panelSource, /respondToIncomingFileOffer/)
+  assert.match(panelSource, /信任此设备/)
+  assert.match(panelSource, /接受文件|接受接收|接受/)
+  assert.match(panelSource, /拒绝/)
+})
+
 test('host leave action requires confirmation before dissolving room', async () => {
   const roomSource = await readProjectFile('components/room-panel.tsx')
 

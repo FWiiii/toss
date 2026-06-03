@@ -1,7 +1,7 @@
 'use client'
 
 import type { TransferItem } from '@/lib/types'
-import { Ban, Check, Copy, Download, File as FileIcon, FileText, ImageIcon, Loader2, X, ZoomIn } from 'lucide-react'
+import { AlertCircle, Ban, Check, Copy, Download, File as FileIcon, FileText, ImageIcon, Loader2, X, ZoomIn } from 'lucide-react'
 import { memo, useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { ImageThumbnail } from '@/components/image-thumbnail'
 import { LinkPreview } from '@/components/link-preview'
@@ -120,7 +120,9 @@ function ImageItem({
   onCancel?: (itemId: string) => void
 }) {
   const isTransferring = item.status === 'transferring'
+  const isPending = item.status === 'pending'
   const isCancelled = item.status === 'cancelled'
+  const isError = item.status === 'error'
   const progress = item.progress ?? 100
   const transferredBytes = item.transferredBytes ?? item.size ?? 0
   const totalSize = item.size ?? 0
@@ -149,8 +151,22 @@ function ImageItem({
     )
   }
 
+  if (isError) {
+    return (
+      <div className="flex items-start gap-3 opacity-90">
+        <div className={cn('w-10 h-10 rounded-lg flex items-center justify-center shrink-0', STATUS_TONES.danger.iconSurface)}>
+          <AlertCircle className={cn('w-5 h-5', STATUS_TONES.danger.inline)} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium text-foreground truncate">{imageName}</p>
+          <p className={cn('text-xs mt-1', STATUS_TONES.danger.inline)}>传输未完成，请等待对方确认或稍后重试</p>
+        </div>
+      </div>
+    )
+  }
+
   // Show file-style view when transferring (no preview available yet)
-  if (isTransferring || !item.content) {
+  if (isTransferring || isPending || !item.content) {
     return (
       <div className="flex items-start gap-3">
         <div className="w-10 h-10 rounded-lg bg-background flex items-center justify-center shrink-0">
@@ -158,6 +174,9 @@ function ImageItem({
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium text-foreground truncate">{imageName}</p>
+          {isPending && (
+            <p className="mt-1 text-xs text-muted-foreground">等待对方确认接收...</p>
+          )}
 
           {/* Progress bar */}
           <ProgressBar progress={progress} className="mt-2" />
@@ -267,7 +286,9 @@ function FileItem({
 }) {
   const IconComponent = getFileIcon(item.name)
   const isTransferring = item.status === 'transferring'
+  const isPending = item.status === 'pending'
   const isCancelled = item.status === 'cancelled'
+  const isError = item.status === 'error'
   const progress = item.progress ?? 100
   const transferredBytes = item.transferredBytes ?? item.size ?? 0
   const totalSize = item.size ?? 0
@@ -296,10 +317,24 @@ function FileItem({
     )
   }
 
+  if (isError) {
+    return (
+      <div className="flex items-start gap-3 opacity-90">
+        <div className={cn('w-10 h-10 rounded-lg flex items-center justify-center shrink-0', STATUS_TONES.danger.iconSurface)}>
+          <AlertCircle className={cn('w-5 h-5', STATUS_TONES.danger.inline)} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium text-foreground truncate">{fileName}</p>
+          <p className={cn('text-xs mt-1', STATUS_TONES.danger.inline)}>传输未完成，请等待对方确认或稍后重试</p>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="flex items-start gap-3">
       <div className="w-10 h-10 rounded-lg bg-background flex items-center justify-center shrink-0 relative">
-        {isTransferring
+        {isTransferring || isPending
           ? (
               <Loader2 className="w-5 h-5 text-accent animate-spin" />
             )
@@ -310,9 +345,12 @@ function FileItem({
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium text-foreground truncate">{fileName}</p>
 
-        {isTransferring
+        {isTransferring || isPending
           ? (
               <>
+                {isPending && (
+                  <p className="mt-1 text-xs text-muted-foreground">等待对方确认接收...</p>
+                )}
                 {/* Progress bar */}
                 <ProgressBar progress={progress} className="mt-2" />
 
@@ -355,7 +393,7 @@ function FileItem({
             )}
       </div>
       {/* Cancel button during transfer */}
-      {isTransferring && onCancel && (
+      {(isTransferring || isPending) && onCancel && (
         <Button
           variant="ghost"
           size="icon-sm"

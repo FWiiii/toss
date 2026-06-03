@@ -7,11 +7,19 @@ import { ImagePreviewDialog } from '@/components/image-preview-dialog'
 import { TransferInput } from '@/components/transfer-input'
 import { TransferItemComponent } from '@/components/transfer-item'
 import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { EmptyState } from '@/components/ui/empty-state'
 import { useShareTarget } from '@/hooks/use-share-target'
 import { resolvePendingTransferFile } from '@/lib/pending-transfer-file'
 import { useTransfer, useTransferItems } from '@/lib/transfer-context'
-import { cn } from '@/lib/utils'
+import { cn, formatFileSize } from '@/lib/utils'
 
 const PANEL_CLASS = 'panel-surface relative overflow-hidden transition-colors'
 const PANEL_HEADER_CLASS = 'flex items-center justify-between border-b border-border/70 px-4 py-3'
@@ -56,6 +64,8 @@ export function TransferPanel() {
     suspendAutoReconnect,
     startScreenShare,
     stopScreenShare,
+    incomingFileOffers,
+    respondToIncomingFileOffer,
   } = useTransfer()
   const {
     items,
@@ -79,6 +89,10 @@ export function TransferPanel() {
   const [previewImage, setPreviewImage] = useState<{ url: string, name: string } | null>(null)
   const [showCompleted, setShowCompleted] = useState(false)
   const [isSendingClipboard, setIsSendingClipboard] = useState(false)
+  const [trustIncomingDevice, setTrustIncomingDevice] = useReducer(
+    (_current: boolean, next: boolean) => next,
+    false,
+  )
   const [highlightComposer, setHighlightComposer] = useReducer(
     (_current: boolean, next: boolean) => next,
     false,
@@ -94,6 +108,7 @@ export function TransferPanel() {
   const previousItemsCountRef = useRef(0)
   const shouldAutoScrollRef = useRef(true)
   const completedSectionId = useId()
+  const activeIncomingFileOffer = incomingFileOffers[0] ?? null
 
   const isConnected = connectionStatus === 'connected' && peerCount > 0
   const isScreenSharing = useMemo(
@@ -145,6 +160,10 @@ export function TransferPanel() {
       window.clearTimeout(timeoutId)
     }
   }, [dropFeedbackLabel])
+
+  useEffect(() => {
+    setTrustIncomingDevice(false)
+  }, [activeIncomingFileOffer?.offerId])
 
   useEffect(() => {
     if (!shareLoadError) {
@@ -545,6 +564,90 @@ export function TransferPanel() {
           )}
         </div>
       )}
+
+      <Dialog
+        open={Boolean(activeIncomingFileOffer)}
+        onOpenChange={(open) => {
+          if (!open && activeIncomingFileOffer) {
+            void respondToIncomingFileOffer(activeIncomingFileOffer.offerId, false)
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md" showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>接收文件确认</DialogTitle>
+            <DialogDescription>
+              {activeIncomingFileOffer
+                ? `${activeIncomingFileOffer.deviceName} 想发送 ${activeIncomingFileOffer.fileName}`
+                : '确认是否接收来自对方设备的文件'}
+            </DialogDescription>
+          </DialogHeader>
+
+          {activeIncomingFileOffer && (
+            <div className="space-y-3 text-sm text-muted-foreground">
+              <div className="rounded-lg border border-border/70 bg-muted/30 px-3 py-2">
+                <p className="font-medium text-foreground break-all">{activeIncomingFileOffer.fileName}</p>
+                <p className="mt-1">
+                  {activeIncomingFileOffer.size > 0 ? formatFileSize(activeIncomingFileOffer.size) : '未知大小'}
+                  {activeIncomingFileOffer.fileType ? ` · ${activeIncomingFileOffer.fileType}` : ''}
+                </p>
+                {activeIncomingFileOffer.fingerprint && (
+                  <p className="mt-1 text-xs">
+                    会话指纹：
+                    <br />
+                    {activeIncomingFileOffer.fingerprint}
+                  </p>
+                )}
+                {incomingFileOffers.length > 1 && (
+                  <p className="mt-1 text-xs">
+                    还有
+                    {' '}
+                    {incomingFileOffers.length - 1}
+                    {' '}
+                    个待确认请求排队中
+                  </p>
+                )}
+              </div>
+
+              {activeIncomingFileOffer.deviceId && (
+                <label className="flex items-start gap-3 rounded-lg border border-border/70 px-3 py-2 text-sm text-foreground">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 h-4 w-4 shrink-0"
+                    checked={trustIncomingDevice}
+                    onChange={event => setTrustIncomingDevice(event.target.checked)}
+                  />
+                  <span>
+                    信任此设备，以后自动接收来自它的文件
+                  </span>
+                </label>
+              )}
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                if (activeIncomingFileOffer) {
+                  void respondToIncomingFileOffer(activeIncomingFileOffer.offerId, false)
+                }
+              }}
+            >
+              拒绝
+            </Button>
+            <Button
+              onClick={() => {
+                if (activeIncomingFileOffer) {
+                  void respondToIncomingFileOffer(activeIncomingFileOffer.offerId, true, trustIncomingDevice)
+                }
+              }}
+            >
+              接受
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Items List */}
       <div className={SCROLL_AREA_CLASS}>

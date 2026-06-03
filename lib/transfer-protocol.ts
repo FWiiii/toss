@@ -3,6 +3,7 @@ import type { BinaryFileChunkPayload } from './transfer-chunk'
 export const MAX_TRANSFER_TEXT_LENGTH = 256 * 1024
 const MAX_PROTOCOL_ID_LENGTH = 128
 const MAX_TRANSFER_FILE_NAME_LENGTH = 512
+const MAX_DEVICE_NAME_LENGTH = 64
 
 type RawProtocolObject = Record<string, unknown>
 
@@ -50,6 +51,26 @@ export interface PingPayload {
   id: string
 }
 
+export interface DeviceIntroPayload {
+  type: 'device-intro'
+  deviceId: string
+  deviceName: string
+}
+
+export interface FileOfferPayload {
+  type: 'file-offer'
+  offerId: string
+  fileType: string
+  name: string
+  size: number
+}
+
+export interface FileOfferResponsePayload {
+  type: 'file-offer-response'
+  offerId: string
+  accepted: boolean
+}
+
 export type TransferPayload
   = | TextTransferPayload
     | FileStartPayload
@@ -57,6 +78,9 @@ export type TransferPayload
     | FileCancelPayload
     | RoomDissolvedPayload
     | PingPayload
+    | DeviceIntroPayload
+    | FileOfferPayload
+    | FileOfferResponsePayload
 
 export type RawIncomingPeerPayload
   = | BinaryFileChunkPayload
@@ -153,6 +177,41 @@ export function validateIncomingTransferPayload(data: unknown): TransferPayload 
       }
       return { type: data.type, id: data.id }
 
+    case 'device-intro':
+      if (!isValidBoundedString(data.deviceId) || !isValidBoundedString(data.deviceName, MAX_DEVICE_NAME_LENGTH)) {
+        return null
+      }
+      return {
+        type: 'device-intro',
+        deviceId: data.deviceId,
+        deviceName: data.deviceName,
+      }
+
+    case 'file-offer':
+      if (!isValidBoundedString(data.offerId) || !isValidBoundedString(data.name, MAX_TRANSFER_FILE_NAME_LENGTH) || typeof data.size !== 'number' || !Number.isFinite(data.size) || data.size < 0) {
+        return null
+      }
+      if (data.fileType !== undefined && typeof data.fileType !== 'string') {
+        return null
+      }
+      return {
+        type: 'file-offer',
+        offerId: data.offerId,
+        name: data.name,
+        fileType: typeof data.fileType === 'string' ? data.fileType : '',
+        size: Math.trunc(data.size),
+      }
+
+    case 'file-offer-response':
+      if (!isValidBoundedString(data.offerId) || typeof data.accepted !== 'boolean') {
+        return null
+      }
+      return {
+        type: 'file-offer-response',
+        offerId: data.offerId,
+        accepted: data.accepted,
+      }
+
     default:
       return null
   }
@@ -211,4 +270,8 @@ export function validateIncomingRawPeerPayload(data: unknown): RawIncomingPeerPa
     default:
       return null
   }
+}
+
+export function getFileOfferResponseKey(peerId: string, offerId: string) {
+  return `${peerId}:${offerId}`
 }

@@ -5,7 +5,8 @@
 
 import type { ConnectionAttemptRegistry } from './connection-attempts'
 import type { ReceiveStorageHandle } from './receive-storage'
-import type { ConnectionInfo } from './types'
+import type { LocalDeviceProfile, TrustedDeviceRecord } from './trusted-devices'
+import type { ConnectionInfo, IncomingFileOffer, PeerDeviceInfo } from './types'
 import { HEARTBEAT_TIMEOUT_MS } from './connection-quality'
 import {
   arrayBufferToBase64,
@@ -37,6 +38,7 @@ const IMAGE_FILE_NAME_REGEX = /\.(?:jpg|jpeg|png|gif|webp|svg)$/i
 export interface ConnectionRefs {
   connectionsRef: React.MutableRefObject<Map<string, any>>
   encryptorsRef: React.MutableRefObject<Map<string, SessionEncryptor>>
+  encryptionFingerprintsRef: React.MutableRefObject<Map<string, string>>
   keyExchangePendingRef: React.MutableRefObject<Map<string, {
     keyPair: Awaited<ReturnType<typeof generateKeyPair>>
     isOutgoing: boolean
@@ -53,6 +55,14 @@ export interface ConnectionRefs {
     lastBytes: number
     smoothedSpeed: number
     storage: ReceiveStorageHandle
+  }>>
+  peerDevicesRef: React.MutableRefObject<Map<string, PeerDeviceInfo>>
+  localDeviceProfileRef: React.MutableRefObject<LocalDeviceProfile | null>
+  trustedDevicesRef: React.MutableRefObject<Map<string, TrustedDeviceRecord>>
+  pendingIncomingFileOffersRef: React.MutableRefObject<Map<string, IncomingFileOffer>>
+  approvedIncomingFileOffersRef: React.MutableRefObject<Map<string, string>>
+  pendingFileOfferResponsesRef: React.MutableRefObject<Map<string, {
+    resolve: (accepted: boolean) => void
   }>>
   reconnectAttemptsRef: React.MutableRefObject<number>
   reconnectTimeoutRef: React.MutableRefObject<NodeJS.Timeout | null>
@@ -90,6 +100,11 @@ export interface ConnectionCallbacks {
   notifyReceived: (type: string, name?: string) => void
   handlePeerConnectedToScreenShare?: (peerId: string) => void
   setPeerEncryptionFingerprint?: (peerId: string, fingerprint: string | null) => void
+  getLocalDeviceProfile?: () => LocalDeviceProfile
+  queueIncomingFileOffer?: (offer: IncomingFileOffer) => void
+  resolvePendingFileOfferResponse?: (peerId: string, offerId: string, accepted: boolean) => void
+  discardIncomingFileOffersForPeer?: (peerId: string) => void
+  rememberTrustedPeer?: (deviceInfo: PeerDeviceInfo) => void
 }
 
 export function createSetupConnection(
@@ -100,8 +115,13 @@ export function createSetupConnection(
   const {
     connectionsRef,
     encryptorsRef,
+    encryptionFingerprintsRef,
     keyExchangePendingRef,
     fileBuffersRef,
+    peerDevicesRef,
+    trustedDevicesRef,
+    pendingIncomingFileOffersRef,
+    approvedIncomingFileOffersRef,
   } = refs
 
   const {
@@ -115,12 +135,18 @@ export function createSetupConnection(
     createTrackedBlobUrl,
     broadcastToConnections,
     cleanupAll,
+    addSystemMessage,
     handlePong,
     touchPeer,
     isPeerHealthy,
     recordBandwidth,
     removePeerQuality,
     notifyReceived,
+    getLocalDeviceProfile,
+    queueIncomingFileOffer,
+    resolvePendingFileOfferResponse,
+    discardIncomingFileOffersForPeer,
+    rememberTrustedPeer,
   } = callbacks
 
   const markBuffersPendingForPeer = (peerId: string) => {
@@ -148,6 +174,45 @@ export function createSetupConnection(
       }
     }
     return null
+  }
+
+  const sendPeerControl = async (peerId: string, payload: Record<string, unknown>) => {
+    const peerConnection = connectionsRef.current.get(peerId)
+    if (!peerConnection || !peerConnection.open) {
+      return false
+    }
+
+    const encryptor = encryptorsRef.current.get(peerId)
+    const isEncrypted = encryptor?.isReady() ?? false
+
+    try {
+      if (isEncrypted && encryptor) {
+        const encrypted = await encryptJSON(encryptor, payload)
+        peerConnection.send({ type: 'encrypted', encrypted })
+      }
+      else {
+        peerConnection.send(payload)
+      }
+      return true
+    }
+    catch (error) {
+      console.error('Failed to send peer control payload:', error)
+      return false
+    }
+  }
+
+  const removePeerTransferState = (peerId: string) => {
+    peerDevicesRef.current.delete(peerId)
+    discardIncomingFileOffersForPeer?.(peerId)
+
+    for (const [responseKey, pendingResponse] of refs.pendingFileOfferResponsesRef.current.entries()) {
+      if (!responseKey.startsWith(`${peerId}:`)) {
+        continue
+      }
+
+      refs.pendingFileOfferResponsesRef.current.delete(responseKey)
+      pendingResponse.resolve(false)
+    }
   }
 
   return async (conn: any, isOutgoing = false) => {
@@ -313,6 +378,7 @@ export function createSetupConnection(
       callbacks.setPeerEncryptionFingerprint?.(conn.peer, null)
       keyExchangePendingRef.current.delete(conn.peer)
       removePeerQuality(conn.peer)
+      removePeerTransferState(conn.peer)
 
       updatePeerCount()
 
@@ -334,6 +400,7 @@ export function createSetupConnection(
       callbacks.setPeerEncryptionFingerprint?.(conn.peer, null)
       keyExchangePendingRef.current.delete(conn.peer)
       removePeerQuality(conn.peer)
+      removePeerTransferState(conn.peer)
 
       updatePeerCount()
 
@@ -390,6 +457,15 @@ export function createSetupConnection(
           // 更新加密状态
           const allEncrypted = Array.from(encryptorsRef.current.values()).every(e => e.isReady())
           setIsEncrypted(allEncrypted && encryptorsRef.current.size > 0)
+
+          const localDeviceProfile = getLocalDeviceProfile?.()
+          if (localDeviceProfile) {
+            await sendPeerControl(conn.peer, {
+              type: 'device-intro',
+              deviceId: localDeviceProfile.deviceId,
+              deviceName: localDeviceProfile.deviceName,
+            })
+          }
         }
         catch (error) {
           console.error('Key exchange error:', error)
@@ -506,7 +582,49 @@ export function createSetupConnection(
         return
       }
 
-      if (decryptedData.type === 'text') {
+      if (decryptedData.type === 'device-intro') {
+        peerDevicesRef.current.set(conn.peer, {
+          deviceId: decryptedData.deviceId,
+          deviceName: decryptedData.deviceName,
+        })
+      }
+      else if (decryptedData.type === 'file-offer-response') {
+        resolvePendingFileOfferResponse?.(conn.peer, decryptedData.offerId, decryptedData.accepted)
+      }
+      else if (decryptedData.type === 'file-offer') {
+        const peerDevice = peerDevicesRef.current.get(conn.peer)
+        const trustedDeviceId = peerDevice?.deviceId
+        const offer: IncomingFileOffer = {
+          offerId: decryptedData.offerId,
+          peerId: conn.peer,
+          deviceId: trustedDeviceId ?? null,
+          deviceName: peerDevice?.deviceName || '对方设备',
+          fileName: decryptedData.name,
+          fileType: decryptedData.fileType || '',
+          size: decryptedData.size,
+          fingerprint: encryptionFingerprintsRef.current.get(conn.peer) ?? null,
+          requestedAt: Date.now(),
+        }
+
+        if (trustedDeviceId && trustedDevicesRef.current.has(trustedDeviceId)) {
+          approvedIncomingFileOffersRef.current.set(decryptedData.offerId, conn.peer)
+          rememberTrustedPeer?.({
+            deviceId: trustedDeviceId,
+            deviceName: peerDevice?.deviceName || '对方设备',
+          })
+          await sendPeerControl(conn.peer, {
+            type: 'file-offer-response',
+            offerId: decryptedData.offerId,
+            accepted: true,
+          })
+          addSystemMessage(`已自动接受来自 ${offer.deviceName} 的文件请求`)
+        }
+        else {
+          pendingIncomingFileOffersRef.current.set(decryptedData.offerId, offer)
+          queueIncomingFileOffer?.(offer)
+        }
+      }
+      else if (decryptedData.type === 'text') {
         addItem({
           type: 'text',
           content: decryptedData.content,
@@ -519,6 +637,19 @@ export function createSetupConnection(
         const hasRemoteId = typeof remoteItemId === 'string' && remoteItemId.length > 0
         const existing = hasRemoteId ? fileBuffersRef.current.get(remoteItemId) : undefined
         const isResume = Boolean(decryptedData.resume) && Boolean(existing)
+
+        if (
+          hasRemoteId
+          && !isResume
+          && approvedIncomingFileOffersRef.current.get(remoteItemId) !== conn.peer
+        ) {
+          await sendPeerControl(conn.peer, {
+            type: 'file-offer-response',
+            offerId: remoteItemId,
+            accepted: false,
+          })
+          return
+        }
 
         if (isResume && existing) {
           existing.peerId = conn.peer
@@ -536,6 +667,11 @@ export function createSetupConnection(
           })
         }
         else {
+          if (hasRemoteId) {
+            approvedIncomingFileOffersRef.current.delete(remoteItemId)
+            pendingIncomingFileOffersRef.current.delete(remoteItemId)
+          }
+
           const localItemId = addItemWithId({
             type: 'file',
             name: decryptedData.name,
@@ -585,6 +721,10 @@ export function createSetupConnection(
       else if (decryptedData.type === 'file-end') {
         const bufferKey = decryptedData.itemId || findBufferKeyByPeer(conn.peer)
         const buffer = bufferKey ? fileBuffersRef.current.get(bufferKey) : undefined
+        if (decryptedData.itemId) {
+          approvedIncomingFileOffersRef.current.delete(decryptedData.itemId)
+          pendingIncomingFileOffersRef.current.delete(decryptedData.itemId)
+        }
         if (buffer) {
           if (buffer.received < buffer.size) {
             updateItemProgress(buffer.localItemId, {
@@ -660,6 +800,10 @@ export function createSetupConnection(
       else if (decryptedData.type === 'file-cancel') {
         const bufferKey = decryptedData.itemId || findBufferKeyByPeer(conn.peer)
         const buffer = bufferKey ? fileBuffersRef.current.get(bufferKey) : undefined
+        if (decryptedData.itemId) {
+          approvedIncomingFileOffersRef.current.delete(decryptedData.itemId)
+          pendingIncomingFileOffersRef.current.delete(decryptedData.itemId)
+        }
         if (buffer) {
           updateItemProgress(buffer.localItemId, {
             status: 'cancelled',
