@@ -1,4 +1,5 @@
 import type { BinaryFileChunkPayload } from './transfer-chunk'
+import type { IncomingTransferRiskFlag } from './types'
 
 export const MAX_TRANSFER_TEXT_LENGTH = 256 * 1024
 const MAX_PROTOCOL_ID_LENGTH = 128
@@ -27,7 +28,7 @@ export interface FileStartPayload {
   fileType: string
   name: string
   size: number
-  itemId?: string
+  itemId: string
   offset?: number
   resume?: boolean
 }
@@ -67,6 +68,9 @@ export interface FileOfferSummary {
   fileCount: number
   totalSize: number
   sampleFiles: FileOfferSummarySample[]
+  riskFlags?: IncomingTransferRiskFlag[]
+  requiresSecondaryConfirmation?: boolean
+  executableFileName?: string | null
 }
 
 export interface FileOfferPayload {
@@ -139,6 +143,27 @@ function isValidOfferSummary(summary: unknown): summary is FileOfferSummary {
     return false
   }
 
+  if (summary.riskFlags !== undefined) {
+    if (!Array.isArray(summary.riskFlags)) {
+      return false
+    }
+    if (!summary.riskFlags.every(flag => flag === 'batch' || flag === 'executable' || flag === 'large')) {
+      return false
+    }
+  }
+
+  if (summary.requiresSecondaryConfirmation !== undefined && typeof summary.requiresSecondaryConfirmation !== 'boolean') {
+    return false
+  }
+
+  if (
+    summary.executableFileName !== undefined
+    && summary.executableFileName !== null
+    && !isValidBoundedString(summary.executableFileName, MAX_TRANSFER_FILE_NAME_LENGTH)
+  ) {
+    return false
+  }
+
   return sampleFiles.every(file =>
     isPlainObject(file)
     && isValidBoundedString(file.name, MAX_TRANSFER_FILE_NAME_LENGTH)
@@ -180,7 +205,7 @@ export function validateIncomingTransferPayload(data: unknown): TransferPayload 
       if (data.fileType !== undefined && typeof data.fileType !== 'string') {
         return null
       }
-      if (data.itemId !== undefined && !isValidBoundedString(data.itemId)) {
+      if (!isValidBoundedString(data.itemId)) {
         return null
       }
       if (data.offset !== undefined && !isValidOffset(data.offset)) {
@@ -194,7 +219,7 @@ export function validateIncomingTransferPayload(data: unknown): TransferPayload 
         fileType: typeof data.fileType === 'string' ? data.fileType : '',
         name: data.name,
         size,
-        itemId: typeof data.itemId === 'string' ? data.itemId : undefined,
+        itemId: data.itemId,
         offset: typeof data.offset === 'number' ? Math.trunc(data.offset) : undefined,
         resume: typeof data.resume === 'boolean' ? data.resume : undefined,
       }

@@ -21,6 +21,7 @@ import {
   importPublicKey,
   SessionEncryptor,
 } from './crypto'
+import { buildIncomingTransferSummary } from './incoming-transfer-risk'
 import {
   CONNECTION_TIMEOUT,
   detectConnectionType,
@@ -212,6 +213,36 @@ export function createSetupConnection(
 
       refs.pendingFileOfferResponsesRef.current.delete(responseKey)
       pendingResponse.resolve(false)
+    }
+  }
+
+  const buildIncomingOfferSummary = (decryptedData: Extract<ReturnType<typeof validateIncomingTransferPayload>, { type: 'file-offer' }>) => {
+    const summaryFiles = decryptedData.summary?.sampleFiles?.length
+      ? decryptedData.summary.sampleFiles
+      : [{
+          name: decryptedData.name,
+          size: decryptedData.size,
+          type: decryptedData.fileType || '',
+        }]
+    const summary = buildIncomingTransferSummary({
+      files: summaryFiles,
+      declaredFileCount: decryptedData.summary?.fileCount,
+      declaredTotalSize: decryptedData.summary?.totalSize,
+    })
+    const declaredRiskFlags = decryptedData.summary?.riskFlags ?? []
+    const riskFlags = Array.from(new Set([
+      ...summary.riskFlags,
+      ...declaredRiskFlags,
+    ]))
+
+    return {
+      ...summary,
+      riskFlags,
+      requiresSecondaryConfirmation:
+        summary.requiresSecondaryConfirmation
+        || decryptedData.summary?.requiresSecondaryConfirmation === true
+        || riskFlags.includes('executable'),
+      executableFileName: decryptedData.summary?.executableFileName ?? summary.executableFileName,
     }
   }
 
@@ -594,6 +625,7 @@ export function createSetupConnection(
       else if (decryptedData.type === 'file-offer') {
         const peerDevice = peerDevicesRef.current.get(conn.peer)
         const trustedDeviceId = peerDevice?.deviceId
+        const summary = buildIncomingOfferSummary(decryptedData)
         const offer: IncomingFileOffer = {
           offerId: decryptedData.offerId,
           peerId: conn.peer,
@@ -604,20 +636,32 @@ export function createSetupConnection(
           size: decryptedData.size,
           fingerprint: encryptionFingerprintsRef.current.get(conn.peer) ?? null,
           requestedAt: Date.now(),
+          summary,
         }
 
-        if (trustedDeviceId && trustedDevicesRef.current.has(trustedDeviceId)) {
-          approvedIncomingFileOffersRef.current.set(decryptedData.offerId, conn.peer)
-          rememberTrustedPeer?.({
-            deviceId: trustedDeviceId,
-            deviceName: peerDevice?.deviceName || '对方设备',
-          })
-          await sendPeerControl(conn.peer, {
+        if (
+          trustedDeviceId
+          && trustedDevicesRef.current.has(trustedDeviceId)
+          && !offer.summary.requiresSecondaryConfirmation
+        ) {
+          const autoAccepted = await sendPeerControl(conn.peer, {
             type: 'file-offer-response',
             offerId: decryptedData.offerId,
             accepted: true,
           })
-          addSystemMessage(`已自动接受来自 ${offer.deviceName} 的文件请求`)
+
+          if (autoAccepted) {
+            approvedIncomingFileOffersRef.current.set(decryptedData.offerId, conn.peer)
+            rememberTrustedPeer?.({
+              deviceId: trustedDeviceId,
+              deviceName: peerDevice?.deviceName || '对方设备',
+            })
+            addSystemMessage(`已自动接受来自 ${offer.deviceName} 的文件请求`)
+          }
+          else {
+            pendingIncomingFileOffersRef.current.set(decryptedData.offerId, offer)
+            queueIncomingFileOffer?.(offer)
+          }
         }
         else {
           pendingIncomingFileOffersRef.current.set(decryptedData.offerId, offer)

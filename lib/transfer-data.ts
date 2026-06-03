@@ -5,7 +5,9 @@
 
 import type { SessionEncryptor } from './crypto'
 import type { ConnectionRefs } from './transfer-connection'
+import type { FileOfferSummary } from './transfer-protocol'
 import { encryptBytes, encryptJSON } from './crypto'
+import { buildIncomingTransferSummary } from './incoming-transfer-risk'
 import {
   FILE_CHUNK_MAX_SIZE,
   FILE_CHUNK_MIN_SIZE,
@@ -13,7 +15,6 @@ import {
   FILE_RESUME_WAIT_TIMEOUT,
 } from './peer-config'
 import { createBinaryFileChunkPayload } from './transfer-chunk'
-import type { FileOfferSummary } from './transfer-protocol'
 import { getFileOfferResponseKey } from './transfer-protocol'
 
 export interface DataTransferCallbacks {
@@ -39,14 +40,21 @@ export function buildOutgoingTransferOfferSummary(files: File[]): FileOfferSumma
     return undefined
   }
 
-  return {
-    fileCount: files.length,
-    totalSize: files.reduce((total, file) => total + file.size, 0),
-    sampleFiles: files.slice(0, 3).map(file => ({
+  const summary = buildIncomingTransferSummary({
+    files: files.map(file => ({
       name: file.name,
       size: file.size,
       type: file.type,
     })),
+  })
+
+  return {
+    fileCount: summary.fileCount,
+    totalSize: summary.totalSize,
+    sampleFiles: summary.sampleFiles,
+    ...(summary.riskFlags.length > 0 ? { riskFlags: summary.riskFlags } : {}),
+    ...(summary.requiresSecondaryConfirmation ? { requiresSecondaryConfirmation: true } : {}),
+    ...(summary.executableFileName ? { executableFileName: summary.executableFileName } : {}),
   }
 }
 

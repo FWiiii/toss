@@ -72,7 +72,7 @@ interface TransferContextType {
   startScreenShare: (streamType?: 'screen' | 'window' | 'tab') => Promise<string | null>
   stopScreenShare: () => void
   incomingFileOffers: IncomingFileOffer[]
-  respondToIncomingFileOffer: (offerId: string, accepted: boolean, trustDevice?: boolean) => Promise<void>
+  respondToIncomingFileOffer: (offerId: string, accepted: boolean, trustDevice?: boolean, secondaryConfirmed?: boolean) => Promise<void>
   localDeviceProfile: LocalDeviceProfile
   trustedDevices: TrustedDeviceRecord[]
   updateLocalDeviceName: (deviceName: string) => void
@@ -271,6 +271,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
   const encryptionFingerprintsRef = useRef<Map<string, string>>(new Map())
   const pendingIncomingFileOffersRef = useRef<Map<string, IncomingFileOffer>>(new Map())
   const approvedIncomingFileOffersRef = useRef<Map<string, string>>(new Map())
+  const respondingIncomingFileOffersRef = useRef<Set<string>>(new Set())
   const pendingFileOfferResponsesRef = useRef<Map<string, {
     resolve: (accepted: boolean) => void
   }>>(new Map())
@@ -529,38 +530,55 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     setIncomingFileOffers(prev => [...prev.filter(item => item.offerId !== offer.offerId), offer])
   }, [])
 
-  const respondToIncomingFileOffer = useCallback(async (offerId: string, accepted: boolean, trustDevice = false) => {
+  const respondToIncomingFileOffer = useCallback(async (offerId: string, accepted: boolean, trustDevice = false, secondaryConfirmed = false) => {
     const offer = pendingIncomingFileOffersRef.current.get(offerId)
-    if (!offer) {
+    if (!offer || respondingIncomingFileOffersRef.current.has(offerId)) {
       return
     }
 
-    pendingIncomingFileOffersRef.current.delete(offerId)
-    setIncomingFileOffers(prev => prev.filter(item => item.offerId !== offerId))
+    if (accepted && offer.summary.requiresSecondaryConfirmation && !secondaryConfirmed) {
+      enqueueSystemMessage(`来自 ${offer.deviceName} 的文件仍需二次确认`, true)
+      return
+    }
 
-    if (accepted) {
-      approvedIncomingFileOffersRef.current.set(offerId, offer.peerId)
+    respondingIncomingFileOffersRef.current.add(offerId)
 
-      if (trustDevice && offer.deviceId) {
-        rememberTrustedPeer({
-          deviceId: offer.deviceId,
-          deviceName: offer.deviceName,
-        })
-        enqueueSystemMessage(`已信任 ${offer.deviceName}，后续文件将自动接收`, true)
+    try {
+      const responseSent = await sendControlToPeer(offer.peerId, {
+        type: 'file-offer-response',
+        offerId,
+        accepted,
+      })
+
+      if (!responseSent) {
+        enqueueSystemMessage(`未能将文件确认结果发送给 ${offer.deviceName}，请重试`, true)
+        return
       }
 
-      enqueueSystemMessage(`已接受来自 ${offer.deviceName} 的文件请求`, true)
-    }
-    else {
-      approvedIncomingFileOffersRef.current.delete(offerId)
-      enqueueSystemMessage(`已拒绝来自 ${offer.deviceName} 的文件请求`, true)
-    }
+      pendingIncomingFileOffersRef.current.delete(offerId)
+      setIncomingFileOffers(prev => prev.filter(item => item.offerId !== offerId))
 
-    await sendControlToPeer(offer.peerId, {
-      type: 'file-offer-response',
-      offerId,
-      accepted,
-    })
+      if (accepted) {
+        approvedIncomingFileOffersRef.current.set(offerId, offer.peerId)
+
+        if (trustDevice && offer.deviceId) {
+          rememberTrustedPeer({
+            deviceId: offer.deviceId,
+            deviceName: offer.deviceName,
+          })
+          enqueueSystemMessage(`已信任 ${offer.deviceName}，后续文件将自动接收`, true)
+        }
+
+        enqueueSystemMessage(`已接受来自 ${offer.deviceName} 的文件请求`, true)
+      }
+      else {
+        approvedIncomingFileOffersRef.current.delete(offerId)
+        enqueueSystemMessage(`已拒绝来自 ${offer.deviceName} 的文件请求`, true)
+      }
+    }
+    finally {
+      respondingIncomingFileOffersRef.current.delete(offerId)
+    }
   }, [enqueueSystemMessage, rememberTrustedPeer, sendControlToPeer])
 
   const cleanupConnections = useCallback(() => {
@@ -576,6 +594,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     peerDevicesRef.current.clear()
     pendingIncomingFileOffersRef.current.clear()
     approvedIncomingFileOffersRef.current.clear()
+    respondingIncomingFileOffersRef.current.clear()
     pendingFileOfferResponsesRef.current.forEach((pendingResponse) => {
       pendingResponse.resolve(false)
     })
@@ -1208,6 +1227,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     const activePeerDevices = peerDevicesRef.current
     const activePendingIncomingFileOffers = pendingIncomingFileOffersRef.current
     const activeApprovedIncomingFileOffers = approvedIncomingFileOffersRef.current
+    const activeRespondingIncomingFileOffers = respondingIncomingFileOffersRef.current
     const activePendingFileOfferResponses = pendingFileOfferResponsesRef.current
 
     return () => {
@@ -1230,6 +1250,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       activePeerDevices.clear()
       activePendingIncomingFileOffers.clear()
       activeApprovedIncomingFileOffers.clear()
+      activeRespondingIncomingFileOffers.clear()
       activePendingFileOfferResponses.forEach((pendingResponse) => {
         pendingResponse.resolve(false)
       })

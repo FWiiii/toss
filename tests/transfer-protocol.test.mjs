@@ -56,6 +56,9 @@ test('validateIncomingTransferPayload accepts supported control payloads', async
           { name: 'b.jpg', size: 1, type: 'image/jpeg' },
           { name: 'c.jpg', size: 1, type: 'image/jpeg' },
         ],
+        riskFlags: ['batch', 'executable'],
+        requiresSecondaryConfirmation: true,
+        executableFileName: 'RemoteHelper.dmg',
       },
     }),
     {
@@ -72,6 +75,9 @@ test('validateIncomingTransferPayload accepts supported control payloads', async
           { name: 'b.jpg', size: 1, type: 'image/jpeg' },
           { name: 'c.jpg', size: 1, type: 'image/jpeg' },
         ],
+        riskFlags: ['batch', 'executable'],
+        requiresSecondaryConfirmation: true,
+        executableFileName: 'RemoteHelper.dmg',
       },
     },
   )
@@ -98,6 +104,13 @@ test('validateIncomingTransferPayload rejects malformed or oversized payloads', 
     name: '',
     fileType: 'text/plain',
     size: -1,
+  }), null)
+
+  assert.equal(validateIncomingTransferPayload({
+    type: 'file-start',
+    name: 'demo.txt',
+    fileType: 'text/plain',
+    size: 12,
   }), null)
 
   assert.equal(validateIncomingTransferPayload({
@@ -150,6 +163,22 @@ test('validateIncomingTransferPayload rejects malformed or oversized payloads', 
   }), null)
 
   assert.equal(validateIncomingTransferPayload({
+    type: 'file-offer',
+    offerId: 'offer-1',
+    name: 'demo.txt',
+    fileType: 'text/plain',
+    size: 10,
+    summary: {
+      fileCount: 2,
+      totalSize: 10,
+      sampleFiles: [
+        { name: 'a.jpg', size: 1, type: 'image/jpeg' },
+      ],
+      riskFlags: ['mystery-risk'],
+    },
+  }), null)
+
+  assert.equal(validateIncomingTransferPayload({
     type: 'file-offer-response',
     offerId: 'offer-1',
     accepted: 'yes',
@@ -177,6 +206,30 @@ test('buildOutgoingTransferOfferSummary omits single files and summarizes batche
       { name: 'b.jpg', size: 2, type: 'image/jpeg' },
       { name: 'c.jpg', size: 3, type: 'image/jpeg' },
     ],
+  })
+})
+
+test('buildOutgoingTransferOfferSummary carries executable risk beyond sampled files', async () => {
+  const { buildOutgoingTransferOfferSummary } = await import('../lib/transfer-data.ts')
+
+  const files = [
+    new File([new Uint8Array([1])], 'a.jpg', { type: 'image/jpeg' }),
+    new File([new Uint8Array([1, 2])], 'b.jpg', { type: 'image/jpeg' }),
+    new File([new Uint8Array([1, 2, 3])], 'c.jpg', { type: 'image/jpeg' }),
+    new File([new Uint8Array([1, 2, 3, 4])], 'installer.dmg', { type: 'application/x-apple-diskimage' }),
+  ]
+
+  assert.deepEqual(buildOutgoingTransferOfferSummary(files), {
+    fileCount: 4,
+    totalSize: 10,
+    sampleFiles: [
+      { name: 'a.jpg', size: 1, type: 'image/jpeg' },
+      { name: 'b.jpg', size: 2, type: 'image/jpeg' },
+      { name: 'c.jpg', size: 3, type: 'image/jpeg' },
+    ],
+    riskFlags: ['executable'],
+    requiresSecondaryConfirmation: true,
+    executableFileName: 'installer.dmg',
   })
 })
 
