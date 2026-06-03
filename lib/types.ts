@@ -103,3 +103,18 @@ export interface IncomingFileOffer {
   requestedAt: number
   summary: IncomingTransferSummary
 }
+
+export type ReceiveHistoryOutcome = 'completed' | 'rejected' | 'cancelled' | 'failed'
+
+export interface ReceiveHistoryEntry {
+  id: string
+  offerId: string | null
+  deviceId: string | null
+  deviceName: string
+  timestamp: number
+  outcome: ReceiveHistoryOutcome
+  summary: IncomingTransferSummary
+  primaryFileName: string
+  fileType: string | null
+  failureReason: string | null
+}
