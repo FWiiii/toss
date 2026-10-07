@@ -242,3 +242,34 @@ test('transfer panel sends multi-file offers through the typed sendFile boundary
   assert.doesNotMatch(panelSource, /sendFileWithSummary/)
   assert.match(contextSource, /sendFile:\s*\(file: File,\s*offerSummary\?: FileOfferSummary\)\s*=> Promise<void>/)
 })
+
+test('validateIncomingRawPeerPayload rejects oversized file chunks', async () => {
+  const { validateIncomingRawPeerPayload } = await import('../lib/transfer-protocol.ts')
+  const { FILE_CHUNK_MAX_SIZE } = await import('../lib/peer-config.ts')
+
+  const baseChunk = {
+    type: 'file-chunk',
+    itemId: 'file-1',
+    offset: 0,
+    encrypted: true,
+  }
+
+  // 上限以内：通过
+  const ok = validateIncomingRawPeerPayload({
+    ...baseChunk,
+    bytes: new Uint8Array(FILE_CHUNK_MAX_SIZE),
+  })
+  assert.equal(ok?.type, 'file-chunk')
+
+  // 超过上限 1 字节：拒绝（防止单块内存耗尽 DoS）
+  assert.equal(validateIncomingRawPeerPayload({
+    ...baseChunk,
+    bytes: new Uint8Array(FILE_CHUNK_MAX_SIZE + 1),
+  }), null)
+
+  // ArrayBuffer 视图同样受限
+  assert.equal(validateIncomingRawPeerPayload({
+    ...baseChunk,
+    bytes: new ArrayBuffer(FILE_CHUNK_MAX_SIZE + 1024),
+  }), null)
+})

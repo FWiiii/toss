@@ -44,7 +44,11 @@ export function createRoomManagement(
     setPeerCount,
   } = callbacks
 
-  const createRoom = async () => {
+  // 房间代码冲突时的最大重试次数：无上限重试会在极端情况下空转，
+  // 且组件卸载后仍可能继续创建 Peer
+  const MAX_CREATE_ROOM_ATTEMPTS = 5
+
+  const attemptCreateRoom = async (attemptsLeft: number) => {
     setIsCreatingRoom(true)
 
     try {
@@ -85,9 +89,15 @@ export function createRoomManagement(
       peer.on('error', (err) => {
         setIsCreatingRoom(false)
         if (err.type === 'unavailable-id') {
-          setErrorMessage('房间代码已被占用，正在重试...')
-          peer.destroy()
-          setTimeout(createRoom, 500)
+          if (attemptsLeft > 1) {
+            setErrorMessage('房间代码已被占用，正在重试...')
+            peer.destroy()
+            setTimeout(attemptCreateRoom, 500, attemptsLeft - 1)
+          }
+          else {
+            setError('房间代码冲突多次，请稍后重试')
+            peer.destroy()
+          }
         }
         else if (err.type === 'network' || err.type === 'server-error') {
           setError('网络错误，请检查网络连接')
@@ -109,6 +119,10 @@ export function createRoomManagement(
       setIsCreatingRoom(false)
       setError('创建房间失败，请重试')
     }
+  }
+
+  const createRoom = async () => {
+    await attemptCreateRoom(MAX_CREATE_ROOM_ATTEMPTS)
   }
 
   const joinRoom = async (code: string) => {
@@ -223,7 +237,8 @@ export function createRoomManagement(
       setPeerCount(0)
       setIsHost(false)
 
-      refs.shouldReconnectRef.current = true
+      // 注意：不要在这里把 shouldReconnect 设回 true——用户是主动离开，
+      // 下次 createRoom/joinRoom 开始时自然会重新置 true
     }, 100)
   }
 

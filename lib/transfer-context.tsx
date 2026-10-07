@@ -19,7 +19,7 @@ import { PEER_PREFIX } from './peer-config'
 import { appendReceiveHistoryEntry, clearReceiveHistoryEntries, listReceiveHistoryEntries } from './receive-history-storage'
 import { ensureScreenShareCallForPeer, normalizeScreenShareType, stopIncomingScreenShare, stopOutgoingScreenShare } from './screen-share'
 import { createAttemptReconnect, createSetupConnection } from './transfer-connection'
-import { createDataTransfer } from './transfer-data'
+import { createDataTransfer, waitForPeerEncryptor } from './transfer-data'
 import { getFileOfferResponseKey } from './transfer-protocol'
 import { createRoomManagement } from './transfer-room'
 import {
@@ -555,17 +555,17 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       return false
     }
 
-    const encryptor = encryptorsRef.current.get(peerId)
-    const isEncrypted = encryptor?.isReady() ?? false
+    // 与数据面保持一致：控制消息必须走加密信封，加密器未就绪则等待，
+    // 超时直接失败，绝不发送明文（接收端会丢弃握手完成后的明文消息）。
+    const encryptor = await waitForPeerEncryptor(encryptorsRef, peerId)
+    if (!encryptor) {
+      console.error(`Refusing to send plaintext control payload to ${peerId}: encryption not ready`)
+      return false
+    }
 
     try {
-      if (isEncrypted && encryptor) {
-        const encrypted = await encryptJSON(encryptor, payload)
-        conn.send({ type: 'encrypted', encrypted })
-      }
-      else {
-        conn.send(payload)
-      }
+      const encrypted = await encryptJSON(encryptor, payload)
+      conn.send({ type: 'encrypted', encrypted })
       return true
     }
     catch (error) {
@@ -842,7 +842,8 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
           displaySurface: 'browser',
           width: { ideal: 1920, max: 1920 },
           height: { ideal: 1080, max: 1080 },
-          frameRate: { ideal: 60 },
+          // 屏幕共享 30fps 足够流畅，60fps 会显著推高编码 CPU 与带宽占用
+          frameRate: { ideal: 30 },
         },
         audio: true,
       }
@@ -853,7 +854,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       const videoTrack = stream.getVideoTracks()[0]
 
       videoTrack.applyConstraints({
-        frameRate: { ideal: 60 },
+        frameRate: { ideal: 30 },
       }).catch(() => {})
 
       const detectedType = normalizeScreenShareType(videoTrack?.getSettings().displaySurface) ?? streamType
@@ -1354,13 +1355,11 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
           void buffer.storage.abort()
           fileBuffersRef.current.delete(peerId)
 
-          const conn = connectionsRef.current.get(buffer.peerId)
-          if (conn && conn.open) {
-            conn.send({
-              type: 'file-cancel',
-              itemId: buffer.remoteItemId,
-            })
-          }
+          // 取消消息走加密通道（明文 file-cancel 会被对端门控丢弃）
+          void sendControlToPeer(buffer.peerId, {
+            type: 'file-cancel',
+            itemId: buffer.remoteItemId,
+          })
           break
         }
       }
@@ -1370,7 +1369,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
         speed: undefined,
       })
     }
-  }, [items, recordReceiveHistory, updateItemProgress])
+  }, [items, recordReceiveHistory, sendControlToPeer, updateItemProgress])
 
   // ============ Cleanup ============
   useEffect(() => {
