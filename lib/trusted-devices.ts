@@ -51,7 +51,15 @@ function normalizePlatformHint(platformHint: string) {
 }
 
 function createFallbackDeviceId() {
-  return `device-${Math.random().toString(16).slice(2, 10)}`
+  // 优先使用密码学安全随机数：deviceId 会被用于信任判定，Math.random 可预测
+  const cryptoRef = globalThis.crypto
+  if (cryptoRef?.getRandomValues) {
+    const bytes = cryptoRef.getRandomValues(new Uint8Array(16))
+    const hex = Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('')
+    return `device-${hex}`
+  }
+  // 终极兜底（理论上到不了）：混入时间戳增加熵
+  return `device-${Math.random().toString(16).slice(2)}${Date.now().toString(16)}`
 }
 
 export function createDefaultDeviceName(deviceId: string, platformHint: string) {

@@ -115,6 +115,11 @@ test('createSetupConnection rejects file-start payloads that bypass approval', a
   const setupConnection = createSetupConnection(harness.refs, harness.callbacks, null)
   await setupConnection(harness.conn, false)
 
+  // 该测试关注 offer 处理逻辑而非握手门控：清除 setupConnection 登记的
+  // pending 握手，使其处于 unknown（兼容）状态以接受明文载荷。
+  // 握手门控本身由 tests/peer-message-policy.test.mjs 覆盖。
+  harness.refs.keyExchangePendingRef.current.delete('peer-1')
+
   harness.handlers.get('data')?.({
     type: 'file-start',
     itemId: 'offer-1',
@@ -152,6 +157,9 @@ test('createSetupConnection keeps trusted executable offers pending when risk co
 
   const setupConnection = createSetupConnection(harness.refs, harness.callbacks, null)
   await setupConnection(harness.conn, false)
+
+  // 同上：该测试关注 offer 处理逻辑，置为 unknown（兼容）状态。
+  harness.refs.keyExchangePendingRef.current.delete('peer-1')
 
   harness.handlers.get('data')?.({
     type: 'file-offer',

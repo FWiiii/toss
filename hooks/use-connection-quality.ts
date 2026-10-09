@@ -24,9 +24,21 @@ export function useConnectionQuality(connectionsRef: ConnectionsRef) {
   const pingIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const qualityIntervalRef = useRef<NodeJS.Timeout | null>(null)
 
-  // Update connection quality based on collected metrics
+  // Update connection quality based on collected metrics.
+  // getSnapshot() 每次返回新对象；数值未变时跳过 setState，避免整个会话
+  // context 每 5 秒无意义重渲染一次。
   const updateConnectionQuality = useCallback(() => {
-    setConnectionQuality(trackerRef.current.getSnapshot())
+    const snapshot = trackerRef.current.getSnapshot()
+    setConnectionQuality((prev) => {
+      if (
+        prev.latency === snapshot.latency
+        && prev.bandwidth === snapshot.bandwidth
+        && prev.quality === snapshot.quality
+      ) {
+        return prev
+      }
+      return snapshot
+    })
   }, [])
 
   // Send ping to all connected peers

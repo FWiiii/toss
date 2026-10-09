@@ -6,7 +6,38 @@ import type {
 
 const LARGE_FILE_THRESHOLD = 500 * 1024 * 1024
 const BATCH_FILE_THRESHOLD = 10
-const EXECUTABLE_EXTENSIONS = new Set(['app', 'bat', 'cmd', 'dmg', 'exe', 'msi', 'pkg', 'run', 'sh'])
+// 注意：这只是基于扩展名的启发式（发送方可伪造），作用是提醒接收方二次确认，
+// 不能作为唯一防线。html/htm/svg 也纳入——它们在磁盘上被双击打开时可在本地执行脚本。
+const EXECUTABLE_EXTENSIONS = new Set([
+  'app',
+  'apk',
+  'bat',
+  'cmd',
+  'com',
+  'cpl',
+  'dmg',
+  'exe',
+  'gadget',
+  'hta',
+  'htm',
+  'html',
+  'jar',
+  'js',
+  'jse',
+  'lnk',
+  'msc',
+  'msi',
+  'msp',
+  'pif',
+  'pkg',
+  'ps1',
+  'run',
+  'scr',
+  'sh',
+  'svg',
+  'vbs',
+  'wsf',
+])
 
 interface BuildIncomingTransferSummaryOptions {
   files: IncomingTransferSampleFile[]

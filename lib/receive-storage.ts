@@ -270,6 +270,28 @@ function createInMemoryReceiveStorage(
   }
 }
 
+/**
+ * 预估本地存储是否放得下 `bytes` 字节的新文件。
+ * StorageManager.estimate() 是尽力而为的启发式，拿不到数据时返回 true
+ *（不阻塞正常接收），只在明确放不下时返回 false。
+ */
+export async function hasStorageQuotaFor(bytes: number): Promise<boolean> {
+  try {
+    const storage = typeof navigator !== 'undefined' ? navigator.storage : undefined
+    if (!storage?.estimate) {
+      return true
+    }
+    const { quota, usage } = await storage.estimate()
+    if (typeof quota !== 'number' || typeof usage !== 'number') {
+      return true
+    }
+    return usage + bytes <= quota
+  }
+  catch {
+    return true
+  }
+}
+
 export async function createReceiveStorage(
   options: ReceiveStorageOptions,
 ): Promise<ReceiveStorageHandle> {

@@ -178,6 +178,12 @@ export const FILE_CHUNK_MIN_SIZE = 8192
 export const FILE_CHUNK_MAX_SIZE = 131072
 
 /**
+ * 单个文件接收上限（4GB）。超过此大小的 file-offer / file-start 直接拒绝，
+ * 防止恶意对端声明超大 size 把本地存储写爆。
+ */
+export const MAX_FILE_SIZE_BYTES = 4 * 1024 * 1024 * 1024
+
+/**
  * Wait timeout for transfer resume after temporary disconnection.
  */
 export const FILE_RESUME_WAIT_TIMEOUT = 30000

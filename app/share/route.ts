@@ -94,9 +94,12 @@ export async function GET(request: NextRequest) {
     return new NextResponse(Buffer.from(file.data), {
       headers: {
         'Cache-Control': 'no-store, max-age=0',
-        'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(file.name)}`,
+        // 以附件形式下载：即使用户被诱导直接打开该链接，攻击者构造的
+        // HTML/SVG 也不会在应用同源下被渲染执行。
+        'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(file.name)}`,
         'Content-Length': String(file.size),
         'Content-Type': file.type || 'application/octet-stream',
+        'X-Content-Type-Options': 'nosniff',
       },
     })
   }

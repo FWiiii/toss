@@ -35,6 +35,34 @@ type PeerConnectionLike = any
 
 type ControlPayload = Record<string, any>
 
+/**
+ * 等待与对端加密通道就绪的最长时长。密钥交换通常在连接建立后 1 个 RTT 内
+ * 完成；超时意味着对端异常或拒绝握手，此时宁可不发送也不降级为明文。
+ */
+export const ENCRYPTOR_WAIT_TIMEOUT_MS = 10_000
+
+/**
+ * 等待指定对端的会话加密器就绪。返回 null 表示超时——调用方应放弃发送，
+ * 而不是降级为明文（接收端在握手完成后会直接丢弃明文控制消息）。
+ */
+export async function waitForPeerEncryptor(
+  encryptorsRef: { current: Map<string, SessionEncryptor> },
+  peerId: string,
+  timeoutMs = ENCRYPTOR_WAIT_TIMEOUT_MS,
+): Promise<SessionEncryptor | null> {
+  const deadline = Date.now() + timeoutMs
+  for (;;) {
+    const encryptor = encryptorsRef.current.get(peerId)
+    if (encryptor?.isReady()) {
+      return encryptor
+    }
+    if (Date.now() >= deadline) {
+      return null
+    }
+    await new Promise(resolve => setTimeout(resolve, 100))
+  }
+}
+
 export function buildOutgoingTransferOfferSummary(files: File[]): FileOfferSummary | undefined {
   if (files.length <= 1) {
     return undefined
@@ -79,32 +107,41 @@ export function createDataTransfer(
     if (!text.trim())
       return
 
-    for (const [peerId, conn] of refs.connectionsRef.current.entries()) {
-      if (!conn.open)
-        continue
+    // 加密通道未就绪前不发送明文：逐个对端等待加密器，超时的跳过。
+    const results = await Promise.all(
+      Array.from(refs.connectionsRef.current.entries()).map(async ([peerId, conn]) => {
+        if (!conn.open)
+          return false
 
-      const encryptor = encryptorsRef.current.get(peerId)
-      const isEncrypted = encryptor?.isReady() ?? false
+        const encryptor = await waitForPeerEncryptor(encryptorsRef, peerId)
+        if (!encryptor) {
+          console.error(`Refusing to send plaintext text to ${peerId}: encryption not ready`)
+          return false
+        }
 
-      try {
-        if (isEncrypted && encryptor) {
+        try {
           const encrypted = await encryptJSON(encryptor, { type: 'text', content: text })
           conn.send({ type: 'encrypted', encrypted })
+          return true
         }
-        else {
-          conn.send({ type: 'text', content: text })
+        catch (error) {
+          console.error('Failed to send text:', error)
+          return false
         }
-      }
-      catch (error) {
-        console.error('Failed to send text:', error)
-      }
-    }
+      }),
+    )
 
-    addItem({
-      type: 'text',
-      content: text,
-      direction: 'sent',
-    })
+    const delivered = results.filter(Boolean).length
+    if (delivered > 0) {
+      addItem({
+        type: 'text',
+        content: text,
+        direction: 'sent',
+      })
+    }
+    if (delivered < results.length) {
+      addSystemMessage('部分设备的加密通道未建立，文本未发送（未降级为明文）')
+    }
   }
 
   const sendControlToPeer = async (peerId: string, payload: ControlPayload): Promise<boolean> => {
@@ -112,17 +149,17 @@ export function createDataTransfer(
     if (!conn || !conn.open)
       return false
 
-    const encryptor = encryptorsRef.current.get(peerId)
-    const isEncrypted = encryptor?.isReady() ?? false
+    // 控制消息（offer / start / end / cancel / response）必须走加密信封；
+    // 加密器未就绪则等待，超时直接失败，绝不发送明文。
+    const encryptor = await waitForPeerEncryptor(encryptorsRef, peerId)
+    if (!encryptor) {
+      console.error(`Refusing to send plaintext control payload to ${peerId}: encryption not ready`)
+      return false
+    }
 
     try {
-      if (isEncrypted && encryptor) {
-        const encrypted = await encryptJSON(encryptor, payload)
-        conn.send({ type: 'encrypted', encrypted })
-      }
-      else {
-        conn.send(payload)
-      }
+      const encrypted = await encryptJSON(encryptor, payload)
+      conn.send({ type: 'encrypted', encrypted })
       return true
     }
     catch (error) {
@@ -142,16 +179,18 @@ export function createDataTransfer(
       return false
 
     const encryptor = encryptorsRef.current.get(peerId)
-    const isEncrypted = encryptor?.isReady() ?? false
+    if (!encryptor?.isReady()) {
+      // 文件块必须逐块加密；offer/start 阶段已保证加密器就绪，
+      // 这里做最后一道防线，绝不发送明文块。
+      console.error(`Refusing to send plaintext file chunk to ${peerId}: encryption not ready`)
+      return false
+    }
 
     try {
-      const bytes = isEncrypted && encryptor
-        ? await encryptBytes(encryptor, chunk)
-        : chunk
-
+      const bytes = await encryptBytes(encryptor, chunk)
       conn.send(createBinaryFileChunkPayload({
         bytes,
-        encrypted: isEncrypted,
+        encrypted: true,
         itemId,
         offset,
       }))
@@ -208,6 +247,34 @@ export function createDataTransfer(
     })
   }
 
+  /**
+   * 发送背压：当 SCTP 发送缓冲超过高水位时，等待其排空到低水位再继续，
+   * 避免慢对端把发送方内存撑爆。等待期间也会响应用户取消。
+   */
+  const SEND_BUFFER_HIGH_WATERMARK = 4 * 1024 * 1024
+  const SEND_BUFFER_LOW_WATERMARK = 1 * 1024 * 1024
+  const SEND_BUFFER_DRAIN_TIMEOUT_MS = 30_000
+
+  const waitForSendBufferDrain = async (
+    dataChannel: { bufferedAmount?: number } | undefined,
+    itemId: string,
+  ) => {
+    const deadline = Date.now() + SEND_BUFFER_DRAIN_TIMEOUT_MS
+    for (;;) {
+      if (refs.cancelledTransfersRef.current.has(itemId)) {
+        return
+      }
+      const buffered = dataChannel?.bufferedAmount ?? 0
+      if (buffered <= SEND_BUFFER_LOW_WATERMARK) {
+        return
+      }
+      if (Date.now() >= deadline) {
+        return
+      }
+      await sleep(50)
+    }
+  }
+
   const tuneChunkSize = (current: number, sendDurationMs: number, bufferedAmount: number) => {
     let next = current
 
@@ -233,6 +300,10 @@ export function createDataTransfer(
     let chunkSize = FILE_CHUNK_SIZE
     let chunkIndex = 0
     let hasSentStart = false
+    // file-start 发送连续失败计数：加密器长期未就绪（对端异常/拒绝握手）时
+    // 不应无限重试，直接判失败，交由用户决定是否重发。
+    let startFailures = 0
+    const MAX_START_FAILURES = 3
 
     const offered = await sendControlToPeer(peerId, {
       type: 'file-offer',
@@ -279,11 +350,16 @@ export function createDataTransfer(
         })
 
         if (!started) {
+          startFailures += 1
+          if (startFailures >= MAX_START_FAILURES) {
+            return { status: 'failed', bytesSent: offset }
+          }
           await sleep(80)
           continue
         }
 
         hasSentStart = true
+        startFailures = 0
       }
       else if (!hasSentStart) {
         const started = await sendControlToPeer(peerId, {
@@ -297,11 +373,16 @@ export function createDataTransfer(
         })
 
         if (!started) {
+          startFailures += 1
+          if (startFailures >= MAX_START_FAILURES) {
+            return { status: 'failed', bytesSent: offset }
+          }
           await sleep(80)
           continue
         }
 
         hasSentStart = true
+        startFailures = 0
       }
 
       const end = Math.min(offset + chunkSize, totalSize)
@@ -323,8 +404,8 @@ export function createDataTransfer(
       const sendDurationMs = Date.now() - sentAt
       chunkSize = tuneChunkSize(chunkSize, sendDurationMs, bufferedAmount)
 
-      if (bufferedAmount > 4 * 1024 * 1024) {
-        await sleep(16)
+      if (bufferedAmount > SEND_BUFFER_HIGH_WATERMARK) {
+        await waitForSendBufferDrain(dataChannel, itemId)
       }
 
       chunkIndex += 1

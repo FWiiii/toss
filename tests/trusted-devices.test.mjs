@@ -147,3 +147,31 @@ test('removeTrustedDevice deletes a remembered device without touching others', 
   ])
   assert.deepEqual(getTrustedDevices(storage), remaining)
 })
+
+test('loadOrCreateLocalDeviceProfile falls back to cryptographic randomness without randomUUID', async () => {
+  const { loadOrCreateLocalDeviceProfile } = await import('../lib/trusted-devices.ts')
+
+  const makeStorage = () => {
+    const data = new Map()
+    return {
+      getItem: key => (data.has(key) ? data.get(key) : null),
+      setItem: (key, value) => data.set(key, value),
+    }
+  }
+
+  // 不传 randomUUID 时走 fallback：应为 16 字节 hex，而非 Math.random 的短串
+  const profile = loadOrCreateLocalDeviceProfile({
+    storage: makeStorage(),
+    now: Date.now(),
+    platformHint: 'Test',
+  })
+  assert.match(profile.deviceId, /^device-[0-9a-f]{32}$/)
+
+  // 两次生成的 id 不应相同
+  const another = loadOrCreateLocalDeviceProfile({
+    storage: makeStorage(),
+    now: Date.now(),
+    platformHint: 'Test',
+  })
+  assert.notEqual(profile.deviceId, another.deviceId)
+})

@@ -1,5 +1,6 @@
 import type { BinaryFileChunkPayload } from './transfer-chunk'
 import type { IncomingTransferRiskFlag } from './types'
+import { FILE_CHUNK_MAX_SIZE } from './peer-config'
 
 export const MAX_TRANSFER_TEXT_LENGTH = 256 * 1024
 const MAX_PROTOCOL_ID_LENGTH = 128
@@ -322,6 +323,11 @@ export function validateIncomingRawPeerPayload(data: unknown): RawIncomingPeerPa
       if (!isValidBoundedString(data.itemId) || !isValidOffset(data.offset) || !isValidBinaryPayload(data.bytes)) {
         return null
       }
+      // 单块大小上限：发送端最大只发 FILE_CHUNK_MAX_SIZE，超限的块视为恶意或损坏，直接丢弃，
+      // 防止对端一次投递超大块耗尽内存（toOwnedArrayBuffer 还会再复制一份）。
+      if (data.bytes.byteLength > FILE_CHUNK_MAX_SIZE) {
+        return null
+      }
       if (data.encrypted !== undefined && typeof data.encrypted !== 'boolean') {
         return null
       }
@@ -346,4 +352,49 @@ export function validateIncomingRawPeerPayload(data: unknown): RawIncomingPeerPa
 
 export function getFileOfferResponseKey(peerId: string, offerId: string) {
   return `${peerId}:${offerId}`
+}
+
+/**
+ * 与某个对端之间的握手状态
+ *
+ * - `pending`: 已发起 ECDH 密钥交换，等待对端公钥
+ * - `ready`: 密钥交换完成，会话加密器就绪
+ * - `unknown`: 未跟踪到握手状态（兼容保留，正常流程中不应出现）
+ */
+export type PeerHandshakeState = 'unknown' | 'pending' | 'ready'
+
+/**
+ * 入站消息门控：决定一个外层消息是否允许进入处理流程。
+ *
+ * 安全模型：发送端在加密器就绪后只会发送 `encrypted` 信封（控制消息）、
+ * 逐块加密的 `file-chunk`（`encrypted: true`）、`key-exchange` 与明文心跳。
+ * 因此一旦握手完成（`ready`），任何明文控制消息都只可能来自攻击者或
+ * 被篡改的流量，必须丢弃；握手进行中（`pending`）时，对端尚无合法理由
+ * 发送控制消息（device-intro 等都在握手完成后才发出），同样丢弃。
+ *
+ * `key-exchange` / `ping` / `pong` 在任何状态下放行：前者是握手本身，
+ * 后两者是无敏感内容的心跳（pong 的处理仍在下游按是否加密分别对待）。
+ * `encrypted` 信封始终放行——没有解密器时下游解密会自然失败并丢弃。
+ */
+export function isInboundPeerPayloadAllowed(
+  handshake: PeerHandshakeState,
+  outerType: string,
+  chunkEncrypted = false,
+): boolean {
+  if (outerType === 'key-exchange' || outerType === 'ping' || outerType === 'pong') {
+    return true
+  }
+
+  if (outerType === 'encrypted') {
+    return true
+  }
+
+  if (outerType === 'file-chunk') {
+    return handshake === 'ready' && chunkEncrypted
+  }
+
+  // 其余明文控制消息（text / device-intro / file-offer / file-start / …）：
+  // 仅在握手尚未开始的兼容状态下接受，握手进行中或已完成时一律拒绝，
+  // 防止未做密钥交换的攻击者冒充受信设备触发自动接受等逻辑。
+  return handshake === 'unknown'
 }

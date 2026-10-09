@@ -5,6 +5,7 @@
 
 import type { ConnectionAttemptRegistry } from './connection-attempts'
 import type { ReceiveStorageHandle } from './receive-storage'
+import type { PeerHandshakeState } from './transfer-protocol'
 import type { LocalDeviceProfile, TrustedDeviceRecord } from './trusted-devices'
 import type { ConnectionInfo, IncomingFileOffer, PeerDeviceInfo, ReceiveHistoryOutcome } from './types'
 import { HEARTBEAT_TIMEOUT_MS } from './connection-quality'
@@ -26,13 +27,14 @@ import {
   CONNECTION_TIMEOUT,
   detectConnectionType,
   ICE_DISCONNECTED_GRACE_PERIOD_MS,
+  MAX_FILE_SIZE_BYTES,
   MAX_RECONNECT_ATTEMPTS,
   PEER_PREFIX,
 } from './peer-config'
-import { createReceiveStorage } from './receive-storage'
+import { createReceiveStorage, hasStorageQuotaFor } from './receive-storage'
 import { createSequentialAsyncProcessor } from './serial-async-processor'
 import { readBinaryChunkPayload } from './transfer-chunk'
-import { validateIncomingRawPeerPayload, validateIncomingTransferPayload } from './transfer-protocol'
+import { isInboundPeerPayloadAllowed, validateIncomingRawPeerPayload, validateIncomingTransferPayload } from './transfer-protocol'
 
 const IMAGE_FILE_NAME_REGEX = /\.(?:jpg|jpeg|png|gif|webp|svg)$/i
 
@@ -551,9 +553,29 @@ export function createSetupConnection(
       const encryptor = encryptorsRef.current.get(conn.peer)
       const isEncrypted = encryptor?.isReady() ?? false
 
+      // 入站门控：握手完成前/后，明文控制消息与明文文件块一律丢弃。
+      // 合法对端在加密器就绪后只会发送 encrypted 信封、逐块加密的
+      // file-chunk、key-exchange 与 ping/pong 心跳。
+      const handshake: PeerHandshakeState = isEncrypted
+        ? 'ready'
+        : keyExchangePendingRef.current.has(conn.peer)
+          ? 'pending'
+          : 'unknown'
+      if (!isInboundPeerPayloadAllowed(
+        handshake,
+        validatedData.type,
+        validatedData.type === 'file-chunk' ? validatedData.encrypted : false,
+      )) {
+        console.warn(
+          `Dropped unexpected plaintext peer payload (type=${validatedData.type}) from ${conn.peer} while handshake=${handshake}`,
+        )
+        return
+      }
+
       // 处理文件块（简化后，文件块不加密 JSON，直接处理）
       if (validatedData.type === 'file-chunk') {
-        const bufferKey = validatedData.itemId ?? findBufferKeyByPeer(conn.peer)
+        // 协议校验已保证 itemId 为非空字符串，无需再按 peer 回退查找
+        const bufferKey = validatedData.itemId
         const buffer = bufferKey ? fileBuffersRef.current.get(bufferKey) : undefined
         if (buffer) {
           const expectedOffset = buffer.received
@@ -670,6 +692,19 @@ export function createSetupConnection(
         resolvePendingFileOfferResponse?.(conn.peer, decryptedData.offerId, decryptedData.accepted)
       }
       else if (decryptedData.type === 'file-offer') {
+        // 单文件上限：超限直接拒绝，不进入待处理队列
+        if (decryptedData.size > MAX_FILE_SIZE_BYTES) {
+          await sendPeerControl(conn.peer, {
+            type: 'file-offer-response',
+            offerId: decryptedData.offerId,
+            accepted: false,
+          })
+          addSystemMessage(
+            `已拒绝文件请求：文件过大（超过 ${MAX_FILE_SIZE_BYTES / 1024 / 1024 / 1024}GB 上限）`,
+          )
+          return
+        }
+
         const peerDevice = peerDevicesRef.current.get(conn.peer)
         const trustedDeviceId = peerDevice?.deviceId
         const summary = buildIncomingOfferSummary(decryptedData)
@@ -790,6 +825,35 @@ export function createSetupConnection(
           }
 
           let storage: ReceiveStorageHandle
+
+          // 二次校验：offer 阶段已拦过一次，这里防绕过；同时预检本地配额
+          if (decryptedData.size > MAX_FILE_SIZE_BYTES) {
+            updateItemProgress(localItemId, {
+              status: 'error',
+              speed: undefined,
+              remainingTime: undefined,
+            })
+            recordReceiveHistory?.({
+              offer: historyOffer,
+              outcome: 'failed',
+              failureReason: '文件超过大小上限',
+            })
+            return
+          }
+
+          if (!(await hasStorageQuotaFor(decryptedData.size))) {
+            updateItemProgress(localItemId, {
+              status: 'error',
+              speed: undefined,
+              remainingTime: undefined,
+            })
+            recordReceiveHistory?.({
+              offer: historyOffer,
+              outcome: 'failed',
+              failureReason: '本地存储空间不足',
+            })
+            return
+          }
 
           try {
             storage = await createReceiveStorage({

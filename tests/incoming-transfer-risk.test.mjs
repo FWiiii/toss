@@ -74,3 +74,33 @@ test('buildIncomingTransferSummary never under-reports observed files or sizes',
   assert.deepEqual(summary.riskFlags, ['executable', 'large'])
   assert.equal(summary.requiresSecondaryConfirmation, true)
 })
+
+test('buildIncomingTransferSummary flags common script and installer extensions as executable', async () => {
+  const { buildIncomingTransferSummary } = await import('../lib/incoming-transfer-risk.ts')
+
+  const risky = [
+    'update.ps1',
+    'runme.js',
+    'payload.hta',
+    'doc.html',
+    'image.svg',
+    'setup.apk',
+    'macro.vbs',
+    'shortcut.lnk',
+  ]
+
+  for (const name of risky) {
+    const summary = buildIncomingTransferSummary({
+      files: [{ name, size: 128, type: 'application/octet-stream' }],
+    })
+    assert.deepEqual(summary.riskFlags, ['executable'], name)
+    assert.equal(summary.requiresSecondaryConfirmation, true, name)
+    assert.equal(summary.executableFileName, name, name)
+  }
+
+  // 大小写不敏感
+  const upper = buildIncomingTransferSummary({
+    files: [{ name: 'INSTALLER.EXE', size: 128, type: 'application/octet-stream' }],
+  })
+  assert.deepEqual(upper.riskFlags, ['executable'])
+})
