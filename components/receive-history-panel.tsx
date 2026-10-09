@@ -147,6 +147,7 @@ export function ReceiveHistoryPanel({
   onClearHistory: () => void
 }) {
   const [expandedEntryId, setExpandedEntryId] = useState<string | null>(null)
+  const [visibleEntryLimit, setVisibleEntryLimit] = useState(50)
 
   const filteredEntries = useMemo(() => {
     if (activeOutcome === 'all') {
@@ -154,6 +155,19 @@ export function ReceiveHistoryPanel({
     }
     return entries.filter(entry => entry.outcome === activeOutcome)
   }, [activeOutcome, entries])
+  const visibleEntries = filteredEntries.slice(0, visibleEntryLimit)
+  const outcomeCounts = useMemo(() => ({
+    all: entries.length,
+    completed: entries.filter(entry => entry.outcome === 'completed').length,
+    rejected: entries.filter(entry => entry.outcome === 'rejected').length,
+    cancelled: entries.filter(entry => entry.outcome === 'cancelled').length,
+    failed: entries.filter(entry => entry.outcome === 'failed').length,
+  }), [entries])
+
+  const handleOutcomeChange = (outcome: ReceiveHistoryFilter) => {
+    setVisibleEntryLimit(50)
+    onOutcomeChange(outcome)
+  }
 
   if (!isExpanded) {
     const recentEntries = entries.slice(0, 5)
@@ -229,15 +243,20 @@ export function ReceiveHistoryPanel({
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-2" role="group" aria-label="筛选收件记录">
         {OUTCOME_OPTIONS.map(option => (
           <Button
             key={option.value}
             variant={activeOutcome === option.value ? 'secondary' : 'ghost'}
             size="sm"
-            onClick={() => onOutcomeChange(option.value)}
+            onClick={() => handleOutcomeChange(option.value)}
+            aria-pressed={activeOutcome === option.value}
+            className="gap-1.5 rounded-full"
           >
             {option.label}
+            <span className="text-[11px] tabular-nums opacity-70">
+              {outcomeCounts[option.value]}
+            </span>
           </Button>
         ))}
       </div>
@@ -252,7 +271,7 @@ export function ReceiveHistoryPanel({
               </div>
             )
           : (
-              filteredEntries.map(entry => (
+              visibleEntries.map(entry => (
                 <ReceiveHistoryRow
                   key={entry.id}
                   entry={entry}
@@ -264,6 +283,16 @@ export function ReceiveHistoryPanel({
               ))
             )}
       </div>
+
+      {visibleEntryLimit < filteredEntries.length && (
+        <div className="flex justify-center pt-1">
+          <Button variant="outline" size="sm" onClick={() => setVisibleEntryLimit(limit => limit + 50)}>
+            加载更多记录
+            {' · '}
+            {filteredEntries.length - visibleEntryLimit}
+          </Button>
+        </div>
+      )}
     </div>
   )
 }

@@ -1,7 +1,7 @@
 'use client'
 
 import type { PendingTransferFile } from '@/lib/pending-transfer-file'
-import { AlertTriangle, Monitor, Send, Share2, ShieldAlert, Trash2, Upload } from 'lucide-react'
+import { AlertTriangle, ChevronDown, Monitor, Send, Share2, ShieldAlert, Trash2, Upload } from 'lucide-react'
 import { useCallback, useEffect, useId, useMemo, useReducer, useRef, useState } from 'react'
 import { ImagePreviewDialog } from '@/components/image-preview-dialog'
 import { ReceiveHistoryPanel } from '@/components/receive-history-panel'
@@ -24,8 +24,8 @@ import { buildOutgoingTransferOfferSummary } from '@/lib/transfer-data'
 import { cn, formatFileSize } from '@/lib/utils'
 
 const PANEL_CLASS = 'panel-surface relative overflow-hidden transition-colors'
-const PANEL_HEADER_CLASS = 'flex items-center justify-between border-b border-border/70 px-4 py-3'
-const SCROLL_AREA_CLASS = 'min-h-[220px] space-y-2 p-4 sm:min-h-[260px]'
+const PANEL_HEADER_CLASS = 'flex items-center justify-between border-b border-border/70 px-5 py-4 sm:px-6'
+const SCROLL_AREA_CLASS = 'min-h-[220px] space-y-2 p-5 sm:min-h-[260px] sm:p-6'
 
 type PendingTransferInput = File | PendingTransferFile
 
@@ -586,7 +586,20 @@ export function TransferPanel() {
 
       {/* Header */}
       <div className={PANEL_HEADER_CLASS}>
-        <h3 className="text-sm font-medium text-foreground">{showReceiveHistory ? '收件箱' : '传输'}</h3>
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-accent/10 text-accent">
+            {showReceiveHistory ? <Upload className="h-4 w-4" /> : <Send className="h-4 w-4" />}
+          </div>
+          <div className="min-w-0">
+            <h3 className="text-sm font-semibold tracking-tight text-foreground">{showReceiveHistory ? '收件箱' : '传输内容'}</h3>
+            <p className="mt-0.5 flex items-center gap-1.5 truncate text-xs text-muted-foreground">
+              {!showReceiveHistory && (
+                <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', isConnected ? 'bg-success' : 'bg-muted-foreground/50')} aria-hidden="true" />
+              )}
+              {showReceiveHistory ? '查看已接收的文件记录' : isConnected ? '连接已建立，可以开始发送' : '可以先添加内容，连接后自动发送'}
+            </p>
+          </div>
+        </div>
         <div className="flex items-center gap-1">
           {isConnected && !showReceiveHistory && (
             <Button
@@ -904,15 +917,21 @@ export function TransferPanel() {
                             <button
                               type="button"
                               onClick={() => setShowCompleted(prev => !prev)}
-                              className="w-full flex items-center justify-between text-sm text-muted-foreground hover:text-foreground transition-colors"
+                              className="group flex w-full items-center justify-between rounded-xl border border-border/70 bg-muted/20 px-3 py-2.5 text-sm text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
                               aria-expanded={showCompleted}
                               aria-controls={completedSectionId}
                             >
-                              <span>已完成</span>
-                              <span>{showCompleted ? '收起' : `展开 ${completedItems.length}`}</span>
+                              <span className="flex items-center gap-2 font-medium text-foreground">
+                                <span>已完成</span>
+                                <span className="rounded-full bg-background px-2 py-0.5 text-xs tabular-nums">{completedItems.length}</span>
+                              </span>
+                              <span className="flex items-center gap-1.5 text-xs">
+                                {showCompleted ? '收起' : '展开'}
+                                <ChevronDown className={cn('h-4 w-4 transition-transform duration-200', showCompleted && 'rotate-180')} />
+                              </span>
                             </button>
                             {showCompleted && (
-                              <div id={completedSectionId} className="space-y-2">
+                              <div id={completedSectionId} className="space-y-2 pt-1 delight-fade-up">
                                 {completedItems.map(item => (
                                   <TransferItemComponent
                                     key={item.id}

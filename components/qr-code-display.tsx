@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
@@ -82,16 +83,21 @@ export function QRCodeDisplay({ roomCode, open, onOpenChange }: QRCodeDisplayPro
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-[340px]">
+      <DialogContent className="border-border/70 bg-card shadow-2xl sm:max-w-[360px] sm:rounded-3xl">
         <DialogHeader>
-          <DialogTitle className="text-center">扫码加入房间</DialogTitle>
+          <DialogTitle className="text-center tracking-tight">扫码加入房间</DialogTitle>
+          <DialogDescription className="text-center">用另一台设备扫描二维码，即可安全加入这个临时房间</DialogDescription>
         </DialogHeader>
 
         <div className="flex flex-col items-center gap-4 py-4">
-          <div className="delight-preview-in rounded-2xl border border-border/70 bg-muted/35 p-3">
+          <div className="delight-preview-in relative rounded-[1.75rem] border border-accent/20 bg-gradient-to-br from-accent/10 via-background to-info/10 p-5 shadow-sm">
+            <span className="pointer-events-none absolute left-3 top-3 h-5 w-5 rounded-tl-lg border-l-2 border-t-2 border-accent/60" aria-hidden="true" />
+            <span className="pointer-events-none absolute right-3 top-3 h-5 w-5 rounded-tr-lg border-r-2 border-t-2 border-accent/60" aria-hidden="true" />
+            <span className="pointer-events-none absolute bottom-3 left-3 h-5 w-5 rounded-bl-lg border-b-2 border-l-2 border-accent/60" aria-hidden="true" />
+            <span className="pointer-events-none absolute bottom-3 right-3 h-5 w-5 rounded-br-lg border-b-2 border-r-2 border-accent/60" aria-hidden="true" />
             <div
               ref={qrRef}
-              className="bg-white p-4 rounded-xl shadow-sm"
+              className="rounded-2xl bg-white p-4 shadow-md ring-1 ring-black/5"
             >
               {safeRoomCode
                 ? (
@@ -100,6 +106,7 @@ export function QRCodeDisplay({ roomCode, open, onOpenChange }: QRCodeDisplayPro
                       size={200}
                       level="M"
                       marginSize={0}
+                      title={`加入 Toss 房间 ${formattedCode}`}
                     />
                   )
                 : (

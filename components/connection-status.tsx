@@ -218,7 +218,7 @@ export function ConnectionStatusDisplay({
     <div className={cn('space-y-3', className)}>
       {/* Main status card */}
       <div className={cn(
-        'relative overflow-hidden rounded-lg border p-4 transition-colors',
+        'relative overflow-hidden rounded-2xl border p-4 transition-colors',
         tone.surface,
         showConnectionFlash && 'delight-connected-flash',
       )}
@@ -233,7 +233,7 @@ export function ConnectionStatusDisplay({
           {/* Status icon with pulse */}
           <div className="relative">
             <div className={cn(
-              'flex h-10 w-10 items-center justify-center rounded-full',
+              'flex h-11 w-11 items-center justify-center rounded-2xl',
               tone.iconSurface,
             )}
             >
@@ -309,67 +309,74 @@ export function ConnectionStatusDisplay({
               size="sm"
               className="h-auto px-0 text-xs text-muted-foreground hover:bg-transparent hover:text-foreground"
               onClick={() => setShowDiagnostics(prev => !prev)}
+              aria-expanded={diagnosticsExpanded}
+              aria-controls="connection-diagnostics"
             >
               {diagnosticsExpanded ? '收起连接详情' : '查看连接详情'}
             </Button>
 
-            {diagnosticsExpanded && (
-              <div className="mt-2 space-y-2 text-xs text-muted-foreground">
-                <div className="flex items-center gap-4 text-xs text-muted-foreground flex-wrap">
-                  <div className="flex items-center gap-1.5" title={connectionTypeDisplay.description} aria-label={`连接方式 ${connectionTypeDisplay.label}`}>
+            <div id="connection-diagnostics" hidden={!diagnosticsExpanded} className="mt-3 space-y-3 text-xs text-muted-foreground">
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                <div className="min-w-0 rounded-xl border border-border/70 bg-background/70 px-3 py-2.5" title={connectionTypeDisplay.description} aria-label={`连接方式 ${connectionTypeDisplay.label}`}>
+                  <span className="mb-1 block text-[11px] text-muted-foreground">连接类型</span>
+                  <span className="flex min-w-0 items-center gap-1.5">
                     <ConnectionTypeIcon className={cn(
                       'w-3.5 h-3.5',
                       connectionTone.inline,
                       connectionInfo?.type === 'unknown' && 'animate-spin',
                     )}
                     />
-                    <span className={cn('font-medium', connectionTone.inline)}>
+                    <span className={cn('truncate font-medium', connectionTone.inline)}>
                       {connectionTypeDisplay.label}
                     </span>
-                  </div>
-
-                  {connectionQuality && connectionQuality.latency !== null && (
-                    <div className="flex items-center gap-1.5" title="网络延迟" aria-label={`网络延迟 ${connectionQuality.latency} 毫秒`}>
-                      <Activity className={cn('h-3.5 w-3.5', qualityTone?.inline)} />
-                      <span className={cn('font-medium', qualityTone?.inline)}>
-                        {connectionQuality.latency}
-                        ms
-                      </span>
-                    </div>
-                  )}
-
-                  {connectionQuality && connectionQuality.bandwidth !== null && (
-                    <div className="flex items-center gap-1.5" title="传输速度" aria-label={`传输速度 ${formatFileSize(connectionQuality.bandwidth)} 每秒`}>
-                      <Gauge className="w-3.5 h-3.5" />
-                      <span className="font-medium text-foreground">
-                        {formatFileSize(connectionQuality.bandwidth)}
-                        /s
-                      </span>
-                    </div>
-                  )}
-
-                  {isEncrypted && (
-                    <div className="flex items-center gap-1.5" title="当前传输已加密" aria-label="当前传输已加密">
-                      <Lock className={cn('w-3.5 h-3.5', STATUS_TONES.success.inline)} />
-                      <span className={cn('font-medium', STATUS_TONES.success.inline)}>已加密</span>
-                    </div>
-                  )}
-
-                  {isEncrypted && encryptionFingerprint && (
-                    <div className="flex items-center gap-1.5" title={`会话指纹 ${encryptionFingerprint}，可在两端人工核对`} aria-label={`会话指纹 ${encryptionFingerprint}`}>
-                      <Fingerprint className="h-3.5 w-3.5" />
-                      <span className="font-medium text-foreground">
-                        {encryptionFingerprint}
-                      </span>
-                    </div>
-                  )}
+                  </span>
                 </div>
 
-                <p className="leading-relaxed text-muted-foreground/90">
-                  说明：传输内容默认不经过 Toss 服务端存储；建立连接时会使用信令服务协调，当前链路是否直连或中转以上方连接方式为准。
-                </p>
+                {connectionQuality && connectionQuality.latency !== null && (
+                  <div className="min-w-0 rounded-xl border border-border/70 bg-background/70 px-3 py-2.5" title="网络延迟" aria-label={`网络延迟 ${connectionQuality.latency} 毫秒`}>
+                    <span className="mb-1 block text-[11px] text-muted-foreground">网络延迟</span>
+                    <span className={cn('flex items-center gap-1.5 font-medium', qualityTone?.inline)}>
+                      <Activity className="h-3.5 w-3.5" />
+                      {`${connectionQuality.latency} ms`}
+                    </span>
+                  </div>
+                )}
+
+                {connectionQuality && connectionQuality.bandwidth !== null && (
+                  <div className="min-w-0 rounded-xl border border-border/70 bg-background/70 px-3 py-2.5" title="传输速度" aria-label={`传输速度 ${formatFileSize(connectionQuality.bandwidth)} 每秒`}>
+                    <span className="mb-1 block text-[11px] text-muted-foreground">传输速度</span>
+                    <span className="flex items-center gap-1.5 font-medium text-foreground">
+                      <Gauge className="h-3.5 w-3.5" />
+                      {`${formatFileSize(connectionQuality.bandwidth)}/s`}
+                    </span>
+                  </div>
+                )}
+
+                {isEncrypted && (
+                  <div className="min-w-0 rounded-xl border border-success/20 bg-success/5 px-3 py-2.5" title="当前传输已加密" aria-label="当前传输已加密">
+                    <span className="mb-1 block text-[11px] text-muted-foreground">安全状态</span>
+                    <span className={cn('flex items-center gap-1.5 font-medium', STATUS_TONES.success.inline)}>
+                      <Lock className="h-3.5 w-3.5" />
+                      已加密
+                    </span>
+                  </div>
+                )}
+
+                {isEncrypted && encryptionFingerprint && (
+                  <div className="col-span-2 min-w-0 rounded-xl border border-border/70 bg-background/70 px-3 py-2.5 sm:col-span-3" title={`会话指纹 ${encryptionFingerprint}，可在两端人工核对`} aria-label={`会话指纹 ${encryptionFingerprint}`}>
+                    <span className="mb-1 block text-[11px] text-muted-foreground">会话指纹</span>
+                    <span className="flex min-w-0 items-center gap-1.5 font-medium text-foreground">
+                      <Fingerprint className="h-3.5 w-3.5 shrink-0" />
+                      <span className="truncate font-mono">{encryptionFingerprint}</span>
+                    </span>
+                  </div>
+                )}
               </div>
-            )}
+
+              <p className="leading-relaxed text-muted-foreground/90">
+                说明：传输内容默认不经过 Toss 服务端存储；建立连接时会使用信令服务协调，当前链路是否直连或中转以上方连接方式为准。
+              </p>
+            </div>
           </div>
         )}
       </div>

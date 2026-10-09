@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
@@ -253,11 +254,14 @@ export function QRCodeScanner({ open, onOpenChange, onScan }: QRCodeScannerProps
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-[400px] p-0 overflow-hidden">
-        <DialogHeader className="p-4 pb-0">
-          <DialogTitle className="text-center">
+      <DialogContent className="overflow-hidden border-border/70 bg-card p-0 shadow-2xl sm:max-w-[400px] sm:rounded-3xl">
+        <DialogHeader className="relative border-b border-border/70 bg-muted/20 px-5 pb-4 pt-5 text-center sm:px-6">
+          <DialogTitle className="text-center tracking-tight">
             {showManualInput ? '手动输入房间代码' : '扫描二维码'}
           </DialogTitle>
+          <DialogDescription className="text-center">
+            {showManualInput ? '输入对方设备上显示的 6 位连接码' : '允许摄像头访问，将房间二维码置于扫描框内'}
+          </DialogDescription>
         </DialogHeader>
 
         {/* Hidden file input for QR image upload */}
@@ -328,18 +332,23 @@ export function QRCodeScanner({ open, onOpenChange, onScan }: QRCodeScannerProps
                   {/* Scanner container */}
                   <div
                     ref={scannerRef}
-                    className="w-full aspect-square bg-black"
+                    className="qr-scanner-viewport relative aspect-square w-full bg-black"
+                    role="img"
+                    aria-label="摄像头二维码扫描画面"
+                    aria-busy={isStarting}
                   />
 
                   {/* Scanning overlay */}
                   {!error && !isStarting && cameraSupported && (
                     <div className="absolute inset-0 pointer-events-none">
                       {/* Corner markers */}
-                      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[250px] h-[250px]">
-                        <div className="absolute top-0 left-0 w-8 h-8 border-t-2 border-l-2 border-accent rounded-tl-lg" />
-                        <div className="absolute top-0 right-0 w-8 h-8 border-t-2 border-r-2 border-accent rounded-tr-lg" />
-                        <div className="absolute bottom-0 left-0 w-8 h-8 border-b-2 border-l-2 border-accent rounded-bl-lg" />
-                        <div className="absolute bottom-0 right-0 w-8 h-8 border-b-2 border-r-2 border-accent rounded-br-lg" />
+                      <div className="qr-scan-frame absolute left-1/2 top-1/2 h-[250px] w-[250px] -translate-x-1/2 -translate-y-1/2">
+                        <div className="absolute inset-0 rounded-2xl border border-white/20" />
+                        <div className="qr-scan-line absolute inset-x-1 top-1 rounded-full" />
+                        <div className="absolute left-0 top-0 h-8 w-8 rounded-tl-lg border-l-2 border-t-2 border-accent" />
+                        <div className="absolute right-0 top-0 h-8 w-8 rounded-tr-lg border-r-2 border-t-2 border-accent" />
+                        <div className="absolute bottom-0 left-0 h-8 w-8 rounded-bl-lg border-b-2 border-l-2 border-accent" />
+                        <div className="absolute bottom-0 right-0 h-8 w-8 rounded-br-lg border-b-2 border-r-2 border-accent" />
                       </div>
                     </div>
                   )}
@@ -347,7 +356,7 @@ export function QRCodeScanner({ open, onOpenChange, onScan }: QRCodeScannerProps
                   {/* Loading state */}
                   {isStarting && (
                     <div className="absolute inset-0 flex items-center justify-center bg-black/80">
-                      <div className="text-center text-white">
+                      <div className="text-center text-white" role="status" aria-live="polite">
                         <Camera className="w-12 h-12 mx-auto mb-2 animate-pulse" />
                         <p className="text-sm">正在启动摄像头...</p>
                       </div>
@@ -357,7 +366,7 @@ export function QRCodeScanner({ open, onOpenChange, onScan }: QRCodeScannerProps
                   {/* Error state or camera not supported */}
                   {(error || !cameraSupported) && (
                     <div className="absolute inset-0 flex items-center justify-center bg-black/90">
-                      <div className="text-center text-white p-6">
+                      <div className="p-6 text-center text-white" role="alert" aria-live="assertive">
                         <AlertCircle className={`mx-auto mb-3 h-12 w-12 ${STATUS_TONES.warning.inline}`} />
                         <p className="text-sm mb-4 max-w-[280px]">
                           {error || '当前环境不支持摄像头扫描'}

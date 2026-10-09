@@ -18,19 +18,26 @@ export function EmptyState({
 }: EmptyStateProps) {
   return (
     <div className={cn(
-      'flex flex-col items-center justify-center text-center py-12',
+      'flex flex-col items-center justify-center px-4 py-12 text-center',
       containerClassName,
     )}
     >
-      <div className={cn(
-        'w-16 h-16 rounded-full flex items-center justify-center mb-4',
-        iconClassName,
-      )}
-      >
-        <Icon className="w-7 h-7" />
+      <div className="empty-state-illustration relative mb-5 flex h-[72px] w-[72px] items-center justify-center">
+        <svg className="absolute inset-0 h-full w-full text-accent/30" viewBox="0 0 72 72" fill="none" aria-hidden="true">
+          <circle cx="36" cy="36" r="34" stroke="currentColor" strokeDasharray="3 5" />
+          <circle cx="36" cy="36" r="27" stroke="currentColor" strokeOpacity="0.45" />
+          <circle cx="58" cy="17" r="3" fill="currentColor" />
+        </svg>
+        <div className={cn(
+          'relative flex h-12 w-12 items-center justify-center rounded-2xl shadow-sm ring-1 ring-border/60',
+          iconClassName,
+        )}
+        >
+          <Icon className="h-5 w-5" />
+        </div>
       </div>
       {title && (
-        <h3 className="text-lg font-medium text-foreground mb-2">{title}</h3>
+        <h3 className="mb-2 text-base font-semibold tracking-tight text-foreground">{title}</h3>
       )}
       <p className="text-sm text-muted-foreground max-w-md">{description}</p>
     </div>

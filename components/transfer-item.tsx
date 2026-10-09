@@ -526,14 +526,18 @@ export const TransferItemComponent = memo(({ item, onPreviewImage, onDownload, o
   }
 
   const isImage = item.type === 'file' && isImageFile(item.name || '')
-  const directionClass = item.direction === 'sent' ? 'border-l-2 border-l-foreground/60' : 'border-l-2 border-l-accent/70'
+  const directionClass = item.direction === 'sent'
+    ? 'border-l-2 border-l-foreground/35 bg-background'
+    : 'border-l-2 border-l-accent/70 bg-accent/[0.025]'
   return (
     <div
       className={cn(
-        'rounded-md border border-border/60 bg-card/50 px-3 py-2 hover:bg-card transition-colors',
+        'group rounded-xl border border-border/70 px-3 py-3 shadow-xs transition-[transform,background-color,border-color,box-shadow] duration-200 hover:-translate-y-px hover:border-border hover:shadow-sm sm:px-4',
         directionClass,
         showSettleIn && 'delight-rise-in',
       )}
+      role="group"
+      aria-label={`${item.direction === 'sent' ? '发送' : '接收'}${item.type === 'file' ? '文件' : '文本'}`}
     >
       {isImage
         ? (

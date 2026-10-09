@@ -43,6 +43,7 @@ export function TransferInput({
   const [isMounted, markMounted] = useReducer(() => true, false)
   const textInputId = useId()
   const textHintId = useId()
+  const textCountId = useId()
   const canQueueWithoutConnection = allowQueueWithoutConnection && !isConnected
   const clipboardAvailable = isMounted && typeof navigator !== 'undefined' && !!navigator.clipboard
 
@@ -70,8 +71,8 @@ export function TransferInput({
   }
 
   return (
-    <div className="border-t border-border/70 p-4" data-transfer-input>
-      <div className={cn('mb-2 flex gap-2 rounded-xl transition-colors duration-300', highlightComposer && 'bg-accent/5')}>
+    <div className="border-t border-border/70 bg-muted/15 p-4 sm:p-5" data-transfer-input>
+      <div className={cn('mb-3 flex gap-2 rounded-2xl transition-colors duration-300', highlightComposer && 'bg-accent/5')}>
         <label htmlFor={textInputId} className="sr-only">
           要发送的文本
         </label>
@@ -83,10 +84,10 @@ export function TransferInput({
           onChange={e => onTextChange(e.target.value)}
           disabled={!isConnected && !allowQueueWithoutConnection}
           className={cn(
-            'min-h-[84px] resize-none',
-            highlightComposer ? 'border-accent/30 bg-accent/5' : 'border-border bg-input',
+            'min-h-[96px] resize-y rounded-2xl bg-background px-4 py-3',
+            highlightComposer ? 'border-accent/30 bg-accent/5' : 'border-border',
           )}
-          aria-describedby={textHintId}
+          aria-describedby={`${textHintId} ${textCountId}`}
           onKeyDown={handleKeyDown}
         />
       </div>
@@ -136,20 +137,23 @@ export function TransferInput({
           {canQueueWithoutConnection ? '加入待发送队列' : '发送文本'}
         </Button>
       </div>
-      <p id={textHintId} className="mt-2 text-xs text-muted-foreground" aria-live="polite">
-        {sendingCount > 0
-          ? (
-              <>
-                正在发送
-                {sendingCount}
-                {' '}
-                个文件 ·
-                {' '}
-              </>
-            )
-          : null}
-        {isConnected ? '按 Ctrl/Cmd + Enter 快速发送' : '未连接时可先编辑并排队，连接后自动发送'}
-      </p>
+      <div className="mt-2 flex items-start justify-between gap-3">
+        <p id={textHintId} className="min-w-0 text-xs text-muted-foreground" aria-live="polite">
+          {sendingCount > 0 && (
+            <>
+              正在发送
+              {sendingCount}
+              {' '}
+              个文件 ·
+              {' '}
+            </>
+          )}
+          {isConnected ? '按 Ctrl/Cmd + Enter 快速发送' : '未连接时可先编辑并排队，连接后自动发送'}
+        </p>
+        <span id={textCountId} className="shrink-0 text-xs tabular-nums text-muted-foreground" aria-live="off">
+          {`${text.length.toLocaleString('zh-CN')} 字`}
+        </span>
+      </div>
     </div>
   )
 }
