@@ -96,15 +96,9 @@ interface TransferItemProps {
   onStopStream?: (itemId: string) => void
 }
 
-// System message component
+// Activity log entry, not a content card.
 function SystemMessage({ content }: { content: string }) {
-  return (
-    <div className="flex justify-center delight-fade-up">
-      <div className="px-3 py-1 rounded-full bg-muted text-xs text-muted-foreground">
-        {content}
-      </div>
-    </div>
-  )
+  return <p className="break-words px-1 py-0.5 text-xs leading-relaxed text-muted-foreground">{content}</p>
 }
 
 // Image item component
@@ -498,7 +492,7 @@ export const TransferItemComponent = memo(({ item, onPreviewImage, onDownload, o
   )
 
   useEffect(() => {
-    if (item.type === 'system' || item.status === 'completed') {
+    if (item.status === 'completed') {
       setShowSettleIn(true)
       const timeoutId = window.setTimeout(() => {
         setShowSettleIn(false)

@@ -1,8 +1,8 @@
 'use client'
 
 import type { PendingTransferFile } from '@/lib/pending-transfer-file'
-import { AlertTriangle, ChevronDown, Inbox, Monitor, MoreHorizontal, Send, Share2, ShieldAlert, Trash2, Upload } from 'lucide-react'
-import { useCallback, useEffect, useId, useMemo, useReducer, useRef, useState } from 'react'
+import { AlertTriangle, Inbox, Monitor, MoreHorizontal, Share2, ShieldAlert, Trash2, Upload } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { ImagePreviewDialog } from '@/components/image-preview-dialog'
 import { ReceiveHistoryPanel } from '@/components/receive-history-panel'
 import { TransferInput } from '@/components/transfer-input'
@@ -97,7 +97,7 @@ export function TransferPanel() {
   const [isDragging, setIsDragging] = useState(false)
   const [pendingShare, dispatchPendingShare] = useReducer(pendingShareReducer, null)
   const [previewImage, setPreviewImage] = useState<{ url: string, name: string } | null>(null)
-  const [showCompleted, setShowCompleted] = useState(false)
+  const [showActivity, setShowActivity] = useState(false)
   const [isSendingClipboard, setIsSendingClipboard] = useState(false)
   const [trustIncomingDevice, setTrustIncomingDevice] = useReducer(
     (_current: boolean, next: boolean) => next,
@@ -129,12 +129,10 @@ export function TransferPanel() {
   const hasShownShareLoadErrorRef = useRef(false)
   const hasFocusedRef = useRef(false)
   const hasHighlightedComposerRef = useRef(false)
-  const activeItemsEndRef = useRef<HTMLDivElement>(null)
   const itemsEndRef = useRef<HTMLDivElement>(null)
   const composerInputRef = useRef<HTMLTextAreaElement>(null)
   const previousItemsCountRef = useRef(0)
   const shouldAutoScrollRef = useRef(true)
-  const completedSectionId = useId()
   const activeIncomingFileOffer = incomingFileOffers[0] ?? null
   const activeIncomingSummary = activeIncomingFileOffer?.summary ?? null
   const activeIncomingRiskFlags = useMemo(
@@ -211,15 +209,28 @@ export function TransferPanel() {
     addSystemMessage(shareLoadError, true)
     hasShownShareLoadErrorRef.current = true
   }, [addSystemMessage, shareLoadError])
-  const activeItems = useMemo(
-    () => items.filter(item => item.status === 'transferring' || item.status === 'pending'),
-    [items],
-  )
-  const completedItems = useMemo(
-    () => items.filter(item => !(item.status === 'transferring' || item.status === 'pending')),
-    [items],
-  )
-  const hasItems = activeItems.length > 0 || completedItems.length > 0
+  const { receivedItems, outgoingItems, activityItems } = useMemo(() => {
+    const receivedItems: typeof items = []
+    const outgoingItems: typeof items = []
+    const activityItems: typeof items = []
+    for (const item of items) {
+      if (item.type !== 'system' && item.direction === 'received') {
+        receivedItems.push(item)
+      }
+      else if (item.direction === 'sent' && (
+        item.status === 'pending'
+        || item.status === 'transferring'
+        || item.status === 'error'
+        || item.type === 'stream'
+      )) {
+        outgoingItems.push(item)
+      }
+      else {
+        activityItems.push(item)
+      }
+    }
+    return { receivedItems, outgoingItems, activityItems }
+  }, [items])
   const pendingShareSummary = useMemo(() => {
     if (!pendingShare) {
       return ''
@@ -235,15 +246,8 @@ export function TransferPanel() {
     return segments.join(' · ')
   }, [pendingShare])
 
-  const getAutoScrollAnchor = useCallback(() => {
-    if (activeItems.length > 0 && activeItemsEndRef.current) {
-      return activeItemsEndRef.current
-    }
-    return itemsEndRef.current
-  }, [activeItems.length])
-
   const updateAutoScrollState = useCallback(() => {
-    const anchor = getAutoScrollAnchor()
+    const anchor = itemsEndRef.current
     if (!anchor) {
       shouldAutoScrollRef.current = true
       return
@@ -251,10 +255,10 @@ export function TransferPanel() {
 
     const rect = anchor.getBoundingClientRect()
     shouldAutoScrollRef.current = Math.abs(rect.top - window.innerHeight) <= 160
-  }, [getAutoScrollAnchor])
+  }, [])
 
   const scrollToLatest = useCallback(() => {
-    const anchor = getAutoScrollAnchor()
+    const anchor = itemsEndRef.current
     if (!anchor)
       return
 
@@ -264,7 +268,7 @@ export function TransferPanel() {
       block: 'end',
       inline: 'nearest',
     })
-  }, [getAutoScrollAnchor])
+  }, [])
 
   const sendFiles = useCallback(async (files: PendingTransferInput[]) => {
     if (files.length === 0)
@@ -432,7 +436,7 @@ export function TransferPanel() {
 
   useEffect(() => {
     updateAutoScrollState()
-  }, [items.length, showCompleted, pendingShare, updateAutoScrollState])
+  }, [receivedItems.length, showActivity, pendingShare, updateAutoScrollState])
 
   useEffect(() => {
     updateAutoScrollState()
@@ -450,12 +454,12 @@ export function TransferPanel() {
     }
   }, [updateAutoScrollState])
 
-  // Auto-follow new items only while the user stays near the bottom.
+  // Follow new received content, never routine activity messages.
   useEffect(() => {
     const previousCount = previousItemsCountRef.current
-    previousItemsCountRef.current = items.length
+    previousItemsCountRef.current = receivedItems.length
 
-    if (items.length === 0 || items.length === previousCount || previewImage) {
+    if (receivedItems.length <= previousCount || previewImage || showReceiveHistory) {
       return
     }
 
@@ -467,7 +471,7 @@ export function TransferPanel() {
       scrollToLatest()
       updateAutoScrollState()
     })
-  }, [items.length, previewImage, scrollToLatest, updateAutoScrollState])
+  }, [receivedItems.length, previewImage, showReceiveHistory, scrollToLatest, updateAutoScrollState])
 
   const handleSendText = useCallback(() => {
     if (!text.trim()) {
@@ -588,9 +592,9 @@ export function TransferPanel() {
       <div className={PANEL_HEADER_CLASS}>
         <div className="flex min-w-0 items-center gap-2.5">
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent/10 text-accent">
-            {showReceiveHistory ? <Upload className="h-4 w-4" /> : <Send className="h-4 w-4" />}
+            <Inbox className="h-4 w-4" />
           </div>
-          <h3 className="truncate text-sm font-semibold text-foreground">{showReceiveHistory ? '收件箱' : '传输内容'}</h3>
+          <h3 className="truncate text-sm font-semibold text-foreground">{showReceiveHistory ? '收件箱' : '收到的内容'}</h3>
         </div>
         {!showReceiveHistory && (
           <div className="flex items-center gap-1">
@@ -876,77 +880,70 @@ export function TransferPanel() {
         : (
             <>
               <div className={SCROLL_AREA_CLASS}>
-                {!hasItems && !pendingShare
+                {receivedItems.length === 0
                   ? (
                       <EmptyState
-                        icon={Send}
-                        title={isConnected ? '准备发送' : '等待连接'}
-                        description={isConnected ? '发送文本或文件即可开始传输' : '连接设备后即可开始传输'}
+                        icon={Inbox}
+                        title="暂无收到的内容"
+                        description={isConnected ? '对方发送的文本、图片和文件会显示在这里' : '连接设备后即可接收内容'}
                         containerClassName="h-full"
                       />
                     )
-                  : (
-                      <div className="space-y-3">
-                        {activeItems.length > 0 && (
-                          <div className="space-y-2">
-                            <div className="flex items-center justify-between text-sm text-muted-foreground">
-                              <span>进行中</span>
-                              <span>{activeItems.length}</span>
-                            </div>
-                            <div className="space-y-2">
-                              {activeItems.map(item => (
-                                <TransferItemComponent
-                                  key={item.id}
-                                  item={item}
-                                  onPreviewImage={handlePreviewImage}
-                                  onDownload={handleDownload}
-                                  onCancel={cancelTransfer}
-                                  onStopStream={handleStopStream}
-                                />
-                              ))}
-                            </div>
-                            <div ref={activeItemsEndRef} aria-hidden="true" />
-                          </div>
-                        )}
-
-                        {completedItems.length > 0 && (
-                          <div className="space-y-2">
-                            <button
-                              type="button"
-                              onClick={() => setShowCompleted(prev => !prev)}
-                              className="group flex w-full items-center justify-between rounded-xl border border-border/70 bg-muted/20 px-3 py-2.5 text-sm text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
-                              aria-expanded={showCompleted}
-                              aria-controls={completedSectionId}
-                            >
-                              <span className="flex items-center gap-2 font-medium text-foreground">
-                                <span>已完成</span>
-                                <span className="rounded-full bg-background px-2 py-0.5 text-xs tabular-nums">{completedItems.length}</span>
-                              </span>
-                              <span className="flex items-center gap-1.5 text-xs">
-                                {showCompleted ? '收起' : '展开'}
-                                <ChevronDown className={cn('h-4 w-4 transition-transform duration-200', showCompleted && 'rotate-180')} />
-                              </span>
-                            </button>
-                            {showCompleted && (
-                              <div id={completedSectionId} className="space-y-2 pt-1 delight-fade-up">
-                                {completedItems.map(item => (
-                                  <TransferItemComponent
-                                    key={item.id}
-                                    item={item}
-                                    onPreviewImage={handlePreviewImage}
-                                    onDownload={handleDownload}
-                                    onCancel={cancelTransfer}
-                                    onStopStream={handleStopStream}
-                                  />
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    )}
+                  : receivedItems.map(item => (
+                      <TransferItemComponent
+                        key={item.id}
+                        item={item}
+                        onPreviewImage={handlePreviewImage}
+                        onDownload={handleDownload}
+                        onCancel={cancelTransfer}
+                        onStopStream={handleStopStream}
+                      />
+                    ))}
                 <div ref={itemsEndRef} aria-hidden="true" />
               </div>
+
+              {outgoingItems.length > 0 && (
+                <div className="space-y-2 border-t border-border/70 px-4 py-3 sm:px-5" aria-label="发送状态">
+                  <p className="text-xs text-muted-foreground">发送状态</p>
+                  {outgoingItems.map(item => (
+                    <TransferItemComponent
+                      key={item.id}
+                      item={item}
+                      onPreviewImage={handlePreviewImage}
+                      onDownload={handleDownload}
+                      onCancel={cancelTransfer}
+                      onStopStream={handleStopStream}
+                    />
+                  ))}
+                </div>
+              )}
+
+              {activityItems.length > 0 && (
+                <details
+                  className="border-t border-border/70 px-4 py-3 text-xs text-muted-foreground sm:px-5"
+                  onToggle={event => setShowActivity(event.currentTarget.open)}
+                >
+                  <summary className="cursor-pointer rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40">
+                    活动记录
+                    {' · '}
+                    {activityItems.length}
+                  </summary>
+                  {showActivity && (
+                    <div className="mt-3 space-y-2">
+                      {activityItems.map(item => (
+                        <TransferItemComponent
+                          key={item.id}
+                          item={item}
+                          onPreviewImage={handlePreviewImage}
+                          onDownload={handleDownload}
+                          onCancel={cancelTransfer}
+                          onStopStream={handleStopStream}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </details>
+              )}
 
               <TransferInput
                 text={text}
