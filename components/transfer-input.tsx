@@ -71,11 +71,9 @@ export function TransferInput({
   }
 
   return (
-    <div className="border-t border-border/70 bg-muted/15 p-4 sm:p-5" data-transfer-input>
-      <div className={cn('mb-3 flex gap-2 rounded-2xl transition-colors duration-300', highlightComposer && 'bg-accent/5')}>
-        <label htmlFor={textInputId} className="sr-only">
-          要发送的文本
-        </label>
+    <div className="border-t border-border/70 bg-muted/15 p-3 sm:p-4" data-transfer-input>
+      <div className={cn('mb-2 flex gap-2 rounded-xl transition-colors duration-300', highlightComposer && 'bg-accent/5')}>
+        <label htmlFor={textInputId} className="sr-only">要发送的文本</label>
         <Textarea
           ref={textInputRef}
           id={textInputId}
@@ -84,23 +82,18 @@ export function TransferInput({
           onChange={e => onTextChange(e.target.value)}
           disabled={!isConnected && !allowQueueWithoutConnection}
           className={cn(
-            'min-h-[96px] resize-y rounded-2xl bg-background px-4 py-3',
+            'min-h-[76px] resize-y rounded-xl bg-background px-3 py-2.5',
             highlightComposer ? 'border-accent/30 bg-accent/5' : 'border-border',
           )}
           aria-describedby={`${textHintId} ${textCountId}`}
           onKeyDown={handleKeyDown}
         />
       </div>
-      <div className="flex flex-wrap gap-2">
-        <input
-          type="file"
-          ref={fileInputRef}
-          multiple
-          onChange={handleFileSelect}
-          className="hidden"
-        />
+      <div className="flex flex-wrap gap-1">
+        <input type="file" ref={fileInputRef} multiple onChange={handleFileSelect} className="hidden" />
         <Button
-          variant="secondary"
+          variant="ghost"
+          size="sm"
           className="min-w-0 flex-1 sm:flex-none"
           onClick={() => {
             onBeforeFilePick?.()
@@ -108,52 +101,54 @@ export function TransferInput({
           }}
           disabled={!isConnected && !allowQueueWithoutConnection}
         >
-          <Upload className="w-4 h-4 mr-2" />
+          <Upload className="mr-1.5 h-4 w-4" />
           {canQueueWithoutConnection ? '选择文件并排队' : '选择文件'}
         </Button>
         <Button
-          variant="secondary"
+          variant="ghost"
+          size="sm"
           className="min-w-0 flex-1 sm:flex-none"
           onClick={() => onSendClipboard?.()}
           disabled={(!isConnected && !allowQueueWithoutConnection) || !clipboardAvailable || isSendingClipboard}
         >
           {isSendingClipboard
-            ? (
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              )
-            : (
-                <Clipboard className="w-4 h-4 mr-2" />
-              )}
+            ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+            : <Clipboard className="mr-1.5 h-4 w-4" />}
           {isSendingClipboard ? '正在读取…' : '发送剪贴板'}
         </Button>
-      </div>
-      <div className="mt-2">
         <Button
-          className={cn('w-full', highlightComposer && 'delight-ready-pulse')}
+          size="sm"
+          className={cn('min-w-0 flex-1 sm:flex-none', highlightComposer && 'delight-ready-pulse')}
           onClick={onSendText}
           disabled={(!isConnected && !allowQueueWithoutConnection) || !text.trim()}
         >
-          <Send className="w-4 h-4 mr-2" />
-          {canQueueWithoutConnection ? '加入待发送队列' : '发送文本'}
+          <Send className="mr-1.5 h-4 w-4" />
+          {canQueueWithoutConnection ? '加入队列' : '发送'}
         </Button>
       </div>
-      <div className="mt-2 flex items-start justify-between gap-3">
-        <p id={textHintId} className="min-w-0 text-xs text-muted-foreground" aria-live="polite">
-          {sendingCount > 0 && (
-            <>
-              正在发送
-              {sendingCount}
-              {' '}
-              个文件 ·
-              {' '}
-            </>
+      {(sendingCount > 0 || text.length > 0) && (
+        <div className="mt-1.5 flex items-start justify-between gap-3">
+          <p id={textHintId} className="min-w-0 text-xs text-muted-foreground" aria-live="polite">
+            {sendingCount > 0 && (
+              <>
+                正在发送
+                {' '}
+                {sendingCount}
+                {' 个文件'}
+                {text.length > 0 && ' · '}
+              </>
+            )}
+            {text.length > 0 && (
+              isConnected ? '按 Ctrl/Cmd + Enter 快速发送' : '未连接时会在连接后自动发送'
+            )}
+          </p>
+          {text.length > 0 && (
+            <span id={textCountId} className="shrink-0 text-xs tabular-nums text-muted-foreground" aria-live="off">
+              {`${text.length.toLocaleString('zh-CN')} 字`}
+            </span>
           )}
-          {isConnected ? '按 Ctrl/Cmd + Enter 快速发送' : '未连接时可先编辑并排队，连接后自动发送'}
-        </p>
-        <span id={textCountId} className="shrink-0 text-xs tabular-nums text-muted-foreground" aria-live="off">
-          {`${text.length.toLocaleString('zh-CN')} 字`}
-        </span>
-      </div>
+        </div>
+      )}
     </div>
   )
 }

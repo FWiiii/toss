@@ -41,28 +41,28 @@ function getConnectionTypeDisplay(type: ConnectionType) {
     case 'direct':
       return {
         label: '局域网直连',
-        description: '内容直接在设备间传输，通常速度最快',
+        description: '设备间直连，速度通常最快',
         icon: Zap,
         tone: 'success' as const,
       }
     case 'stun':
       return {
         label: 'P2P 穿透',
-        description: '经 NAT 穿透后直连，内容仍在设备间传输',
+        description: '已穿透 NAT，内容仍在设备间传输',
         icon: Radio,
         tone: 'info' as const,
       }
     case 'relay':
       return {
         label: '服务器中转',
-        description: '网络受限时通过 TURN 转发，链路仍受 WebRTC 加密保护',
+        description: '网络受限时通过 TURN 转发，链路仍受加密保护',
         icon: Server,
         tone: 'warning' as const,
       }
     default:
       return {
         label: '检测中...',
-        description: '正在检测连接类型',
+        description: '正在检测链路',
         icon: Loader2,
         tone: 'neutral' as const,
       }
@@ -152,9 +152,7 @@ export function ConnectionStatusDisplay({
         return {
           icon: Loader2,
           label: isHost ? '等待连接' : '正在连接',
-          description: isHost
-            ? '房间已创建，等待其他设备加入并协调连接...'
-            : '正在协调信令并建立 WebRTC 连接...',
+          description: isHost ? '房间已创建，等待设备加入' : '正在建立连接',
           tone: 'warning' as const,
           showPulse: true,
           animate: true,
@@ -162,8 +160,7 @@ export function ConnectionStatusDisplay({
       case 'reconnecting':
         return {
           icon: Loader2,
-          label: '正在重连',
-          description: errorMessage || '连接已断开，正在尝试重新连接...',
+          description: errorMessage || '连接已断开，正在重试',
           tone: 'info' as const,
           showPulse: true,
           animate: true,
@@ -290,15 +287,6 @@ export function ConnectionStatusDisplay({
             <p className="text-sm text-muted-foreground mt-0.5">
               {config.description}
             </p>
-            {status === 'connected' && peerCount > 0 && (
-              <p className={cn(
-                'mt-2 text-sm text-foreground/85',
-                showConnectionFlash && 'delight-fade-up',
-              )}
-              >
-                下一步：在下方发送文本，或选择文件与剪贴板内容。
-              </p>
-            )}
           </div>
         </div>
 
@@ -373,9 +361,6 @@ export function ConnectionStatusDisplay({
                 )}
               </div>
 
-              <p className="leading-relaxed text-muted-foreground/90">
-                说明：传输内容默认不经过 Toss 服务端存储；建立连接时会使用信令服务协调，当前链路是否直连或中转以上方连接方式为准。
-              </p>
             </div>
           </div>
         )}

@@ -137,46 +137,32 @@ export function PWARegister() {
 
   return (
     <div
-      className="fixed left-4 right-4 z-50 rounded-xl border border-border bg-card p-4 shadow-lg md:left-auto md:right-4 md:w-80"
-      style={{ bottom: 'max(1rem, env(safe-area-inset-bottom))' }}
+      className="fixed left-3 right-3 z-50 rounded-lg border border-border bg-card p-3 shadow-lg md:bottom-3 md:left-auto md:right-3 md:w-72"
+      style={{ bottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}
     >
-      <div className="flex items-start gap-3">
-        <div className="w-10 h-10 rounded-lg bg-accent/20 flex items-center justify-center flex-shrink-0">
-          <Download className="w-5 h-5 text-accent" />
+      <div className="flex items-start gap-2.5">
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-accent/20">
+          <Download className="h-4 w-4 text-accent" />
         </div>
-        <div className="flex-1 min-w-0">
+        <div className="min-w-0 flex-1">
           <h3 className="text-sm font-medium text-foreground">{showIosGuide ? '添加到主屏幕' : '安装应用'}</h3>
           {showIosGuide
-            ? (
-                <p className="mt-1 text-sm text-muted-foreground">
-                  iOS Safari：点“分享”按钮，再选“添加到主屏幕”。
-                </p>
-              )
-            : (
-                <p className="mt-1 text-sm text-muted-foreground">
-                  安装 Toss 到您的设备，享受更好的体验
-                </p>
-              )}
-          <div className="flex gap-2 mt-3">
-            {!showIosGuide && (
-              <Button size="sm" onClick={handleInstall}>
-                安装
-              </Button>
-            )}
-            <Button size="sm" variant="ghost" onClick={handleDismissPrompt}>
-              稍后
-            </Button>
+            ? <p className="mt-0.5 text-xs text-muted-foreground">Safari 分享菜单 → 添加到主屏幕</p>
+            : <p className="mt-0.5 text-xs text-muted-foreground">安装 Toss，获得更好的体验</p>}
+          <div className="mt-2 flex gap-1.5">
+            {!showIosGuide && <Button size="sm" onClick={handleInstall}>安装</Button>}
+            <Button size="sm" variant="ghost" onClick={handleDismissPrompt}>稍后</Button>
           </div>
         </div>
         <Button
           variant="ghost"
           size="icon-sm"
-          className="flex-shrink-0 -mt-1 -mr-1"
+          className="-mr-1 -mt-1 shrink-0"
           onClick={handleDismissPrompt}
           aria-label="关闭安装提示"
           title="关闭安装提示"
         >
-          <X className="w-4 h-4" />
+          <X className="h-4 w-4" />
         </Button>
       </div>
     </div>

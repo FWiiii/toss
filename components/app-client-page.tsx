@@ -73,23 +73,10 @@ function AppShell() {
       <main
         className={cn(
           SHELL_CONTAINER,
-          'flex flex-1 flex-col gap-5 pb-[calc(8rem+env(safe-area-inset-bottom))] pt-8 sm:gap-6 sm:pb-[calc(8rem+env(safe-area-inset-bottom))] sm:pt-10 md:pb-8',
+          'flex flex-1 flex-col gap-4 pb-[calc(6rem+env(safe-area-inset-bottom))] pt-4 sm:gap-5 sm:pb-[calc(6rem+env(safe-area-inset-bottom))] sm:pt-6 md:pb-6',
           showSplitLayout && 'lg:grid lg:grid-cols-[minmax(18rem,24rem)_minmax(0,1fr)] lg:items-start',
         )}
       >
-        <section className={cn('delight-fade-up mx-auto mb-2 w-full max-w-3xl text-center sm:mb-4', showSplitLayout && 'lg:col-span-2')}>
-          <p className="mb-3 inline-flex items-center gap-2 rounded-full border border-border/70 bg-card/70 px-3 py-1 text-xs font-medium text-muted-foreground shadow-sm">
-            <span className="h-1.5 w-1.5 rounded-full bg-accent" />
-            设备之间 · 即连即传
-          </p>
-          <h2 className="text-balance text-3xl font-semibold tracking-[-0.045em] text-foreground sm:text-4xl lg:text-[2.75rem]">
-            把内容，轻松传到另一台设备
-          </h2>
-          <p className="mx-auto mt-3 max-w-xl text-pretty text-sm leading-6 text-muted-foreground sm:text-base">
-            创建一个临时房间，安全分享文字、图片和文件。无需注册，打开浏览器就能开始。
-          </p>
-        </section>
-
         <div className={cn('delight-fade-up min-w-0', !showSplitLayout && 'mx-auto w-full max-w-[38rem]', showSplitLayout && 'lg:sticky lg:top-24 lg:w-full lg:max-w-[24rem] lg:self-start')} style={{ animationDelay: '70ms' }}>
           <RoomErrorBoundary>
             <RoomPanel />

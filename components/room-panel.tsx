@@ -1,6 +1,6 @@
 'use client'
 
-import { AlertCircle, ArrowRight, Check, Copy, Loader2, LogOut, Plus, QrCode, ScanLine } from 'lucide-react'
+import { AlertCircle, Check, Copy, Loader2, LogOut, Plus, QrCode, ScanLine } from 'lucide-react'
 import dynamic from 'next/dynamic'
 import { useEffect, useId, useRef, useState } from 'react'
 import { ConnectionStatusDisplay } from '@/components/connection-status'
@@ -20,7 +20,7 @@ import { STATUS_TONES } from '@/lib/design-tokens'
 import { useTransfer } from '@/lib/transfer-context'
 import { cn } from '@/lib/utils'
 
-const CARD_CLASS = 'panel-surface relative overflow-hidden p-5 sm:p-6'
+const CARD_CLASS = 'panel-surface relative overflow-hidden p-4'
 const ROOM_CODE_SANITIZE_REGEX = /[^A-Z0-9]/g
 const QRCodeDisplay = dynamic(
   () => import('@/components/qr-code-display').then(mod => mod.QRCodeDisplay),
@@ -177,19 +177,19 @@ export function RoomPanel() {
       <div className={CARD_CLASS}>
         {/* Room Code Display */}
         {roomCode && (
-          <div className="text-center mb-5">
-            <p className="mb-2 text-xs tracking-[0.18em] text-muted-foreground">房间代码</p>
-            <div className="relative overflow-hidden rounded-2xl border border-border/70 bg-muted/35 p-3 sm:p-4">
+          <div className="mb-4 text-center">
+            <p className="mb-1 text-xs tracking-[0.16em] text-muted-foreground">房间代码</p>
+            <div className="relative overflow-hidden rounded-xl border border-border/70 bg-muted/35 px-3 py-2.5">
               {roomCodeCopied && <div className="pointer-events-none absolute inset-0 delight-sweep-overlay" aria-hidden="true" />}
-              <div className="relative flex min-w-0 items-center justify-between gap-2 rounded-xl px-1 py-1 sm:px-2">
-                <span className="min-w-0 text-left font-mono text-3xl font-bold tracking-[0.16em] text-foreground sm:text-4xl sm:tracking-[0.18em]">
+              <div className="relative flex min-w-0 items-center justify-center rounded-lg px-8 py-0.5">
+                <span className="min-w-0 text-center font-mono text-2xl font-bold tracking-[0.14em] text-foreground sm:text-3xl sm:tracking-[0.16em]">
                   {formatCode(roomCode)}
                 </span>
                 <Button
                   variant={roomCodeCopied ? 'outline' : 'ghost'}
                   size="icon-sm"
                   className={cn(
-                    'shrink-0 transition-colors',
+                    'absolute right-0 top-1/2 -translate-y-1/2 transition-colors',
                     roomCodeCopied && `${STATUS_TONES.success.surface} ${STATUS_TONES.success.inline} border-success/40 hover:bg-success/15`,
                   )}
                   onClick={handleCopyCode}
@@ -199,11 +199,11 @@ export function RoomPanel() {
                   {roomCodeCopied ? <Check className={`h-5 w-5 ${STATUS_TONES.success.inline}`} /> : <Copy className="h-5 w-5" />}
                 </Button>
               </div>
-              <p className="mt-1 text-xs text-muted-foreground">输入此代码，或扫描二维码加入</p>
+              <p className="mt-1 text-center text-xs text-muted-foreground">输入代码或扫描二维码加入</p>
             </div>
             <p
               className={cn(
-                'mt-2 min-h-[1.25rem] text-sm transition-all duration-200',
+                'mt-1 min-h-[1rem] text-xs transition-all duration-200',
                 roomCodeCopied || roomCodeCopyFailed ? 'translate-y-0 opacity-100' : 'translate-y-1 opacity-0',
                 roomCodeCopyFailed ? STATUS_TONES.danger.inline : 'text-muted-foreground',
               )}
@@ -225,24 +225,25 @@ export function RoomPanel() {
           connectionQuality={connectionQuality}
           isEncrypted={isEncrypted}
           encryptionFingerprint={encryptionFingerprint}
-          className="mb-5"
+          className="mb-4"
         />
 
         {/* Action Buttons */}
         <div className="flex gap-2">
           {isHost && roomCode && (
-            <Button variant="outline" className="flex-1" onClick={() => setShowQRCode(true)}>
-              <QrCode className="w-4 h-4 mr-2" />
-              显示二维码
+            <Button variant="outline" size="sm" className="flex-1" onClick={() => setShowQRCode(true)}>
+              <QrCode className="h-4 w-4" />
+              二维码
             </Button>
           )}
           <Button
             variant={isHost ? 'destructive' : 'outline'}
+            size="sm"
             className={isHost ? 'flex-1' : 'w-full'}
             onClick={handleLeaveRoom}
           >
-            <LogOut className="w-4 h-4 mr-2" />
-            {isHost ? '解散房间' : '离开房间'}
+            <LogOut className="h-4 w-4" />
+            {isHost ? '解散' : '离开'}
           </Button>
         </div>
 
@@ -279,45 +280,29 @@ export function RoomPanel() {
 
   return (
     <div className={CARD_CLASS}>
-      <div className="mb-5">
-        <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">第一步</p>
-        <h3 className="mt-1 text-lg font-semibold tracking-tight text-foreground">建立设备连接</h3>
-        <p className="mt-1 text-sm leading-5 text-muted-foreground">创建房间，或输入另一台设备的连接码。</p>
+      <div className="mb-3">
+        <h3 className="text-base font-semibold tracking-tight text-foreground">连接设备</h3>
+        <p className="mt-0.5 text-xs text-muted-foreground">创建房间或输入代码加入</p>
       </div>
-      <div className="space-y-6">
-        <div className="rounded-2xl border border-accent/15 bg-accent/[0.035] p-4 sm:p-5">
-          <div className="mb-4 flex items-start gap-3">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-accent/10 text-accent">
-              <Plus className="h-4 w-4" />
-            </div>
-            <div>
-              <h4 className="text-sm font-semibold tracking-tight text-foreground">创建新房间</h4>
-              <p className="mt-1 text-xs leading-5 text-muted-foreground">生成一次性连接码，让另一台设备加入。</p>
-            </div>
-          </div>
-          <Button
-            size="xl"
-            className="w-full justify-between px-5"
-            onClick={createRoom}
-            disabled={isCreatingRoom || isJoiningRoom}
-          >
-            <span className="flex items-center gap-2">
-              {isCreatingRoom
-                ? <Loader2 className="h-5 w-5 animate-spin" />
-                : <Plus className="h-5 w-5" />}
-              {isCreatingRoom ? '创建中...' : '创建房间'}
-            </span>
-            {!isCreatingRoom && <ArrowRight className="h-4 w-4 opacity-70" />}
-          </Button>
-          <p className="mt-3 text-center text-xs text-muted-foreground">无需注册 · 连接建立后即可开始传输</p>
-        </div>
+      <div className="space-y-4">
+        <Button
+          size="lg"
+          className="w-full"
+          onClick={createRoom}
+          disabled={isCreatingRoom || isJoiningRoom}
+        >
+          {isCreatingRoom
+            ? <Loader2 className="h-4 w-4 animate-spin" />
+            : <Plus className="h-4 w-4" />}
+          {isCreatingRoom ? '创建中...' : '创建房间'}
+        </Button>
 
         <div className="relative">
           <div className="absolute inset-0 flex items-center">
             <span className="w-full border-t border-border" />
           </div>
           <div className="relative flex justify-center text-xs uppercase">
-            <span className="bg-card px-2 text-muted-foreground">加入现有房间</span>
+            <span className="bg-card px-2 text-muted-foreground">或加入现有房间</span>
           </div>
         </div>
 
@@ -329,7 +314,7 @@ export function RoomPanel() {
               placeholder="输入房间代码"
               value={inputCode}
               onChange={e => setInputCode(e.target.value.toUpperCase().replace(ROOM_CODE_SANITIZE_REGEX, '').slice(0, 6))}
-              className="h-14 border-border bg-muted/40 text-center text-xl font-mono uppercase tracking-[0.2em]"
+              className="h-12 border-border bg-muted/40 text-center text-lg font-mono uppercase tracking-[0.18em]"
               maxLength={6}
               disabled={isCreatingRoom || isJoiningRoom}
               inputMode="text"
@@ -345,7 +330,7 @@ export function RoomPanel() {
             />
             <Button
               variant="secondary"
-              size="xl"
+              size="lg"
               onClick={handleJoinRoom}
               disabled={inputCode.length < 6 || isCreatingRoom || isJoiningRoom}
               aria-label={isJoiningRoom ? '正在加入房间' : '加入房间'}
@@ -363,13 +348,13 @@ export function RoomPanel() {
           {/* Scan QR Code Button */}
           <Button
             variant="outline"
-            size="lg"
-            className="mt-3 w-full border-dashed bg-background/70"
+            size="sm"
+            className="mt-2 w-full"
             onClick={() => setShowScanner(true)}
             disabled={isCreatingRoom || isJoiningRoom}
           >
             <ScanLine className="h-4 w-4" />
-            扫描二维码加入
+            扫码加入
           </Button>
 
           <p id={joinHintId} className="sr-only">输入另一台设备提供的 6 位房间代码，或扫描二维码加入。</p>
@@ -383,20 +368,6 @@ export function RoomPanel() {
             </p>
           )}
         </div>
-
-      </div>
-
-      <div
-        className={cn(
-          'mt-6 flex items-start gap-2 rounded-lg border p-3 text-sm leading-relaxed',
-          STATUS_TONES.neutral.calloutSurface,
-          STATUS_TONES.neutral.calloutText,
-        )}
-      >
-        <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-        <p>
-          说明：Toss 默认不在服务端存储传输内容；首次建立连接时会使用信令服务协助建链。连接成功后，可在状态详情中查看加密状态、会话指纹和当前链路类型。
-        </p>
       </div>
 
       {/* QR Code Scanner Dialog */}

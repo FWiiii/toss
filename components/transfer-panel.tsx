@@ -1,7 +1,7 @@
 'use client'
 
 import type { PendingTransferFile } from '@/lib/pending-transfer-file'
-import { AlertTriangle, ChevronDown, Monitor, Send, Share2, ShieldAlert, Trash2, Upload } from 'lucide-react'
+import { AlertTriangle, ChevronDown, Inbox, Monitor, MoreHorizontal, Send, Share2, ShieldAlert, Trash2, Upload } from 'lucide-react'
 import { useCallback, useEffect, useId, useMemo, useReducer, useRef, useState } from 'react'
 import { ImagePreviewDialog } from '@/components/image-preview-dialog'
 import { ReceiveHistoryPanel } from '@/components/receive-history-panel'
@@ -16,6 +16,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { EmptyState } from '@/components/ui/empty-state'
 import { useShareTarget } from '@/hooks/use-share-target'
 import { resolvePendingTransferFile } from '@/lib/pending-transfer-file'
@@ -24,8 +30,8 @@ import { buildOutgoingTransferOfferSummary } from '@/lib/transfer-data'
 import { cn, formatFileSize } from '@/lib/utils'
 
 const PANEL_CLASS = 'panel-surface relative overflow-hidden transition-colors'
-const PANEL_HEADER_CLASS = 'flex items-center justify-between border-b border-border/70 px-5 py-4 sm:px-6'
-const SCROLL_AREA_CLASS = 'min-h-[220px] space-y-2 p-5 sm:min-h-[260px] sm:p-6'
+const PANEL_HEADER_CLASS = 'flex items-center justify-between border-b border-border/70 px-4 py-3 sm:px-5'
+const SCROLL_AREA_CLASS = 'min-h-[180px] space-y-2 p-4 sm:min-h-[220px] sm:p-5'
 
 type PendingTransferInput = File | PendingTransferFile
 
@@ -136,11 +142,6 @@ export function TransferPanel() {
     [activeIncomingSummary],
   )
   const requiresSecondaryConfirmation = activeIncomingSummary?.requiresSecondaryConfirmation ?? false
-  const recentReceiveEntries = useMemo(
-    () => receiveHistoryEntries.slice(0, 5),
-    [receiveHistoryEntries],
-  )
-
   const isConnected = connectionStatus === 'connected' && peerCount > 0
   const isScreenSharing = useMemo(
     () => items.some(item => item.type === 'stream' && item.direction === 'sent'),
@@ -584,47 +585,56 @@ export function TransferPanel() {
         </div>
       )}
 
-      {/* Header */}
       <div className={PANEL_HEADER_CLASS}>
-        <div className="flex min-w-0 items-center gap-3">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-accent/10 text-accent">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent/10 text-accent">
             {showReceiveHistory ? <Upload className="h-4 w-4" /> : <Send className="h-4 w-4" />}
           </div>
-          <div className="min-w-0">
-            <h3 className="text-sm font-semibold tracking-tight text-foreground">{showReceiveHistory ? '收件箱' : '传输内容'}</h3>
-            <p className="mt-0.5 flex items-center gap-1.5 truncate text-xs text-muted-foreground">
-              {!showReceiveHistory && (
-                <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', isConnected ? 'bg-success' : 'bg-muted-foreground/50')} aria-hidden="true" />
+          <h3 className="truncate text-sm font-semibold text-foreground">{showReceiveHistory ? '收件箱' : '传输内容'}</h3>
+        </div>
+        {!showReceiveHistory && (
+          <div className="flex items-center gap-1">
+            <Button variant="ghost" size="sm" className="h-8 gap-1.5 px-2 text-xs" onClick={() => setShowReceiveHistory(true)}>
+              <Inbox className="h-3.5 w-3.5" />
+              收件记录
+              {receiveHistoryEntries.length > 0 && (
+                <span className="tabular-nums text-muted-foreground">{receiveHistoryEntries.length}</span>
               )}
-              {showReceiveHistory ? '查看已接收的文件记录' : isConnected ? '连接已建立，可以开始发送' : '可以先添加内容，连接后自动发送'}
-            </p>
+            </Button>
+            {(isConnected || items.length > 0) && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon-sm" aria-label="更多操作" title="更多操作">
+                    <MoreHorizontal className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {isConnected && (
+                    <DropdownMenuItem
+                      onSelect={() => {
+                        if (isScreenSharing) {
+                          stopScreenShare()
+                        }
+                        else {
+                          void startScreenShare()
+                        }
+                      }}
+                    >
+                      <Monitor className="h-4 w-4" />
+                      {isScreenSharing ? '停止共享' : '共享屏幕'}
+                    </DropdownMenuItem>
+                  )}
+                  {items.length > 0 && (
+                    <DropdownMenuItem onSelect={clearHistory} variant="destructive">
+                      <Trash2 className="h-4 w-4" />
+                      清空传输记录
+                    </DropdownMenuItem>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
           </div>
-        </div>
-        <div className="flex items-center gap-1">
-          {isConnected && !showReceiveHistory && (
-            <Button
-              variant={isScreenSharing ? 'secondary' : 'ghost'}
-              size="sm"
-              onClick={() => {
-                if (isScreenSharing) {
-                  stopScreenShare()
-                }
-                else {
-                  void startScreenShare()
-                }
-              }}
-            >
-              <Monitor className="w-4 h-4 mr-1" />
-              {isScreenSharing ? '停止共享' : '共享屏幕'}
-            </Button>
-          )}
-          {items.length > 0 && !showReceiveHistory && (
-            <Button variant="ghost" size="sm" onClick={clearHistory}>
-              <Trash2 className="w-4 h-4 mr-1" />
-              清空
-            </Button>
-          )}
-        </div>
+        )}
       </div>
 
       {/* Drag Overlay */}
@@ -650,19 +660,6 @@ export function TransferPanel() {
             </p>
           )}
         </div>
-      )}
-
-      {!showReceiveHistory && (
-        <ReceiveHistoryPanel
-          entries={recentReceiveEntries}
-          isExpanded={false}
-          activeOutcome={activeReceiveHistoryOutcome}
-          showAllLabel="查看全部"
-          onOutcomeChange={setActiveReceiveHistoryOutcome}
-          onShowAll={() => setShowReceiveHistory(true)}
-          onBack={() => setShowReceiveHistory(false)}
-          onClearHistory={() => setShowClearReceiveHistoryConfirm(true)}
-        />
       )}
 
       <Dialog

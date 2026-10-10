@@ -290,24 +290,23 @@ export function NotificationSettings({
             <span className="ml-auto text-xs text-muted-foreground">需 TURN</span>
           )}
         </DropdownMenuCheckboxItem>
-        {!hasTurnConfig && (
-          <p className="px-2 pb-1 text-xs text-muted-foreground">
-            未检测到 TURN 配置，当前仅使用直连与穿透。
-          </p>
-        )}
 
-        <DropdownMenuSeparator />
-        <DropdownMenuLabel className="flex items-center gap-2">
-          <Shield className="h-4 w-4" />
-          <span>设备与信任</span>
-        </DropdownMenuLabel>
-        <DeviceTrustSection
-          key={`${localDeviceProfile.deviceId}:${localDeviceProfile.deviceName}`}
-          localDeviceProfile={localDeviceProfile}
-          trustedDevices={trustedDevices}
-          onUpdateLocalDeviceName={onUpdateLocalDeviceName}
-          onRemoveTrustedDevice={onRemoveTrustedDevice}
-        />
+        <details className="group px-2 py-1">
+          <summary className="flex cursor-pointer list-none items-center gap-2 rounded-md py-1 text-sm font-medium text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/40 [&::-webkit-details-marker]:hidden">
+            <Shield className="h-4 w-4 text-muted-foreground" />
+            <span>设备与信任</span>
+            <span className="ml-auto text-xs font-normal text-muted-foreground">
+              {trustedDevices.length > 0 ? `${trustedDevices.length} 台` : '未设置'}
+            </span>
+          </summary>
+          <DeviceTrustSection
+            key={`${localDeviceProfile.deviceId}:${localDeviceProfile.deviceName}`}
+            localDeviceProfile={localDeviceProfile}
+            trustedDevices={trustedDevices}
+            onUpdateLocalDeviceName={onUpdateLocalDeviceName}
+            onRemoveTrustedDevice={onRemoveTrustedDevice}
+          />
+        </details>
       </DropdownMenuContent>
     </DropdownMenu>
   )
