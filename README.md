@@ -96,9 +96,9 @@ Android 需要 Android Studio 2025.2.1+、JDK 21、SDK Platform 36、对应构�
 
 入口配置：在 `mobile/.env.local` 设置 `VITE_PUBLIC_ROOM_ORIGIN=https://你的实际网站域名`，再执行 `pnpm mobile:sync`。未配置时仍可用房间码连接，但不生成本地 origin 的错误邀请二维码。
 
-原生接收路径（`@capacitor/filesystem` 8.1.4）：收到的文件按块写入 App 私有目录 `toss-received/`，传输中先写 `*.part`，完成后再原子改名为最终文件名；重名自动追加序号，文件名去除路径分隔与控制字符。WebView 不再聚合整文件 Blob，单块经 Base64 桥接且上限由 `FILE_CHUNK_MAX_SIZE` 约束。原生下不再用 WebView 源配额预检，改由真实写入错误判定空间不足。
+原生接收路径（`@capacitor/filesystem` 8.1.4）：收到的文件按块写入 App **私有目录** `toss-received/`（iOS `Library`、Android 内部 files），传输中先写 `*.part`，完成后再原子改名为最终文件名；重名自动追加序号，文件名去除路径分隔与控制字符。WebView 不再聚合整文件 Blob，单块经 Base64 桥接且上限由 `FILE_CHUNK_MAX_SIZE` 约束。原生下不再用 WebView 源配额预检，改由真实写入错误判定空间不足。**接收不会自动出现在系统「文件」App 中**：暂存目录是用户不可见的私有位置，iOS 也不再开启文件共享暴露 Documents。
 
-原生保存到本地（`@capacitor/share` 8.0.3）：接收完成的文件在列表上显示下载图标，点击后打开系统分享面板，可选择「存储到文件」或发送到其他应用。Android 通过 `FileProvider` 授权私有 `files/` 目录，iOS 已开启 `UIFileSharingEnabled` 与 `LSSupportsOpeningDocumentsInPlace`。**跨重启持久收件箱、原生扫码、系统分享接收与短效 TURN 仍未实现**；`*.part` 残留清理规则仍待补。
+原生保存到本地（`@capacitor/share` 8.0.3）：只有用户点击接收项的下载图标时才导出——打开系统分享面板，可选择「存储到文件」或发送到其他应用。Android 通过 `FileProvider` 授权私有 `files/` 目录。**跨重启持久收件箱、原生扫码、系统分享接收与短效 TURN 仍未实现**；`*.part` 残留清理规则仍待补。
 
 可选信令配置为 `VITE_PEER_HOST`、`VITE_PEER_PORT`、`VITE_PEER_PATH`、`VITE_PEER_SECURE`；默认与网站相同的公共 PeerJS 和 STUN。网站对应 `NEXT_PUBLIC_PEER_*`、`NEXT_PUBLIC_ROOM_ORIGIN`，保留原有 `NEXT_PUBLIC_TURN_*`。移动包不嵌入长效 TURN 密码，短效凭证仍属后续工作；当前不保证受限网络互通。
 
