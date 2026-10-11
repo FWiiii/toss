@@ -67,7 +67,7 @@ pnpm start
 
 ### 行动端本地入口（Capacitor）
 
-首步已接入 React + Vite 本地入口与 Android / iOS 原生工程。当前页面用于检查本地启动、平台与原生桥接；尚未接入房间或文件传输。网站和 PWA 保持原有入口。
+P0 第二步已接入共用房间与传输页：创建／加入六位房间、双向文字与文件、接收确认、会话指纹、进度、取消和图片预览。移动端复用网站协议与加密，不是加载远端网站。网站和 PWA 保持原有入口。
 
 固定版本：Capacitor core / CLI / Android / iOS 8.5.3、App 插件 8.1.2、Vite 8.3.4、React 插件 6.1.2。
 
@@ -90,15 +90,19 @@ pnpm mobile:run:android
 pnpm mobile:run:ios
 ```
 
-配置在 `capacitor.config.ts`，本地资源来自 `mobile/dist`；不使用远端 `server.url`，不包含网站 Service Worker、manifest 或 Analytics。共用现有主题、样式和 Button。原生工程位于 `mobile/android`、`mobile/ios`，构建产物不提交；重新拉取后先运行 `pnpm install --frozen-lockfile` 和 `pnpm mobile:sync`。`app.toss.mobile` 是当前开发标识，商店发布前必须统一设置正式 App ID、签名及图标。
+配置在 `capacitor.config.ts`，本地资源来自 `mobile/dist`；不使用远端 `server.url`，不包含网站 Service Worker、manifest、Analytics 或 `/share` 导入流程。`components/app-shell.tsx` 和传输核心由两个入口共用，平台配置通过 `lib/app-runtime.tsx` 提供，不模拟 Next.js 环境变量。原生工程位于 `mobile/android`、`mobile/ios`，构建产物不提交；重新拉取后先运行 `pnpm install --frozen-lockfile` 和 `pnpm mobile:sync`。`app.toss.mobile` 是开发标识，商店发布前需设置正式 App ID、签名及图标。
 
-Android 需要符合 Capacitor 8 要求的 Android Studio / JDK、SDK Platform 36、对应构建工具，以及已连接设备或已创建 AVD；命令行构建需配置 `JAVA_HOME` 与 SDK 路径。iOS 需要 macOS、Xcode 26+；工程使用 Swift Package Manager，在 Mac 上同步后再打开。
+Android 需要 Android Studio 2025.2.1+、JDK 21、SDK Platform 36、对应构建工具，以及连接设备或 AVD。新版 IDE 自带 JDK 25 时，请在 Gradle JDK 中另选 21；项目 Gradle 8.14.3 不支持使用 Java 25 运行。命令行构建需配置 `JAVA_HOME` 与 SDK 路径。iOS 需要 macOS、Xcode 26+；工程使用 Swift Package Manager，无需 CocoaPods。
 
-在 App 中点击「检查原生桥接」应返回真实安装名称、App ID 与版本。浏览器会明确提示不能验证原生桥接；Web Crypto / WebRTC 的 API 存在不代表传输已通过测试。
+入口配置：在 `mobile/.env.local` 设置 `VITE_PUBLIC_ROOM_ORIGIN=https://你的实际网站域名`，再执行 `pnpm mobile:sync`。未配置时仍可用房间码连接，但不生成本地 origin 的错误邀请二维码。
 
-本次验证：移动端类型检查、Vite 构建、两平台资源同步、新增代码 ESLint、Next.js 生产构建通过；390 × 844 浏览器预览的浅色 / 深色界面与按钮操作已验证，无横向溢出、无页面运行错误、无外部资源请求、无 Service Worker 注册。Android / iOS 同步资源的 SHA-256 与 Vite 产物一致。
+原生接收路径（`@capacitor/filesystem` 8.1.4）：收到的文件按块写入 App 私有目录 `toss-received/`，传输中先写 `*.part`，完成后再原子改名为最终文件名；重名自动追加序号，文件名去除路径分隔与控制字符。WebView 不再聚合整文件 Blob，单块经 Base64 桥接且上限由 `FILE_CHUNK_MAX_SIZE` 约束。原生下不再用 WebView 源配额预检，改由真实写入错误判定空间不足。**导出到「文件」App、持久收件箱、原生扫码、系统分享与短效 TURN 仍未实现**；`*.part` 残留文件会在下次同步的 App 私有目录中保留，需清理规则。
 
-原生启动尚未验证：当前 Android 构建明确因缺少 Java / `JAVA_HOME` 失败，SDK 仅发现 android-36.1，且无连接设备或 AVD；本机没有 macOS / Xcode，无法编译或启动 iOS。不能把资源同步成功当作两平台已启动成功。
+可选信令配置为 `VITE_PEER_HOST`、`VITE_PEER_PORT`、`VITE_PEER_PATH`、`VITE_PEER_SECURE`；默认与网站相同的公共 PeerJS 和 STUN。网站对应 `NEXT_PUBLIC_PEER_*`、`NEXT_PUBLIC_ROOM_ORIGIN`，保留原有 `NEXT_PUBLIC_TURN_*`。移动包不嵌入长效 TURN 密码，短效凭证仍属后续工作；当前不保证受限网络互通。
+
+验证记录（2026-10-12）：移动类型检查、Vite 构建、两平台 sync、Next.js 构建及 64 项行为测试通过；变更文件 ESLint 无错误（3 项普通 `<img>` 优化建议）。Android Debug APK、iOS 模拟器包构建通过。浏览器运行移动生产入口与网站，双向文字、会话指纹、双向 100 MiB 文件及 SHA-256 校验通过；拒收、等待确认时取消、图片预览、深浅色和 390px 无横向溢出已检查。原生接收存储在 iOS 模拟器真实运行时写入 65541 字节文件并核对字节内容通过。**这些不是 Android／iOS 真机互传验收。**
+
+真机验证：在两平台 IDE 重新运行同步后的 App，用同一信令配置的网站创建／加入房间。先双向发送文字，再选择 100 MiB 与 1 GiB 文件并由接收端确认；记录设备、系统、网络、耗时、内存、取消／失败状态，并对接收内容校验 SHA-256，同时确认设备上的实际落盘文件。Android↔Web、iOS↔Web、Android↔iOS 仍需逐项实测；不能用模拟器启动或 API 存在代替。
 
 完整后续范围见 [Capacitor 行动 App 计划书](docs/product/capacitor-mobile-app-plan.md)。
 
