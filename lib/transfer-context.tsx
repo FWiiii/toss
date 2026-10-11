@@ -13,6 +13,7 @@ import { useConnectionQuality } from '@/hooks/use-connection-quality'
 import { useConnectionSettings } from '@/hooks/use-connection-settings'
 import { useNotification } from '@/hooks/use-notification'
 import { useTransferItems as useTransferItemsState } from '@/hooks/use-transfer-items'
+import { useAppRuntime } from './app-runtime'
 import { createConnectionAttemptRegistry } from './connection-attempts'
 import { encryptJSON } from './crypto'
 import { PEER_PREFIX } from './peer-config'
@@ -284,6 +285,7 @@ export function useTransferItems() {
 }
 
 export function TransferProvider({ children }: { children: React.ReactNode }) {
+  const { peer: peerConfig } = useAppRuntime()
   // ============ Core State ============
   const [connectionState, patchConnectionState] = useReducer(
     connectionStateReducer,
@@ -1299,8 +1301,9 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       roomCallbacks,
       setupConnection,
       connectionSettings.forceRelay,
+      peerConfig,
     ),
-    [connectionRefs, connectionSettings.forceRelay, roomCallbacks, setupConnection],
+    [connectionRefs, connectionSettings.forceRelay, peerConfig, roomCallbacks, setupConnection],
   )
 
   const leaveRoom = useCallback(async () => {

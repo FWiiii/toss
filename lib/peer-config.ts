@@ -2,6 +2,7 @@
  * PeerJS configuration and WebRTC utilities
  */
 
+import type { AppRuntime } from './app-runtime'
 import type { ConnectionInfo, ConnectionType } from './types'
 
 // Prefix to avoid collision with other PeerJS apps
@@ -26,74 +27,24 @@ export function generateRoomCode(): string {
 }
 
 /**
- * Build ICE servers configuration with optional TURN servers
+ * PeerJS connection options supplied by the platform runtime
  */
-function buildIceServers(): RTCIceServer[] {
-  const servers: RTCIceServer[] = [
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: 'stun:stun2.l.google.com:19302' },
-    { urls: 'stun:stun3.l.google.com:19302' },
-    { urls: 'stun:stun4.l.google.com:19302' },
-    { urls: 'stun:stun.stunprotocol.org:3478' },
-    { urls: 'stun:stun.voipgate.com:3478' },
-  ]
-
-  // Add TURN servers if credentials are configured
-  const turnUsername = process.env.NEXT_PUBLIC_TURN_USERNAME
-  const turnCredential = process.env.NEXT_PUBLIC_TURN_CREDENTIAL
-
-  if (turnUsername && turnCredential) {
-    const turnUrls = [
-      process.env.NEXT_PUBLIC_TURN_URL,
-      process.env.NEXT_PUBLIC_TURN_URL_TCP,
-      process.env.NEXT_PUBLIC_TURN_URL_443,
-      process.env.NEXT_PUBLIC_TURNS_URL,
-    ].filter(Boolean) as string[]
-
-    turnUrls.forEach((url) => {
-      servers.push({
-        urls: url,
-        username: turnUsername,
-        credential: turnCredential,
-      })
-    })
-  }
-
-  return servers
-}
-
-/**
- * ICE servers configuration for PeerJS
- */
-export const ICE_SERVERS = {
-  iceServers: buildIceServers(),
-  iceCandidatePoolSize: 20,
-  // Bundle policy for efficient multi-stream handling
-  bundlePolicy: 'max-bundle',
-  // RTCP mux to reduce port usage
-  rtcpMuxPolicy: 'require',
-  // Ice transport policy - 'all' allows both relay and direct
-  iceTransportPolicy: 'all',
-}
-
-/**
- * PeerJS connection options
- */
-export function getPeerOptions(forceRelay = false) {
+export function getPeerOptions(forceRelay: boolean, peerConfig: AppRuntime['peer']) {
   return {
     debug: 0,
     config: {
-      ...ICE_SERVERS,
-      iceTransportPolicy: forceRelay ? 'relay' : 'all',
+      iceServers: peerConfig.iceServers,
+      iceCandidatePoolSize: 20,
+      bundlePolicy: 'max-bundle' as const,
+      rtcpMuxPolicy: 'require' as const,
+      iceTransportPolicy: forceRelay ? 'relay' as const : 'all' as const,
     },
-    secure: true,
-    host: '0.peerjs.com',
-    port: 443,
+    secure: peerConfig.secure,
+    host: peerConfig.host,
+    port: peerConfig.port,
+    path: peerConfig.path,
   }
 }
-
-export const PEER_OPTIONS = getPeerOptions(false)
 
 /**
  * Detect connection type from RTCPeerConnection stats

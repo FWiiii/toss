@@ -3,6 +3,7 @@
  * 处理房间创建、加入、离开等逻辑
  */
 
+import type { AppRuntime } from './app-runtime'
 import type { ConnectionRefs } from './transfer-connection'
 import { generateRoomCode, getPeerOptions, PEER_PREFIX } from './peer-config'
 import { bindIncomingScreenShareCall } from './screen-share'
@@ -29,6 +30,7 @@ export function createRoomManagement(
   callbacks: RoomCallbacks,
   setupConnection: (conn: any, isOutgoing?: boolean) => void,
   forceRelay: boolean,
+  peerConfig: AppRuntime['peer'],
 ) {
   const {
     setIsCreatingRoom,
@@ -71,7 +73,7 @@ export function createRoomManagement(
       setErrorMessage(null)
       setIsHost(true)
 
-      const peer = new Peer(peerId, getPeerOptions(forceRelay))
+      const peer = new Peer(peerId, getPeerOptions(forceRelay, peerConfig))
 
       peer.on('open', () => {
         setIsCreatingRoom(false)
@@ -155,7 +157,7 @@ export function createRoomManagement(
       setErrorMessage(null)
       setIsHost(false)
 
-      const peer = new Peer(getPeerOptions(forceRelay))
+      const peer = new Peer(getPeerOptions(forceRelay, peerConfig))
 
       peer.on('open', () => {
         setIsJoiningRoom(false)

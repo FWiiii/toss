@@ -23,7 +23,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { EmptyState } from '@/components/ui/empty-state'
-import { useShareTarget } from '@/hooks/use-share-target'
+import { useAppRuntime } from '@/lib/app-runtime'
 import { resolvePendingTransferFile } from '@/lib/pending-transfer-file'
 import { useTransfer, useTransferItems } from '@/lib/transfer-context'
 import { buildOutgoingTransferOfferSummary } from '@/lib/transfer-data'
@@ -33,7 +33,17 @@ const PANEL_CLASS = 'panel-surface relative overflow-hidden transition-colors'
 const PANEL_HEADER_CLASS = 'flex items-center justify-between border-b border-border/70 px-4 py-3 sm:px-5'
 const SCROLL_AREA_CLASS = 'min-h-[180px] space-y-2 p-4 sm:min-h-[220px] sm:p-5'
 
+const EMPTY_SHARED_FILES: PendingTransferFile[] = []
+
 type PendingTransferInput = File | PendingTransferFile
+
+export interface TransferShareTarget {
+  sharedFiles: PendingTransferFile[]
+  sharedText: string
+  shareLoadError: string | null
+  hasSharedContent: boolean
+  clearSharedData: () => void
+}
 
 interface PendingShareState {
   files: PendingTransferInput[]
@@ -65,7 +75,8 @@ function pendingShareReducer(state: PendingShareState | null, action: PendingSha
   }
 }
 
-export function TransferPanel() {
+export function TransferPanel({ shareTarget }: { shareTarget?: TransferShareTarget }) {
+  const runtime = useAppRuntime()
   const {
     connectionStatus,
     peerCount,
@@ -86,13 +97,11 @@ export function TransferPanel() {
     addSystemMessage,
     sendingCount,
   } = useTransferItems()
-  const {
-    sharedFiles,
-    sharedText,
-    shareLoadError,
-    hasSharedContent,
-    clearSharedData,
-  } = useShareTarget()
+  const sharedFiles = shareTarget?.sharedFiles ?? EMPTY_SHARED_FILES
+  const sharedText = shareTarget?.sharedText ?? ''
+  const shareLoadError = shareTarget?.shareLoadError ?? null
+  const hasSharedContent = shareTarget?.hasSharedContent ?? false
+  const clearSharedData = shareTarget?.clearSharedData
   const [text, setText] = useReducer((_current: string, next: string) => next, '')
   const [isDragging, setIsDragging] = useState(false)
   const [pendingShare, dispatchPendingShare] = useReducer(pendingShareReducer, null)
@@ -384,7 +393,7 @@ export function TransferPanel() {
         }
         await sendFiles(sharedFiles)
         if (!cancelled) {
-          clearSharedData()
+          clearSharedData?.()
         }
       })()
       return () => {
@@ -400,7 +409,7 @@ export function TransferPanel() {
       if (sharedText) {
         setText(sharedText)
       }
-      clearSharedData()
+      clearSharedData?.()
       return () => {
         cancelled = true
       }
@@ -496,11 +505,13 @@ export function TransferPanel() {
   }, [suspendAutoReconnect])
 
   const handleDownload = useCallback((url: string, name?: string) => {
+    if (runtime.native)
+      return
     const a = document.createElement('a')
     a.href = url
     a.download = name || 'download'
     a.click()
-  }, [])
+  }, [runtime.native])
 
   const handlePreviewImage = useCallback((url: string, name: string) => {
     setPreviewImage({ url, name })
@@ -613,7 +624,7 @@ export function TransferPanel() {
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  {isConnected && (
+                  {isConnected && !runtime.native && (
                     <DropdownMenuItem
                       onSelect={() => {
                         if (isScreenSharing) {

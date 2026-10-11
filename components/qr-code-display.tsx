@@ -11,6 +11,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { useAppRuntime } from '@/lib/app-runtime'
+import { buildRoomUrl } from '@/lib/room-url'
 import { cn } from '@/lib/utils'
 
 interface QRCodeDisplayProps {
@@ -20,15 +22,13 @@ interface QRCodeDisplayProps {
 }
 
 export function QRCodeDisplay({ roomCode, open, onOpenChange }: QRCodeDisplayProps) {
+  const { native, publicRoomOrigin } = useAppRuntime()
   const qrRef = useRef<HTMLDivElement>(null)
   const [saved, setSaved] = useState(false)
   const safeRoomCode = roomCode ?? ''
-  const origin = typeof window === 'undefined' ? '' : window.location.origin
+  const currentOrigin = !native && typeof window !== 'undefined' ? window.location.origin : ''
 
-  // Generate the URL for the room
-  const roomUrl = origin && safeRoomCode
-    ? `${origin}?join=${safeRoomCode}`
-    : ''
+  const roomUrl = buildRoomUrl(safeRoomCode, publicRoomOrigin, currentOrigin, native)
   const formattedCode = safeRoomCode ? `${safeRoomCode.slice(0, 3)} ${safeRoomCode.slice(3)}` : '--'
 
   const handleOpenChange = useCallback((nextOpen: boolean) => {
@@ -39,7 +39,7 @@ export function QRCodeDisplay({ roomCode, open, onOpenChange }: QRCodeDisplayPro
   }, [onOpenChange])
 
   const handleDownload = useCallback(() => {
-    if (!safeRoomCode)
+    if (!roomUrl || native)
       return
     if (!qrRef.current)
       return
@@ -75,7 +75,7 @@ export function QRCodeDisplay({ roomCode, open, onOpenChange }: QRCodeDisplayPro
     }
 
     img.src = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svgData)))}`
-  }, [safeRoomCode])
+  }, [safeRoomCode, roomUrl, native])
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -88,7 +88,7 @@ export function QRCodeDisplay({ roomCode, open, onOpenChange }: QRCodeDisplayPro
         <div className="flex flex-col items-center gap-3">
           <div className="w-full max-w-[208px] rounded-xl border border-border/70 bg-muted/25 p-3">
             <div ref={qrRef} className="rounded-xl bg-white p-3 shadow-sm ring-1 ring-black/5">
-              {safeRoomCode
+              {roomUrl
                 ? (
                     <QRCodeSVG
                       value={roomUrl}
@@ -101,7 +101,7 @@ export function QRCodeDisplay({ roomCode, open, onOpenChange }: QRCodeDisplayPro
                   )
                 : (
                     <div className="flex aspect-square items-center justify-center text-xs text-muted-foreground">
-                      暂无房间码
+                      {native && safeRoomCode ? '请配置 VITE_PUBLIC_ROOM_ORIGIN 为公开 HTTPS 地址以显示邀请二维码' : '暂无有效房间邀请链接'}
                     </div>
                   )}
             </div>
@@ -116,13 +116,13 @@ export function QRCodeDisplay({ roomCode, open, onOpenChange }: QRCodeDisplayPro
             variant="secondary"
             size="sm"
             onClick={handleDownload}
-            disabled={!safeRoomCode}
+            disabled={!roomUrl || native}
             className={cn('w-full max-w-[208px]', saved && 'delight-ready-pulse')}
           >
             {saved
               ? <Check className="mr-2 h-4 w-4 text-success" />
               : <Download className="mr-2 h-4 w-4" />}
-            {saved ? '已保存' : '保存二维码'}
+            {native ? '原生导出尚未接入' : saved ? '已保存' : '保存二维码'}
           </Button>
         </div>
       </DialogContent>

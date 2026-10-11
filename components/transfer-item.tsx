@@ -7,6 +7,7 @@ import { ImageThumbnail } from '@/components/image-thumbnail'
 import { LinkPreview } from '@/components/link-preview'
 import { StreamItem } from '@/components/stream-item'
 import { Button } from '@/components/ui/button'
+import { useAppRuntime } from '@/lib/app-runtime'
 import { INTERACTIVE_TONES, STATUS_TONES } from '@/lib/design-tokens'
 import { parseTextWithLinks } from '@/lib/link-utils'
 import { cn, formatFileSize, isImageFile } from '@/lib/utils'
@@ -113,6 +114,7 @@ function ImageItem({
   onDownload: (url: string, name?: string) => void
   onCancel?: (itemId: string) => void
 }) {
+  const { native } = useAppRuntime()
   const isTransferring = item.status === 'transferring'
   const isPending = item.status === 'pending'
   const isCancelled = item.status === 'cancelled'
@@ -248,7 +250,7 @@ function ImageItem({
             {item.direction === 'sent' ? '已发送' : '已接收'}
           </p>
         </div>
-        {item.direction === 'received' && (
+        {item.direction === 'received' && !native && (
           <Button
             variant="ghost"
             size="icon-sm"
@@ -278,6 +280,7 @@ function FileItem({
   onDownload: (url: string, name?: string) => void
   onCancel?: (itemId: string) => void
 }) {
+  const { native } = useAppRuntime()
   const IconComponent = getFileIcon(item.name)
   const isTransferring = item.status === 'transferring'
   const isPending = item.status === 'pending'
@@ -400,7 +403,7 @@ function FileItem({
         </Button>
       )}
       {/* Download button after transfer */}
-      {item.direction === 'received' && !isTransferring && item.content && (
+      {item.direction === 'received' && !native && !isTransferring && item.content && (
         <Button
           variant="ghost"
           size="icon-sm"

@@ -5,6 +5,7 @@ import { AlertTriangle, RefreshCw } from 'lucide-react'
 import * as React from 'react'
 import { Component } from 'react'
 import { Button } from '@/components/ui/button'
+import { useAppRuntime } from '@/lib/app-runtime'
 import { DEV_ERROR_DETAILS, STATUS_TONES } from '@/lib/design-tokens'
 
 interface Props {
@@ -73,6 +74,7 @@ export function ErrorFallback({
   title = '出错了',
   description = '应用遇到了一个问题',
 }: ErrorFallbackProps) {
+  const { development } = useAppRuntime()
   return (
     <div className="flex flex-col items-center justify-center p-8 text-center min-h-[200px]">
       <div className={`mb-4 flex h-16 w-16 items-center justify-center rounded-full ${STATUS_TONES.danger.iconSurface}`}>
@@ -82,7 +84,7 @@ export function ErrorFallback({
       <p className="text-sm text-muted-foreground mb-4 max-w-md">
         {description}
       </p>
-      {error && process.env.NODE_ENV === 'development' && (
+      {error && development && (
         <details className="mb-4 w-full max-w-md">
           <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground">
             查看错误详情

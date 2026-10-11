@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
+import { useAppRuntime } from '@/lib/app-runtime'
 
 interface NotificationSettings {
   soundEnabled: boolean
@@ -13,15 +14,15 @@ const DEFAULT_SETTINGS: NotificationSettings = {
 }
 
 const STORAGE_KEY = 'toss-notification-settings'
-const DEBUG_LOGS = process.env.NODE_ENV !== 'production'
-
-function debugNotification(...args: unknown[]) {
-  if (DEBUG_LOGS) {
-    console.warn(...args)
-  }
-}
 
 export function useNotification() {
+  const { development } = useAppRuntime()
+  const debugNotification = useCallback((...args: unknown[]) => {
+    if (development) {
+      console.warn(...args)
+    }
+  }, [development])
+
   const [settings, setSettings] = useState<NotificationSettings>(() => {
     if (typeof window === 'undefined')
       return DEFAULT_SETTINGS
@@ -165,7 +166,7 @@ export function useNotification() {
     else {
       debugNotification('Notification permission denied or not granted:', permission)
     }
-  }, [settings.browserNotificationEnabled, requestNotificationPermission])
+  }, [settings.browserNotificationEnabled, requestNotificationPermission, debugNotification])
 
   // Trigger vibration on mobile devices
   const vibrate = useCallback((pattern: number | number[] = 200) => {

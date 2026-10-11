@@ -1,7 +1,6 @@
 'use client'
 
 import { ImageIcon } from 'lucide-react'
-import Image from 'next/image'
 import { useCallback, useEffect, useReducer, useRef } from 'react'
 import { cn } from '@/lib/utils'
 
@@ -142,15 +141,13 @@ export function ImageThumbnail({
       )}
 
       {shouldLoad && loadingState !== 'error' && (
-        <Image
+        <img
           src={src}
           alt={alt}
-          fill
-          unoptimized
-          sizes={`${thumbnailSize}px`}
+          loading="lazy"
           draggable={false}
           className={cn(
-            'max-h-full max-w-full object-contain transition-opacity duration-200',
+            'absolute inset-0 h-full w-full object-contain object-center transition-opacity duration-200',
             loadingState === 'loaded' ? 'opacity-100' : 'opacity-0',
           )}
           onLoad={() => {

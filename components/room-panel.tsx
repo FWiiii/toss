@@ -1,8 +1,7 @@
 'use client'
 
 import { AlertCircle, Check, Copy, Loader2, LogOut, Plus, QrCode, ScanLine } from 'lucide-react'
-import dynamic from 'next/dynamic'
-import { useEffect, useId, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useId, useRef, useState } from 'react'
 import { ConnectionStatusDisplay } from '@/components/connection-status'
 import { Button } from '@/components/ui/button'
 import {
@@ -16,22 +15,22 @@ import {
 import { EmptyState } from '@/components/ui/empty-state'
 import { Input } from '@/components/ui/input'
 import { useJoinCode } from '@/hooks/use-join-code'
+import { useAppRuntime } from '@/lib/app-runtime'
 import { STATUS_TONES } from '@/lib/design-tokens'
 import { useTransfer } from '@/lib/transfer-context'
 import { cn } from '@/lib/utils'
 
 const CARD_CLASS = 'panel-surface relative overflow-hidden p-4'
 const ROOM_CODE_SANITIZE_REGEX = /[^A-Z0-9]/g
-const QRCodeDisplay = dynamic(
-  () => import('@/components/qr-code-display').then(mod => mod.QRCodeDisplay),
-  { ssr: false },
+const QRCodeDisplay = lazy(
+  () => import('@/components/qr-code-display').then(mod => ({ default: mod.QRCodeDisplay })),
 )
-const QRCodeScanner = dynamic(
-  () => import('@/components/qr-code-scanner').then(mod => mod.QRCodeScanner),
-  { ssr: false },
+const QRCodeScanner = lazy(
+  () => import('@/components/qr-code-scanner').then(mod => ({ default: mod.QRCodeScanner })),
 )
 
 export function RoomPanel() {
+  const { native } = useAppRuntime()
   const {
     roomCode,
     connectionStatus,
@@ -249,11 +248,13 @@ export function RoomPanel() {
 
         {/* QR Code Display Dialog */}
         {showQRCode && (
-          <QRCodeDisplay
-            roomCode={roomCode}
-            open={showQRCode}
-            onOpenChange={setShowQRCode}
-          />
+          <Suspense fallback={<Loader2 className="mx-auto h-5 w-5 animate-spin" aria-label="正在加载二维码" />}>
+            <QRCodeDisplay
+              roomCode={roomCode}
+              open={showQRCode}
+              onOpenChange={setShowQRCode}
+            />
+          </Suspense>
         )}
 
         <Dialog open={showLeaveConfirm} onOpenChange={setShowLeaveConfirm}>
@@ -346,18 +347,20 @@ export function RoomPanel() {
           </div>
 
           {/* Scan QR Code Button */}
-          <Button
-            variant="outline"
-            size="sm"
-            className="mt-2 w-full"
-            onClick={() => setShowScanner(true)}
-            disabled={isCreatingRoom || isJoiningRoom}
-          >
-            <ScanLine className="h-4 w-4" />
-            扫码加入
-          </Button>
+          {!native && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-2 w-full"
+              onClick={() => setShowScanner(true)}
+              disabled={isCreatingRoom || isJoiningRoom}
+            >
+              <ScanLine className="h-4 w-4" />
+              扫码加入
+            </Button>
+          )}
 
-          <p id={joinHintId} className="sr-only">输入另一台设备提供的 6 位房间代码，或扫描二维码加入。</p>
+          <p id={joinHintId} className="sr-only">{native ? '输入另一台设备提供的 6 位房间代码。' : '输入另一台设备提供的 6 位房间代码，或扫描二维码加入。'}</p>
           {joinHasError && (
             <p
               id={joinErrorId}
@@ -371,12 +374,14 @@ export function RoomPanel() {
       </div>
 
       {/* QR Code Scanner Dialog */}
-      {showScanner && (
-        <QRCodeScanner
-          open={showScanner}
-          onOpenChange={setShowScanner}
-          onScan={handleScan}
-        />
+      {!native && showScanner && (
+        <Suspense fallback={<Loader2 className="mx-auto h-5 w-5 animate-spin" aria-label="正在加载扫码器" />}>
+          <QRCodeScanner
+            open={showScanner}
+            onOpenChange={setShowScanner}
+            onScan={handleScan}
+          />
+        </Suspense>
       )}
     </div>
   )

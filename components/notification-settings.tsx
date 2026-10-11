@@ -4,6 +4,7 @@ import type { LocalDeviceProfile, TrustedDeviceRecord } from '@/lib/trusted-devi
 import { Bell, Monitor, Moon, Server, Settings, Shield, Smartphone, Sun, Trash2, Volume2 } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import { useEffect, useMemo, useReducer, useState } from 'react'
+import { useAppRuntime } from '@/lib/app-runtime'
 import { Button } from './ui/button'
 import {
   DropdownMenu,
@@ -16,6 +17,8 @@ import {
   DropdownMenuTrigger,
 } from './ui/dropdown-menu'
 import { Input } from './ui/input'
+
+const TURN_URL_PATTERN = /^turns?:/i
 
 interface NotificationSettingsProps {
   settings: {
@@ -177,6 +180,7 @@ export function NotificationSettings({
   onUpdateLocalDeviceName,
   onRemoveTrustedDevice,
 }: NotificationSettingsProps) {
+  const { peer } = useAppRuntime()
   const [isMounted, markMounted] = useReducer(() => true, false)
   const { theme, setTheme } = useTheme()
 
@@ -186,11 +190,10 @@ export function NotificationSettings({
 
   const hasVibrationSupport = isMounted && typeof navigator !== 'undefined' && 'vibrate' in navigator
   const hasNotificationSupport = isMounted && typeof window !== 'undefined' && 'Notification' in window
-  const hasTurnConfig = Boolean(
-    (process.env.NEXT_PUBLIC_TURN_URL || process.env.NEXT_PUBLIC_TURNS_URL || process.env.NEXT_PUBLIC_TURN_URL_443)
-    && process.env.NEXT_PUBLIC_TURN_USERNAME
-    && process.env.NEXT_PUBLIC_TURN_CREDENTIAL,
-  )
+  const hasTurnConfig = peer.iceServers.some((server) => {
+    const urls = typeof server.urls === 'string' ? [server.urls] : server.urls
+    return urls.some(url => TURN_URL_PATTERN.test(url))
+  })
 
   const handleNotificationToggle = async (nextEnabled: boolean) => {
     if (nextEnabled && notificationPermission === 'denied') {

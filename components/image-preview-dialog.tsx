@@ -1,9 +1,9 @@
 'use client'
 
 import { Download, X } from 'lucide-react'
-import Image from 'next/image'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
+import { useAppRuntime } from '@/lib/app-runtime'
 
 interface ImagePreviewDialogProps {
   image: { url: string, name: string } | null
@@ -12,6 +12,7 @@ interface ImagePreviewDialogProps {
 }
 
 export function ImagePreviewDialog({ image, onClose, onDownload }: ImagePreviewDialogProps) {
+  const { native } = useAppRuntime()
   return (
     <Dialog open={!!image} onOpenChange={() => onClose()}>
       <DialogContent
@@ -33,7 +34,7 @@ export function ImagePreviewDialog({ image, onClose, onDownload }: ImagePreviewD
           </Button>
 
           {/* Download button */}
-          {image && (
+          {image && !native && (
             <Button
               variant="ghost"
               size="icon"
@@ -49,14 +50,11 @@ export function ImagePreviewDialog({ image, onClose, onDownload }: ImagePreviewD
           {/* Image */}
           {image && (
             <div className="relative h-[85vh] w-full">
-              <Image
+              <img
                 key={image.url}
                 src={image.url}
                 alt={image.name}
-                fill
-                unoptimized
-                sizes="90vw"
-                className="object-contain delight-preview-in"
+                className="absolute inset-0 h-full w-full object-contain object-center delight-preview-in"
               />
             </div>
           )}
