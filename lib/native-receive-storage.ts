@@ -4,10 +4,16 @@ import { Directory, Filesystem } from '@capacitor/filesystem'
 import { registerNativeReceiveStorage } from './receive-storage'
 
 /**
- * 原生接收存储：收到的文件按块直接写入 App 私有目录，WebView 只保留
+ * 原生接收存储：收到的文件按块写入 App 私有目录，WebView 只保留
  * 单块大小的数据，不把整文件聚合成 Blob。
+ *
+ * 暂存目录必须是用户不可见的私有位置，否则文件会在用户尚未确认保存时
+ * 就出现在系统「文件」App 中。iOS 的 `Directory.Data` 实际是 Documents
+ * 目录（会被文件共享暴露），因此这里使用 Library：iOS 为 Library，
+ * Android 为应用内部 files 目录。
  */
 export const RECEIVED_DIRECTORY = 'toss-received'
+const STAGING_DIRECTORY = Directory.Library
 
 const MAX_FILE_NAME_LENGTH = 128
 // 控制字符与文件系统保留字符：出现在对端文件名中时替换为下划线。
@@ -55,7 +61,7 @@ async function resolveAvailableName(
   for (let attempt = 0; attempt < 100; attempt += 1) {
     const candidate = attempt === 0 ? fileName : `${stem} (${attempt})${extension}`
     try {
-      await filesystem.stat({ path: `${RECEIVED_DIRECTORY}/${candidate}`, directory: Directory.Data })
+      await filesystem.stat({ path: `${RECEIVED_DIRECTORY}/${candidate}`, directory: STAGING_DIRECTORY })
     }
     catch {
       return candidate
@@ -80,7 +86,7 @@ export async function createNativeReceiveStorage(
 
   const removePartFile = async () => {
     try {
-      await filesystem.deleteFile({ path: partPath, directory: Directory.Data })
+      await filesystem.deleteFile({ path: partPath, directory: STAGING_DIRECTORY })
     }
     catch {}
   }
@@ -104,7 +110,7 @@ export async function createNativeReceiveStorage(
     if (index === 0) {
       await filesystem.writeFile({
         path: partPath,
-        directory: Directory.Data,
+        directory: STAGING_DIRECTORY,
         data,
         recursive: true,
       })
@@ -112,7 +118,7 @@ export async function createNativeReceiveStorage(
     else {
       await filesystem.appendFile({
         path: partPath,
-        directory: Directory.Data,
+        directory: STAGING_DIRECTORY,
         data,
       })
     }
@@ -138,7 +144,7 @@ export async function createNativeReceiveStorage(
       await filesystem.rename({
         from: partPath,
         to: finalPath,
-        directory: Directory.Data,
+        directory: STAGING_DIRECTORY,
       })
     }
     catch (error) {
@@ -148,7 +154,7 @@ export async function createNativeReceiveStorage(
 
     const { uri } = await filesystem.getUri({
       path: finalPath,
-      directory: Directory.Data,
+      directory: STAGING_DIRECTORY,
     })
 
     const native: NativeReceiveFile = {
