@@ -1099,6 +1099,9 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     setPeerEncryptionFingerprint: updatePeerEncryptionFingerprint,
     getLocalDeviceProfile: ensureLocalDeviceProfile,
     queueIncomingFileOffer,
+    removeIncomingFileOffer: (offerId) => {
+      setIncomingFileOffers(prev => prev.filter(offer => offer.offerId !== offerId))
+    },
     resolvePendingFileOfferResponse,
     discardIncomingFileOffersForPeer,
     rememberTrustedPeer,
@@ -1341,11 +1344,15 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
 
   const cancelTransfer = useCallback((itemId: string) => {
     const item = items.find(i => i.id === itemId)
-    if (!item || item.status !== 'transferring')
+    if (!item || (item.status !== 'transferring' && item.status !== 'pending'))
       return
 
     if (item.direction === 'sent') {
       cancelledTransfersRef.current.add(itemId)
+      for (const [peerId] of connectionsRef.current) {
+        const responseKey = getFileOfferResponseKey(peerId, itemId)
+        pendingFileOfferResponsesRef.current.get(responseKey)?.resolve(false)
+      }
     }
     else if (item.direction === 'received') {
       for (const [peerId, buffer] of fileBuffersRef.current.entries()) {

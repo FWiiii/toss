@@ -109,6 +109,7 @@ export interface ConnectionCallbacks {
   setPeerEncryptionFingerprint?: (peerId: string, fingerprint: string | null) => void
   getLocalDeviceProfile?: () => LocalDeviceProfile
   queueIncomingFileOffer?: (offer: IncomingFileOffer) => void
+  removeIncomingFileOffer?: (offerId: string) => void
   resolvePendingFileOfferResponse?: (peerId: string, offerId: string, accepted: boolean) => void
   discardIncomingFileOffersForPeer?: (peerId: string) => void
   rememberTrustedPeer?: (deviceInfo: PeerDeviceInfo) => void
@@ -995,6 +996,8 @@ export function createSetupConnection(
           acceptedIncomingFileOffersRef.current.delete(decryptedData.itemId)
           approvedIncomingFileOffersRef.current.delete(decryptedData.itemId)
           pendingIncomingFileOffersRef.current.delete(decryptedData.itemId)
+          callbacks.removeIncomingFileOffer?.(decryptedData.itemId)
+          resolvePendingFileOfferResponse?.(conn.peer, decryptedData.itemId, false)
         }
         if (buffer) {
           updateItemProgress(buffer.localItemId, {

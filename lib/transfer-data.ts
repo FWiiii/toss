@@ -319,6 +319,10 @@ export function createDataTransfer(
     }
 
     const accepted = await waitForFileOfferResponse(peerId, itemId)
+    if (refs.cancelledTransfersRef.current.has(itemId)) {
+      await sendControlToPeer(peerId, { type: 'file-cancel', itemId })
+      return { status: 'cancelled', bytesSent: 0 }
+    }
     if (!accepted) {
       return { status: 'rejected', bytesSent: 0 }
     }

@@ -323,12 +323,12 @@ export function validateIncomingRawPeerPayload(data: unknown): RawIncomingPeerPa
       if (!isValidBoundedString(data.itemId) || !isValidOffset(data.offset) || !isValidBinaryPayload(data.bytes)) {
         return null
       }
-      // 单块大小上限：发送端最大只发 FILE_CHUNK_MAX_SIZE，超限的块视为恶意或损坏，直接丢弃，
-      // 防止对端一次投递超大块耗尽内存（toOwnedArrayBuffer 还会再复制一份）。
-      if (data.bytes.byteLength > FILE_CHUNK_MAX_SIZE) {
+      if (data.encrypted !== undefined && typeof data.encrypted !== 'boolean') {
         return null
       }
-      if (data.encrypted !== undefined && typeof data.encrypted !== 'boolean') {
+      // AES-GCM wire bytes include a 12-byte IV and a 16-byte authentication tag.
+      const maxWireSize = FILE_CHUNK_MAX_SIZE + (data.encrypted ? 28 : 0)
+      if (data.bytes.byteLength > maxWireSize) {
         return null
       }
       if (typeof data.offset !== 'number') {
