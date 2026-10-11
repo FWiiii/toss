@@ -1,7 +1,11 @@
 import { AppShell } from '@/components/app-shell'
 import { AppRuntimeProvider, DEFAULT_STUN_SERVERS } from '@/lib/app-runtime'
+import { registerNativeFileStorage } from '@/lib/native-receive-storage'
 import { TransferProvider } from '@/lib/transfer-context'
 import logoSrc from '@/public/logo.svg?url'
+
+// 收到的文件按块写入 App 私有目录，不聚合成整文件 Blob。
+registerNativeFileStorage()
 
 // Entry-specific configuration: no Next environment shim in shared code.
 const runtime = {

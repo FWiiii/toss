@@ -940,7 +940,9 @@ export function createSetupConnection(
             return
           }
 
-          const url = createTrackedBlobUrl(finalized.file, finalized.cleanup)
+          const url = finalized.kind === 'native'
+            ? finalized.native.src
+            : createTrackedBlobUrl(finalized.file, finalized.cleanup)
 
           updateItemProgress(buffer.localItemId, {
             content: url,

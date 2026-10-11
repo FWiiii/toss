@@ -1,7 +1,19 @@
-export interface FinalizedReceiveFile {
-  cleanup?: () => Promise<void> | void
-  file: File
+/**
+ * 原生接收结果：文件已在 App 私有目录落盘，WebView 只持有 URI，
+ * 不生成整文件 Blob。
+ */
+export interface NativeReceiveFile {
+  mimeType: string
+  name: string
+  path: string
+  size: number
+  src: string
+  uri: string
 }
+
+export type FinalizedReceiveFile
+  = | { cleanup?: () => Promise<void> | void, file: File, kind: 'web' }
+    | { kind: 'native', native: NativeReceiveFile }
 
 export interface ReceiveStorageHandle {
   abort: () => Promise<void>
@@ -9,10 +21,23 @@ export interface ReceiveStorageHandle {
   finalize: () => Promise<FinalizedReceiveFile>
 }
 
-interface ReceiveStorageOptions {
+export interface ReceiveStorageOptions {
   fileName: string
   mimeType: string
   transferId: string
+}
+
+export type ReceiveStorageFactory = (
+  options: ReceiveStorageOptions,
+) => Promise<ReceiveStorageHandle>
+
+let nativeReceiveStorageFactory: ReceiveStorageFactory | null = null
+
+/**
+ * 由原生入口注册分块落盘实现；Web 入口不注册，继续使用 OPFS／IndexedDB。
+ */
+export function registerNativeReceiveStorage(factory: ReceiveStorageFactory) {
+  nativeReceiveStorageFactory = factory
 }
 
 interface ReceiveChunkRecord {
@@ -150,6 +175,7 @@ async function createIndexedDbReceiveStorage(
       file: new File([blob], options.fileName, {
         type: blob.type || options.mimeType,
       }),
+      kind: 'web',
     }
   }
 
@@ -220,6 +246,7 @@ async function createOpfsReceiveStorage(
       file: new File([file], options.fileName, {
         type: file.type || options.mimeType,
       }),
+      kind: 'web',
     }
   }
 
@@ -265,6 +292,7 @@ function createInMemoryReceiveStorage(
         file: new File([blob], options.fileName, {
           type: blob.type || options.mimeType,
         }),
+        kind: 'web',
       }
     },
   }
@@ -276,6 +304,12 @@ function createInMemoryReceiveStorage(
  *（不阻塞正常接收），只在明确放不下时返回 false。
  */
 export async function hasStorageQuotaFor(bytes: number): Promise<boolean> {
+  // 原生落盘走设备文件系统：WebView 的 StorageManager 配额反映的是源配额，
+  // 不是设备可用空间，用它预检会误拒大文件。改为由真实写入失败来判定。
+  if (nativeReceiveStorageFactory) {
+    return true
+  }
+
   try {
     const storage = typeof navigator !== 'undefined' ? navigator.storage : undefined
     if (!storage?.estimate) {
@@ -295,6 +329,10 @@ export async function hasStorageQuotaFor(bytes: number): Promise<boolean> {
 export async function createReceiveStorage(
   options: ReceiveStorageOptions,
 ): Promise<ReceiveStorageHandle> {
+  if (nativeReceiveStorageFactory) {
+    return await nativeReceiveStorageFactory(options)
+  }
+
   if (supportsOPFS()) {
     try {
       return await createOpfsReceiveStorage(options)
