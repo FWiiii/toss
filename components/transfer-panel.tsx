@@ -1,6 +1,7 @@
 'use client'
 
 import type { PendingTransferFile } from '@/lib/pending-transfer-file'
+import type { TransferItem } from '@/lib/types'
 import { AlertTriangle, Inbox, Monitor, MoreHorizontal, Share2, ShieldAlert, Trash2, Upload } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { ImagePreviewDialog } from '@/components/image-preview-dialog'
@@ -24,6 +25,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { EmptyState } from '@/components/ui/empty-state'
 import { useAppRuntime } from '@/lib/app-runtime'
+import { getNativeFileSaver } from '@/lib/file-save'
 import { resolvePendingTransferFile } from '@/lib/pending-transfer-file'
 import { useTransfer, useTransferItems } from '@/lib/transfer-context'
 import { buildOutgoingTransferOfferSummary } from '@/lib/transfer-data'
@@ -513,6 +515,21 @@ export function TransferPanel({ shareTarget }: { shareTarget?: TransferShareTarg
     a.click()
   }, [runtime.native])
 
+  const handleSaveFile = useCallback((item: TransferItem) => {
+    const saver = getNativeFileSaver()
+    if (!saver || !item.nativeFile) {
+      addSystemMessage('此文件无法保存到本地，请重新接收', true)
+      return
+    }
+
+    void saver(item.nativeFile).catch((error) => {
+      addSystemMessage(
+        `保存失败：${error instanceof Error ? error.message : String(error)}`,
+        true,
+      )
+    })
+  }, [addSystemMessage])
+
   const handlePreviewImage = useCallback((url: string, name: string) => {
     setPreviewImage({ url, name })
   }, [])
@@ -906,6 +923,7 @@ export function TransferPanel({ shareTarget }: { shareTarget?: TransferShareTarg
                         item={item}
                         onPreviewImage={handlePreviewImage}
                         onDownload={handleDownload}
+                        onSaveFile={handleSaveFile}
                         onCancel={cancelTransfer}
                         onStopStream={handleStopStream}
                       />

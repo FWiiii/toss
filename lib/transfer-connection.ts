@@ -946,6 +946,14 @@ export function createSetupConnection(
 
           updateItemProgress(buffer.localItemId, {
             content: url,
+            nativeFile: finalized.kind === 'native'
+              ? {
+                  mimeType: finalized.native.mimeType,
+                  name: finalized.native.name,
+                  path: finalized.native.path,
+                  uri: finalized.native.uri,
+                }
+              : undefined,
             status: 'completed',
             progress: 100,
             transferredBytes: buffer.size,

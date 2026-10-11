@@ -2,6 +2,13 @@
 
 export type TransferStatus = 'pending' | 'transferring' | 'completed' | 'error' | 'cancelled'
 
+export interface NativeTransferFile {
+  mimeType: string
+  name: string
+  path: string
+  uri: string
+}
+
 export interface TransferItem {
   id: string
   type: 'text' | 'file' | 'system' | 'stream'
@@ -16,6 +23,8 @@ export interface TransferItem {
   transferredBytes?: number
   speed?: number // bytes per second
   remainingTime?: number // seconds remaining
+  // 原生接收文件：文件已在 App 私有目录落盘，content 为 WebView 可读 src
+  nativeFile?: NativeTransferFile
   // Screen share specific
   streamType?: 'screen' | 'window' | 'tab'
   duration?: number // seconds for stream

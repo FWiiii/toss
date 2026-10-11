@@ -129,7 +129,7 @@ export function useTransferItems() {
   // Update item progress by ID
   const updateItemProgress = useCallback((
     id: string,
-    updates: Partial<Pick<TransferItem, 'status' | 'progress' | 'transferredBytes' | 'speed' | 'content' | 'remainingTime'>>,
+    updates: Partial<Pick<TransferItem, 'status' | 'progress' | 'transferredBytes' | 'speed' | 'content' | 'remainingTime' | 'nativeFile'>>,
   ) => {
     setItems((prev) => {
       const index = prev.findIndex(item => item.id === id)

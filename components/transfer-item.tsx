@@ -93,6 +93,7 @@ interface TransferItemProps {
   item: TransferItem
   onPreviewImage: (url: string, name: string) => void
   onDownload: (url: string, name?: string) => void
+  onSaveFile?: (item: TransferItem) => void
   onCancel?: (itemId: string) => void
   onStopStream?: (itemId: string) => void
 }
@@ -107,11 +108,13 @@ function ImageItem({
   item,
   onPreviewImage,
   onDownload,
+  onSaveFile,
   onCancel,
 }: {
   item: TransferItem
   onPreviewImage: (url: string, name: string) => void
   onDownload: (url: string, name?: string) => void
+  onSaveFile?: (item: TransferItem) => void
   onCancel?: (itemId: string) => void
 }) {
   const { native } = useAppRuntime()
@@ -250,21 +253,37 @@ function ImageItem({
             {item.direction === 'sent' ? '已发送' : '已接收'}
           </p>
         </div>
-        {item.direction === 'received' && !native && (
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            onClick={(e) => {
-              e.stopPropagation()
-              onDownload(item.content, item.name)
-            }}
-            className="shrink-0 bg-background/80 text-foreground/80 hover:bg-background hover:text-foreground"
-            aria-label={`下载图片 ${imageName}`}
-            title={`下载图片 ${imageName}`}
-          >
-            <Download className="w-4 h-4" />
-          </Button>
-        )}
+        {item.direction === 'received' && (native
+          ? (
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onSaveFile?.(item)
+                }}
+                className="shrink-0 bg-background/80 text-foreground/80 hover:bg-background hover:text-foreground"
+                aria-label={`保存图片 ${imageName}`}
+                title={`保存图片 ${imageName}`}
+              >
+                <Download className="w-4 h-4" />
+              </Button>
+            )
+          : (
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onDownload(item.content, item.name)
+                }}
+                className="shrink-0 bg-background/80 text-foreground/80 hover:bg-background hover:text-foreground"
+                aria-label={`下载图片 ${imageName}`}
+                title={`下载图片 ${imageName}`}
+              >
+                <Download className="w-4 h-4" />
+              </Button>
+            ))}
       </div>
     </div>
   )
@@ -274,10 +293,12 @@ function ImageItem({
 function FileItem({
   item,
   onDownload,
+  onSaveFile,
   onCancel,
 }: {
   item: TransferItem
   onDownload: (url: string, name?: string) => void
+  onSaveFile?: (item: TransferItem) => void
   onCancel?: (itemId: string) => void
 }) {
   const { native } = useAppRuntime()
@@ -403,18 +424,31 @@ function FileItem({
         </Button>
       )}
       {/* Download button after transfer */}
-      {item.direction === 'received' && !native && !isTransferring && item.content && (
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          onClick={() => onDownload(item.content, item.name)}
-          className="shrink-0 bg-background/80 text-foreground/80 hover:bg-background hover:text-foreground"
-          aria-label={`下载文件 ${fileName}`}
-          title={`下载文件 ${fileName}`}
-        >
-          <Download className="w-4 h-4" />
-        </Button>
-      )}
+      {item.direction === 'received' && !isTransferring && item.content && (native
+        ? (
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => onSaveFile?.(item)}
+              className="shrink-0 bg-background/80 text-foreground/80 hover:bg-background hover:text-foreground"
+              aria-label={`保存文件 ${fileName}`}
+              title={`保存文件 ${fileName}`}
+            >
+              <Download className="w-4 h-4" />
+            </Button>
+          )
+        : (
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => onDownload(item.content, item.name)}
+              className="shrink-0 bg-background/80 text-foreground/80 hover:bg-background hover:text-foreground"
+              aria-label={`下载文件 ${fileName}`}
+              title={`下载文件 ${fileName}`}
+            >
+              <Download className="w-4 h-4" />
+            </Button>
+          ))}
     </div>
   )
 }
@@ -488,7 +522,7 @@ function TextItem({ item }: { item: TransferItem }) {
   )
 }
 
-export const TransferItemComponent = memo(({ item, onPreviewImage, onDownload, onCancel, onStopStream }: TransferItemProps) => {
+export const TransferItemComponent = memo(({ item, onPreviewImage, onDownload, onSaveFile, onCancel, onStopStream }: TransferItemProps) => {
   const [showSettleIn, setShowSettleIn] = useReducer(
     (_current: boolean, next: boolean) => next,
     false,
@@ -538,11 +572,11 @@ export const TransferItemComponent = memo(({ item, onPreviewImage, onDownload, o
     >
       {isImage
         ? (
-            <ImageItem item={item} onPreviewImage={onPreviewImage} onDownload={onDownload} onCancel={onCancel} />
+            <ImageItem item={item} onPreviewImage={onPreviewImage} onDownload={onDownload} onSaveFile={onSaveFile} onCancel={onCancel} />
           )
         : item.type === 'file'
           ? (
-              <FileItem item={item} onDownload={onDownload} onCancel={onCancel} />
+              <FileItem item={item} onDownload={onDownload} onSaveFile={onSaveFile} onCancel={onCancel} />
             )
           : (
               <TextItem item={item} />

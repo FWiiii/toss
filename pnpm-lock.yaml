@@ -23,6 +23,9 @@ importers:
       '@capacitor/ios':
         specifier: 8.5.3
         version: 8.5.3(@capacitor/core@8.5.3)
+      '@capacitor/share':
+        specifier: 8.0.3
+        version: 8.0.3(@capacitor/core@8.5.3)
       '@radix-ui/react-dialog':
         specifier: 1.1.15
         version: 1.1.15(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
@@ -297,6 +300,11 @@ packages:
     resolution: {integrity: sha512-HnnV92Jl8+3x0JUloXUMjFcUsQI8wHFVsKwkLn72DfRZXYGZW11tQbmNOWOnRTljaU18FdI1b9ipT09SzzPDNw==}
     peerDependencies:
       '@capacitor/core': ^8.5.0
+
+  '@capacitor/share@8.0.3':
+    resolution: {integrity: sha512-gnvZBV1NPu2B8vd1UKncR56G15ueHd0aZLqgDov++t3SmTBG9Q0VrAZ1VnHn5stxlmglVaTb4RwopMgbpLzroA==}
+    peerDependencies:
+      '@capacitor/core': '>=8.0.0'
 
   '@capacitor/synapse@1.0.4':
     resolution: {integrity: sha512-/C1FUo8/OkKuAT4nCIu/34ny9siNHr9qtFezu4kxm6GY1wNFxrCFWjfYx5C1tUhVGz3fxBABegupkpjXvjCHrw==}
@@ -3653,6 +3661,10 @@ snapshots:
       '@capacitor/synapse': 1.0.4
 
   '@capacitor/ios@8.5.3(@capacitor/core@8.5.3)':
+    dependencies:
+      '@capacitor/core': 8.5.3
+
+  '@capacitor/share@8.0.3(@capacitor/core@8.5.3)':
     dependencies:
       '@capacitor/core': 8.5.3
 

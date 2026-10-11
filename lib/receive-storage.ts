@@ -1,14 +1,12 @@
+import type { NativeTransferFile } from './types'
+
 /**
  * 原生接收结果：文件已在 App 私有目录落盘，WebView 只持有 URI，
  * 不生成整文件 Blob。
  */
-export interface NativeReceiveFile {
-  mimeType: string
-  name: string
-  path: string
+export interface NativeReceiveFile extends NativeTransferFile {
   size: number
   src: string
-  uri: string
 }
 
 export type FinalizedReceiveFile

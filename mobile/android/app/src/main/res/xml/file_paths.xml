@@ -2,4 +2,6 @@
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
     <external-path name="my_images" path="." />
     <cache-path name="my_cache_images" path="." />
+    <!-- 收到的文件写在 App 私有 files 目录，分享时需要可授权 URI。 -->
+    <files-path name="received_files" path="." />
 </paths>
