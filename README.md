@@ -36,7 +36,7 @@
 
 ### 环境要求
 
-- Node.js 18+
+- Node.js 22.12+（Capacitor 8 与 Vite 8 的共同要求）
 - pnpm (推荐) 或 npm
 
 ### 安装
@@ -64,6 +64,43 @@ pnpm start
 ```
 
 访问 http://localhost:3000 即可使用。
+
+### 行动端本地入口（Capacitor）
+
+首步已接入 React + Vite 本地入口与 Android / iOS 原生工程。当前页面用于检查本地启动、平台与原生桥接；尚未接入房间或文件传输。网站和 PWA 保持原有入口。
+
+固定版本：Capacitor core / CLI / Android / iOS 8.5.3、App 插件 8.1.2、Vite 8.3.4、React 插件 6.1.2。
+
+```bash
+# 浏览器开发：仅用于预览，不代表原生验证通过
+pnpm mobile:dev
+
+# 类型检查、生产构建、同步到两个原生工程
+pnpm mobile:sync
+
+# 预览生产产物：http://127.0.0.1:4173
+pnpm mobile:preview
+
+# 打开原生 IDE
+pnpm mobile:open:android
+pnpm mobile:open:ios
+
+# 构建并在连接设备 / 已创建模拟器上运行
+pnpm mobile:run:android
+pnpm mobile:run:ios
+```
+
+配置在 `capacitor.config.ts`，本地资源来自 `mobile/dist`；不使用远端 `server.url`，不包含网站 Service Worker、manifest 或 Analytics。共用现有主题、样式和 Button。原生工程位于 `mobile/android`、`mobile/ios`，构建产物不提交；重新拉取后先运行 `pnpm install --frozen-lockfile` 和 `pnpm mobile:sync`。`app.toss.mobile` 是当前开发标识，商店发布前必须统一设置正式 App ID、签名及图标。
+
+Android 需要符合 Capacitor 8 要求的 Android Studio / JDK、SDK Platform 36、对应构建工具，以及已连接设备或已创建 AVD；命令行构建需配置 `JAVA_HOME` 与 SDK 路径。iOS 需要 macOS、Xcode 26+；工程使用 Swift Package Manager，在 Mac 上同步后再打开。
+
+在 App 中点击「检查原生桥接」应返回真实安装名称、App ID 与版本。浏览器会明确提示不能验证原生桥接；Web Crypto / WebRTC 的 API 存在不代表传输已通过测试。
+
+本次验证：移动端类型检查、Vite 构建、两平台资源同步、新增代码 ESLint、Next.js 生产构建通过；390 × 844 浏览器预览的浅色 / 深色界面与按钮操作已验证，无横向溢出、无页面运行错误、无外部资源请求、无 Service Worker 注册。Android / iOS 同步资源的 SHA-256 与 Vite 产物一致。
+
+原生启动尚未验证：当前 Android 构建明确因缺少 Java / `JAVA_HOME` 失败，SDK 仅发现 android-36.1，且无连接设备或 AVD；本机没有 macOS / Xcode，无法编译或启动 iOS。不能把资源同步成功当作两平台已启动成功。
+
+完整后续范围见 [Capacitor 行动 App 计划书](docs/product/capacitor-mobile-app-plan.md)。
 
 ## 📖 使用方法
 

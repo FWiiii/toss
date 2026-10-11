@@ -5,6 +5,9 @@ export default antfu({
   ignores: [
     '.codex',
     '.superpowers',
+    'mobile/android/**',
+    'mobile/ios/**',
+    'mobile/dist/**',
   ],
   nextjs: true,
   react: true,

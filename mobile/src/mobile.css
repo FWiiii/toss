@@ -1,0 +1,31 @@
+body {
+  margin: 0;
+}
+
+.mobile-shell {
+  width: 100%;
+  max-width: 38rem;
+  min-height: 100dvh;
+  margin-inline: auto;
+  padding-top: calc(1.5rem + var(--safe-area-inset-top, env(safe-area-inset-top, 0px)));
+  padding-right: calc(1rem + var(--safe-area-inset-right, env(safe-area-inset-right, 0px)));
+  padding-bottom: calc(1.5rem + var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));
+  padding-left: calc(1rem + var(--safe-area-inset-left, env(safe-area-inset-left, 0px)));
+}
+
+.runtime-details {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.75rem 1rem;
+  font-size: 0.875rem;
+}
+
+.runtime-details dt {
+  color: var(--muted-foreground);
+}
+
+.runtime-details dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
