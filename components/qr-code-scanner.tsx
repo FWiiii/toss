@@ -59,6 +59,9 @@ export function QRCodeScanner({ open, onOpenChange, onScan }: QRCodeScannerProps
   const isNativeScanner = nativeScanner !== null
   // 防止依赖变化时重复唤起系统相机：每次打开对话框只自动拉起一次。
   const nativeScanGuardRef = useRef(false)
+  // 启动摄像头是异步的（动态导入 + 授权），期间的重复触发会创建第二个
+  // Html5Qrcode 实例并抓取第二路摄像头流。
+  const startInFlightRef = useRef(false)
   // 系统相机是原生模态界面，期间对话框可能已被关闭；用它丢弃过期结果。
   const openRef = useRef(open)
   openRef.current = open
@@ -115,7 +118,10 @@ export function QRCodeScanner({ open, onOpenChange, onScan }: QRCodeScannerProps
       return
     if (!scannerRef.current || !open || !cameraSupported)
       return
+    if (startInFlightRef.current)
+      return
 
+    startInFlightRef.current = true
     setIsStarting(true)
     setError(null)
 
@@ -179,6 +185,7 @@ export function QRCodeScanner({ open, onOpenChange, onScan }: QRCodeScannerProps
       }
     }
     finally {
+      startInFlightRef.current = false
       setIsStarting(false)
     }
   }, [open, facingMode, extractRoomCode, onScan, onOpenChange, stopScanner, cameraSupported, isNativeScanner])
