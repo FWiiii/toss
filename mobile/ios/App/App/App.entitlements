@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- App Group 用于主 App 与 Share Extension 交接分享内容。
+	     需要真实 Apple Developer Team 的描述文件包含该 group；
+	     在 Xcode 里为 App 与 ShareExtension 两个 target 都开启 App Groups 能力。 -->
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>group.app.toss.mobile</string>
+	</array>
+</dict>
+</plist>

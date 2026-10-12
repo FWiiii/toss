@@ -6,6 +6,7 @@ import { RoomErrorBoundary, TransferErrorBoundary } from '@/components/error-bou
 import { NotificationSettings } from '@/components/notification-settings'
 import { RoomPanel } from '@/components/room-panel'
 import { TransferPanel } from '@/components/transfer-panel'
+import { useNativeIncomingShare } from '@/hooks/use-native-incoming-share'
 import { useAppRuntime } from '@/lib/app-runtime'
 import { useTransfer } from '@/lib/transfer-context'
 import { cn } from '@/lib/utils'
@@ -72,8 +73,12 @@ interface AppShellProps {
 
 export function AppShell({ children, logoSrc = '/logo.svg', shareTarget }: AppShellProps) {
   const { native } = useAppRuntime()
+  const nativeShareTarget = useNativeIncomingShare(native)
   const { roomCode, connectionStatus } = useTransfer()
   const showSplitLayout = Boolean(roomCode) || connectionStatus !== 'disconnected'
+
+  // 原生系统分享与 Web Share Target 互斥：原生入口没有 Web 分享来源。
+  const effectiveShareTarget = shareTarget ?? nativeShareTarget
 
   return (
     <div className={cn('relative flex flex-col bg-background', native ? 'min-h-dvh' : 'min-h-screen')}>
@@ -93,7 +98,7 @@ export function AppShell({ children, logoSrc = '/logo.svg', shareTarget }: AppSh
 
         <div className={cn('delight-fade-up min-w-0', showSplitLayout && 'lg:min-w-0 lg:flex-1', !showSplitLayout && 'mx-auto w-full max-w-[38rem]')} style={{ animationDelay: '130ms' }}>
           <TransferErrorBoundary>
-            <TransferPanel shareTarget={shareTarget} />
+            <TransferPanel shareTarget={effectiveShareTarget} />
           </TransferErrorBoundary>
         </div>
       </main>
