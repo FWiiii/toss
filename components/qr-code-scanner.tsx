@@ -13,9 +13,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { STATUS_TONES } from '@/lib/design-tokens'
 import { getNativeBarcodeScanner } from '@/lib/native-barcode'
-
-const ROOM_CODE_REGEX = /^[A-Z0-9]{6}$/i
-const ROOM_CODE_SANITIZE_REGEX = /[^A-Z0-9]/g
+import { isValidRoomCode, ROOM_CODE_LENGTH, sanitizeRoomCode } from '@/lib/room-code'
 
 interface QRCodeScannerProps {
   open: boolean
@@ -79,8 +77,8 @@ export function QRCodeScanner({ open, onOpenChange, onScan }: QRCodeScannerProps
     try {
       const url = new URL(text)
       const joinCode = url.searchParams.get('join')
-      if (joinCode && ROOM_CODE_REGEX.test(joinCode)) {
-        return joinCode.toUpperCase()
+      if (joinCode && isValidRoomCode(joinCode)) {
+        return sanitizeRoomCode(joinCode)
       }
     }
     catch {
@@ -88,8 +86,8 @@ export function QRCodeScanner({ open, onOpenChange, onScan }: QRCodeScannerProps
     }
 
     // Try as direct 6-character code
-    const cleaned = text.toUpperCase().replace(ROOM_CODE_SANITIZE_REGEX, '')
-    if (cleaned.length === 6) {
+    const cleaned = sanitizeRoomCode(text)
+    if (cleaned.length === ROOM_CODE_LENGTH) {
       return cleaned
     }
 
@@ -221,8 +219,8 @@ export function QRCodeScanner({ open, onOpenChange, onScan }: QRCodeScannerProps
 
   // Handle manual code submission
   const handleManualSubmit = useCallback(() => {
-    const code = manualCode.toUpperCase().replace(ROOM_CODE_SANITIZE_REGEX, '')
-    if (code.length === 6) {
+    const code = sanitizeRoomCode(manualCode)
+    if (code.length === ROOM_CODE_LENGTH) {
       onScan(code)
       onOpenChange(false)
     }
@@ -359,7 +357,7 @@ export function QRCodeScanner({ open, onOpenChange, onScan }: QRCodeScannerProps
                     id={manualCodeInputId}
                     placeholder="输入6位房间代码"
                     value={manualCode}
-                    onChange={e => setManualCode(e.target.value.toUpperCase().replace(ROOM_CODE_SANITIZE_REGEX, '').slice(0, 6))}
+                    onChange={e => setManualCode(sanitizeRoomCode(e.target.value).slice(0, ROOM_CODE_LENGTH))}
                     className="h-14 text-center text-2xl font-mono tracking-[0.3em] uppercase"
                     maxLength={6}
                     autoFocus

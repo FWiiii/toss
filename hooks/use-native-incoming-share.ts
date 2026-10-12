@@ -44,14 +44,21 @@ export function useNativeIncomingShare(enabled: boolean): TransferShareTarget {
       }
     })
 
+    let disposed = false
     let unsubscribe: (() => void) | null = null
     void subscribeIncomingShares().then((dispose) => {
+      if (disposed) {
+        // 卸载早于订阅完成：立刻释放，避免原生订阅泄漏。
+        dispose()
+        return
+      }
       unsubscribe = dispose
     }).catch(() => {
       // 原生插件未实现时静默降级，不影响其余功能。
     })
 
     return () => {
+      disposed = true
       unregisterIncomingShareConsumer()
       unsubscribe?.()
     }

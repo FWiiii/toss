@@ -17,7 +17,7 @@
 - **设备直传** - 基于 WebRTC 技术，传输内容优先在设备间直接发送
 - **端到端加密** - 数据传输全程加密，并提供会话指纹供两端人工核对
 - **连接链路可见** - 可查看当前连接是局域网直连、P2P 穿透还是服务器中转
-- **无文件大小限制** - 传输速度取决于您的网络环境与当前连接方式
+- **大文件传输** - 单文件上限 4 GiB，传输速度取决于您的网络环境与当前连接方式
 - **跨平台支持** - 支持手机、平板、电脑等任何现代浏览器设备
 - **PWA 支持** - 可安装为本地应用，支持系统分享功能
 - **暗色模式** - 支持浅色/深色主题切换
@@ -206,10 +206,9 @@ Android 需要 Android Studio 2025.2.1+、JDK 21、SDK Platform 36、对应构�
 │   └── utils.ts           # 工具函数
 ├── hooks/                 # 自定义 Hooks
 │   └── use-share-target.ts # Web Share Target Hook
-├── public/                # 静态资源
-│   ├── manifest.json      # PWA 配置
-│   └── sw.js              # Service Worker
-└── styles/                # 样式文件
+└── public/                # 静态资源
+    ├── manifest.json      # PWA 配置
+    └── sw.js              # Service Worker
 ```
 
 ## 🔒 安全说明

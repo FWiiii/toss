@@ -33,3 +33,10 @@ next-env.d.ts
 *.jks
 *.keystore
 keystore.properties
+
+# macOS
+.DS_Store
+
+# IDE / 工具状态
+.idea/
+.kotlin/

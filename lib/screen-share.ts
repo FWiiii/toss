@@ -1,5 +1,3 @@
-import type { TransferItem } from './types'
-
 export type ScreenShareType = 'screen' | 'window' | 'tab'
 
 interface StreamLike {
@@ -150,8 +148,4 @@ export function ensureScreenShareCallForPeer({
   })
 
   return [...calls, call]
-}
-
-export function isSentScreenShareItem(item: Pick<TransferItem, 'type' | 'direction'>) {
-  return item.type === 'stream' && item.direction === 'sent'
 }

@@ -1,7 +1,7 @@
-const ROOM_CODE_PATTERN = /^[A-Z0-9]{6}$/
+import { isValidRoomCode } from './room-code'
 
 export function buildRoomUrl(code: string, configuredOrigin: string, currentOrigin: string, native: boolean): string | null {
-  if (!ROOM_CODE_PATTERN.test(code))
+  if (!isValidRoomCode(code))
     return null
   try {
     const origin = new URL(configuredOrigin || currentOrigin)

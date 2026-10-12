@@ -2,6 +2,7 @@ import type { ClassValue } from 'clsx'
 import type { SharedData } from './types'
 import { clsx } from 'clsx'
 import { twMerge } from 'tailwind-merge'
+import { openIndexedDb } from './indexed-db'
 
 const UUID_REPLACE_REGEX = /[xy]/g
 
@@ -24,17 +25,6 @@ export function generateUUID(): string {
 }
 
 /**
- * Convert Uint8Array to base64 string (safe for large arrays)
- */
-export function uint8ToBase64(bytes: Uint8Array): string {
-  let binary = ''
-  for (let i = 0; i < bytes.length; i++) {
-    binary += String.fromCharCode(bytes[i])
-  }
-  return btoa(binary)
-}
-
-/**
  * Convert base64 string to Uint8Array
  */
 export function base64ToUint8(base64: string): Uint8Array {
@@ -46,17 +36,6 @@ export function base64ToUint8(base64: string): Uint8Array {
   return bytes
 }
 
-/**
- * Convert base64 string to File object
- */
-export function base64ToFile(base64: string, name: string, type: string): File {
-  const bytes = base64ToUint8(base64)
-  return new File([bytes as unknown as BlobPart], name, { type })
-}
-
-// Re-export types from types.ts for backward compatibility
-export type { SharedData, SharedDataFile } from './types'
-
 // IndexedDB constants (internal use only)
 const DB_NAME = 'toss-share-db'
 const STORE_NAME = 'shared-data'
@@ -65,15 +44,9 @@ const STORE_NAME = 'shared-data'
  * Open IndexedDB database
  */
 export function openShareDB(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, 1)
-    request.onerror = () => reject(request.error)
-    request.onsuccess = () => resolve(request.result)
-    request.onupgradeneeded = (event) => {
-      const db = (event.target as IDBOpenDBRequest).result
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        db.createObjectStore(STORE_NAME, { keyPath: 'id', autoIncrement: true })
-      }
+  return openIndexedDb(DB_NAME, 1, (db) => {
+    if (!db.objectStoreNames.contains(STORE_NAME)) {
+      db.createObjectStore(STORE_NAME, { keyPath: 'id', autoIncrement: true })
     }
   })
 }

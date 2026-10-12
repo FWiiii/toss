@@ -85,12 +85,3 @@ export function extractDomain(url: string): string {
     return url
   }
 }
-
-/**
- * Check if URL is an image
- */
-export function isImageUrl(url: string): boolean {
-  const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.bmp']
-  const lowercaseUrl = url.toLowerCase()
-  return imageExtensions.some(ext => lowercaseUrl.includes(ext))
-}

@@ -39,16 +39,6 @@ function base64ToPendingFile(base64: string, name: string, type: string) {
   return new File([bytes], name, { type })
 }
 
-export function createLocalPendingTransferFile(file: File): PendingTransferFile {
-  return {
-    id: generateId(),
-    name: file.name,
-    resolveFile: async () => file,
-    size: file.size,
-    type: file.type,
-  }
-}
-
 export function createRemotePendingTransferFile(input: RemotePendingTransferFileInput): PendingTransferFile {
   return {
     ...input,

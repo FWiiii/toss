@@ -17,11 +17,11 @@ import { Input } from '@/components/ui/input'
 import { useJoinCode } from '@/hooks/use-join-code'
 import { useAppRuntime } from '@/lib/app-runtime'
 import { STATUS_TONES } from '@/lib/design-tokens'
+import { formatRoomCode, ROOM_CODE_LENGTH, sanitizeRoomCode } from '@/lib/room-code'
 import { useTransfer } from '@/lib/transfer-context'
 import { cn } from '@/lib/utils'
 
 const CARD_CLASS = 'panel-surface relative overflow-hidden p-4'
-const ROOM_CODE_SANITIZE_REGEX = /[^A-Z0-9]/g
 const QRCodeDisplay = lazy(
   () => import('@/components/qr-code-display').then(mod => ({ default: mod.QRCodeDisplay })),
 )
@@ -118,10 +118,6 @@ export function RoomPanel() {
     }
   }
 
-  const formatCode = (code: string) => {
-    return `${code.slice(0, 3)} ${code.slice(3)}`
-  }
-
   const joinHasError = connectionStatus === 'error' && Boolean(errorMessage)
   const roomCodeCopied = copyState === 'success'
   const roomCodeCopyFailed = copyState === 'error'
@@ -182,7 +178,7 @@ export function RoomPanel() {
               {roomCodeCopied && <div className="pointer-events-none absolute inset-0 delight-sweep-overlay" aria-hidden="true" />}
               <div className="relative flex min-w-0 items-center justify-center rounded-lg px-8 py-0.5">
                 <span className="min-w-0 text-center font-mono text-2xl font-bold tracking-[0.14em] text-foreground sm:text-3xl sm:tracking-[0.16em]">
-                  {formatCode(roomCode)}
+                  {formatRoomCode(roomCode)}
                 </span>
                 <Button
                   variant={roomCodeCopied ? 'outline' : 'ghost'}
@@ -314,7 +310,7 @@ export function RoomPanel() {
               id={joinInputId}
               placeholder="输入房间代码"
               value={inputCode}
-              onChange={e => setInputCode(e.target.value.toUpperCase().replace(ROOM_CODE_SANITIZE_REGEX, '').slice(0, 6))}
+              onChange={e => setInputCode(sanitizeRoomCode(e.target.value).slice(0, ROOM_CODE_LENGTH))}
               className="h-12 border-border bg-muted/40 text-center text-lg font-mono uppercase tracking-[0.18em]"
               maxLength={6}
               disabled={isCreatingRoom || isJoiningRoom}

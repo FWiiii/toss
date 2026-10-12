@@ -18,6 +18,7 @@ export function ImagePreviewDialog({ image, onClose, onDownload }: ImagePreviewD
       <DialogContent
         className="max-w-[90vw] max-h-[90vh] p-0 bg-black/95 border-none overflow-hidden"
         showCloseButton={false}
+        aria-describedby={undefined}
       >
         <DialogTitle className="sr-only">图片预览</DialogTitle>
         <div className="relative w-full h-full flex items-center justify-center bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.08),transparent_55%)]">

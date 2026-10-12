@@ -9,7 +9,6 @@ interface ImageThumbnailProps {
   alt: string
   className?: string
   thumbnailSize?: number // Max dimension for thumbnail
-  onClick?: () => void
 }
 
 type LoadingState = 'idle' | 'loading' | 'loaded' | 'error'
@@ -64,7 +63,6 @@ export function ImageThumbnail({
   alt,
   className,
   thumbnailSize = 200,
-  onClick,
 }: ImageThumbnailProps) {
   const [{ shouldLoad, loadingState }, dispatch] = useReducer(
     thumbnailStateReducer,
@@ -122,11 +120,9 @@ export function ImageThumbnail({
       ref={containerRef}
       className={cn(
         'relative flex w-full items-center justify-center overflow-hidden rounded-lg bg-muted/50',
-        onClick && 'cursor-pointer',
         className,
       )}
       style={{ height: `${frameHeight}px` }}
-      onClick={onClick}
     >
       {(loadingState === 'idle' || loadingState === 'loading') && (
         <div className="absolute inset-0 flex items-center justify-center animate-pulse">

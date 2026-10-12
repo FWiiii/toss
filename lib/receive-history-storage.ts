@@ -1,4 +1,5 @@
 import type { ReceiveHistoryEntry } from './types'
+import { openIndexedDb } from './indexed-db'
 
 const RECEIVE_HISTORY_DB_NAME = 'toss-receive-history-db'
 const RECEIVE_HISTORY_STORE = 'receive-history'
@@ -28,15 +29,9 @@ function pruneFallbackEntries(now: number) {
 }
 
 function openReceiveHistoryDb(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(RECEIVE_HISTORY_DB_NAME, 1)
-    request.onerror = () => reject(request.error)
-    request.onsuccess = () => resolve(request.result)
-    request.onupgradeneeded = (event) => {
-      const db = (event.target as IDBOpenDBRequest).result
-      if (!db.objectStoreNames.contains(RECEIVE_HISTORY_STORE)) {
-        db.createObjectStore(RECEIVE_HISTORY_STORE, { keyPath: 'id' })
-      }
+  return openIndexedDb(RECEIVE_HISTORY_DB_NAME, 1, (db) => {
+    if (!db.objectStoreNames.contains(RECEIVE_HISTORY_STORE)) {
+      db.createObjectStore(RECEIVE_HISTORY_STORE, { keyPath: 'id' })
     }
   })
 }

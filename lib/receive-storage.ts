@@ -1,4 +1,5 @@
 import type { NativeTransferFile } from './types'
+import { openIndexedDb } from './indexed-db'
 
 /**
  * 原生接收结果：文件已在 App 私有目录落盘，WebView 只持有 URI，
@@ -61,19 +62,12 @@ function supportsOPFS() {
 }
 
 async function openReceiveDatabase(): Promise<IDBDatabase> {
-  return await new Promise((resolve, reject) => {
-    const request = indexedDB.open(RECEIVE_DB_NAME, 1)
-
-    request.onerror = () => reject(request.error)
-    request.onsuccess = () => resolve(request.result)
-    request.onupgradeneeded = () => {
-      const db = request.result
-      if (!db.objectStoreNames.contains(RECEIVE_STORE_NAME)) {
-        const store = db.createObjectStore(RECEIVE_STORE_NAME, {
-          autoIncrement: true,
-        })
-        store.createIndex(RECEIVE_TRANSFER_INDEX, 'transferId', { unique: false })
-      }
+  return await openIndexedDb(RECEIVE_DB_NAME, 1, (db) => {
+    if (!db.objectStoreNames.contains(RECEIVE_STORE_NAME)) {
+      const store = db.createObjectStore(RECEIVE_STORE_NAME, {
+        autoIncrement: true,
+      })
+      store.createIndex(RECEIVE_TRANSFER_INDEX, 'transferId', { unique: false })
     }
   })
 }

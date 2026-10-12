@@ -6,9 +6,8 @@
 import type { AppRuntime } from './app-runtime'
 import type { ConnectionRefs } from './transfer-connection'
 import { generateRoomCode, getPeerOptions, PEER_PREFIX } from './peer-config'
+import { ROOM_CODE_LENGTH, sanitizeRoomCode } from './room-code'
 import { bindIncomingScreenShareCall } from './screen-share'
-
-const ROOM_CODE_SANITIZE_REGEX = /[^A-Z0-9]/g
 
 export interface RoomCallbacks {
   setIsCreatingRoom: (creating: boolean) => void
@@ -50,7 +49,16 @@ export function createRoomManagement(
   // 且组件卸载后仍可能继续创建 Peer
   const MAX_CREATE_ROOM_ATTEMPTS = 5
 
+  // leaveRoom 用延迟重置收尾；立刻重新建房或加入房间时必须先取消它，
+  // 否则那次清理会抹掉刚建立的新会话。
+  let pendingLeaveReset: NodeJS.Timeout | null = null
+  const cancelPendingLeaveReset = () => {
+    clearTimeout(pendingLeaveReset ?? undefined)
+    pendingLeaveReset = null
+  }
+
   const attemptCreateRoom = async (attemptsLeft: number) => {
+    cancelPendingLeaveReset()
     setIsCreatingRoom(true)
 
     try {
@@ -128,8 +136,9 @@ export function createRoomManagement(
   }
 
   const joinRoom = async (code: string) => {
-    const normalizedCode = code.toUpperCase().replace(ROOM_CODE_SANITIZE_REGEX, '')
-    if (normalizedCode.length !== 6) {
+    cancelPendingLeaveReset()
+    const normalizedCode = sanitizeRoomCode(code)
+    if (normalizedCode.length !== ROOM_CODE_LENGTH) {
       setErrorMessage('请输入6位房间代码')
       return
     }
@@ -229,7 +238,8 @@ export function createRoomManagement(
       await broadcastToConnections({ type: 'room-dissolved' })
     }
 
-    setTimeout(() => {
+    pendingLeaveReset = setTimeout(() => {
+      pendingLeaveReset = null
       cleanupAll()
 
       setRoomCode(null)

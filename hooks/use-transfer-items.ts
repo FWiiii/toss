@@ -20,7 +20,7 @@ export function useTransferItems() {
   const MESSAGE_DEBOUNCE_TIME = 3000 // 3秒内相同消息不重复显示
 
   // Revoke all tracked Blob URLs to free memory
-  const revokeAllBlobUrls = useCallback(() => {
+  const cleanup = useCallback(() => {
     blobUrlsRef.current.forEach((url) => {
       try {
         URL.revokeObjectURL(url)
@@ -157,23 +157,6 @@ export function useTransferItems() {
     })
   }, [revokeTrackedBlobUrls])
 
-  // Cleanup function to be called on unmount
-  const cleanup = useCallback(() => {
-    blobUrlsRef.current.forEach((url) => {
-      try {
-        URL.revokeObjectURL(url)
-      }
-      catch {}
-
-      const cleanup = blobUrlCleanupRef.current.get(url)
-      if (cleanup) {
-        void cleanup()
-        blobUrlCleanupRef.current.delete(url)
-      }
-    })
-    blobUrlsRef.current.clear()
-  }, [])
-
   return {
     items,
     setItems,
@@ -184,7 +167,6 @@ export function useTransferItems() {
     removeItem,
     clearHistory,
     createTrackedBlobUrl,
-    revokeAllBlobUrls,
     cleanup,
   }
 }

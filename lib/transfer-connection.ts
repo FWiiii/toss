@@ -39,6 +39,10 @@ import { isInboundPeerPayloadAllowed, validateIncomingRawPeerPayload, validateIn
 
 const IMAGE_FILE_NAME_REGEX = /\.(?:jpg|jpeg|png|gif|webp|svg)$/i
 
+// 远端可反复推送 file-cancel / file-error，这些标记必须有上限，
+// 否则异常或恶意的对端可以在会话内无限撑大内存。
+const MAX_REMOTE_TRANSFER_MARKERS = 1024
+
 export interface ActiveReceiveBuffer {
   peerId: string
   name: string
@@ -313,6 +317,7 @@ export function createSetupConnection(
     let connectionTimeout: NodeJS.Timeout | null = null
     let disconnectedTimer: NodeJS.Timeout | null = null
     let staleConnectionTimer: NodeJS.Timeout | null = null
+    let connectionTypeProbeTimer: NodeJS.Timeout | null = null
     // PeerJS does not await async data handlers, so preserve protocol order per connection.
     const processIncomingData = createSequentialAsyncProcessor()
     const disconnectedGracePeriodMs = Math.min(
@@ -325,13 +330,15 @@ export function createSetupConnection(
     // 連線遺失(close / error / 底層傳輸 failed)時的共用清理:移除該連線的所有狀態,
     // 之後才能由 attemptReconnect 重建連線。
     const teardownLostConnection = () => {
-      if (connectionTimeout)
-        clearTimeout(connectionTimeout)
-      if (disconnectedTimer)
-        clearTimeout(disconnectedTimer)
+      clearTimeout(connectionTimeout ?? undefined)
+      clearTimeout(disconnectedTimer ?? undefined)
       if (staleConnectionTimer) {
         clearInterval(staleConnectionTimer)
         staleConnectionTimer = null
+      }
+      if (connectionTypeProbeTimer) {
+        clearTimeout(connectionTypeProbeTimer)
+        connectionTypeProbeTimer = null
       }
       releaseConnectionAttempt()
       connectionsRef.current.delete(conn.peer)
@@ -503,17 +510,26 @@ export function createSetupConnection(
         }, 1000)
       }
 
+      let connectionTypeProbeAttempts = 0
+      const maxConnectionTypeProbeAttempts = 30
       const detectType = async () => {
         const pc = conn.peerConnection as RTCPeerConnection | undefined
-        if (pc && pc.connectionState === 'connected') {
+        if (!pc) {
+          return
+        }
+        if (pc.connectionState === 'connected') {
           const info = await detectConnectionType(pc)
           setConnectionInfo(info)
+          return
         }
-        else if (pc) {
-          setTimeout(detectType, 1000)
+        connectionTypeProbeAttempts += 1
+        // 未连上时每秒重试，但必须有上限，否则会留下永不停止的定时器。
+        if (connectionTypeProbeAttempts >= maxConnectionTypeProbeAttempts) {
+          return
         }
+        connectionTypeProbeTimer = setTimeout(detectType, 1000)
       }
-      setTimeout(detectType, 500)
+      connectionTypeProbeTimer = setTimeout(detectType, 500)
     })
 
     conn.on('close', () => {
@@ -1118,15 +1134,19 @@ export function createSetupConnection(
           })
         }
 
-        if (decryptedData.itemId) {
+        if (decryptedData.itemId && refs.cancelledTransfersRef.current.size < MAX_REMOTE_TRANSFER_MARKERS) {
           refs.cancelledTransfersRef.current.add(decryptedData.itemId)
         }
       }
       else if (decryptedData.type === 'file-error') {
         // 接收端无法落盘：停止发送并把该项标记为失败，不能显示成功。
         if (decryptedData.itemId) {
-          refs.failedTransfersRef.current.add(decryptedData.itemId)
-          refs.cancelledTransfersRef.current.add(decryptedData.itemId)
+          if (refs.failedTransfersRef.current.size < MAX_REMOTE_TRANSFER_MARKERS) {
+            refs.failedTransfersRef.current.add(decryptedData.itemId)
+          }
+          if (refs.cancelledTransfersRef.current.size < MAX_REMOTE_TRANSFER_MARKERS) {
+            refs.cancelledTransfersRef.current.add(decryptedData.itemId)
+          }
         }
         callbacks.addSystemMessage(
           `对方无法接收文件：${decryptedData.reason}`,

@@ -1,8 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-
-const JOIN_CODE_REGEX = /^[A-Z0-9]{6}$/i
+import { isValidRoomCode, sanitizeRoomCode } from '@/lib/room-code'
 
 function readJoinCodeFromLocation() {
   if (typeof window === 'undefined') {
@@ -11,7 +10,7 @@ function readJoinCodeFromLocation() {
 
   const params = new URLSearchParams(window.location.search)
   const code = params.get('join')
-  return code && JOIN_CODE_REGEX.test(code) ? code.toUpperCase() : null
+  return code && isValidRoomCode(code) ? sanitizeRoomCode(code) : null
 }
 
 /**

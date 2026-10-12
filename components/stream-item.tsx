@@ -41,19 +41,27 @@ export const StreamItem = memo(({ item, onStop }: StreamItemProps) => {
     }
 
     const stream = item.content as unknown as MediaStream
-    if (stream instanceof MediaStream) {
-      video.srcObject = stream
-      video.onloadedmetadata = () => {
-        video.play().then(() => {
-          setIsPlaying(true)
-        }).catch(console.error)
-      }
+    if (!(stream instanceof MediaStream)) {
+      return
     }
 
+    video.srcObject = stream
+    video.onloadedmetadata = () => {
+      video.play().then(() => {
+        setIsPlaying(true)
+      }).catch(console.error)
+    }
+
+    const [track] = stream.getVideoTracks()
+    const handleTrackEnded = () => setIsPlaying(false)
+    track?.addEventListener('ended', handleTrackEnded)
+
     return () => {
-      if (video.srcObject) {
-        video.srcObject = null
-      }
+      video.onloadedmetadata = null
+      track?.removeEventListener('ended', handleTrackEnded)
+      setIsPlaying(false)
+      setDuration(0)
+      video.srcObject = null
     }
   }, [item.content])
 
@@ -129,45 +137,3 @@ export const StreamItem = memo(({ item, onStop }: StreamItemProps) => {
 })
 
 StreamItem.displayName = 'StreamItem'
-
-interface IncomingStreamOverlayProps {
-  item: TransferItem
-  onAccept?: () => void
-  onReject?: () => void
-}
-
-export const IncomingStreamOverlay = memo(({ item, onAccept, onReject }: IncomingStreamOverlayProps) => {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-      <div className="bg-card rounded-lg border border-border shadow-xl p-6 max-w-sm w-full mx-4">
-        <div className="flex items-center gap-3 mb-4">
-          <div className="w-12 h-12 rounded-full bg-accent/20 flex items-center justify-center">
-            <Monitor className="w-6 h-6 text-accent" />
-          </div>
-          <div>
-            <h3 className="font-medium">屏幕共享请求</h3>
-            <p className="text-sm text-muted-foreground">
-              {item.direction === 'sent' ? '你' : '对方'}
-              想要共享
-              {formatStreamType(item.streamType)}
-            </p>
-          </div>
-        </div>
-        <div className="flex gap-3">
-          {onReject && (
-            <Button variant="outline" className="flex-1" onClick={onReject}>
-              拒绝
-            </Button>
-          )}
-          {onAccept && (
-            <Button className="flex-1" onClick={onAccept}>
-              接受
-            </Button>
-          )}
-        </div>
-      </div>
-    </div>
-  )
-})
-
-IncomingStreamOverlay.displayName = 'IncomingStreamOverlay'

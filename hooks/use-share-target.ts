@@ -1,7 +1,6 @@
 'use client'
 
 import type { PendingTransferFile } from '@/lib/pending-transfer-file'
-import type { SharedData } from '@/lib/utils'
 import { useCallback, useEffect, useState } from 'react'
 import {
   createRemotePendingTransferFile,
@@ -11,8 +10,6 @@ import {
   clearShareDataFromDB,
   getShareDataFromDB,
 } from '@/lib/utils'
-
-export type { SharedData }
 
 interface FileData { data: string, name: string, size: number, type: string }
 
@@ -48,13 +45,13 @@ function combineTextParts(...parts: (string | undefined | null)[]): string {
 }
 
 export function useShareTarget() {
-  const [sharedData, setSharedData] = useState<SharedData | null>(null)
   const [sharedFiles, setSharedFiles] = useState<PendingTransferFile[]>([])
   const [sharedText, setSharedText] = useState<string>('')
   const [shareLoadError, setShareLoadError] = useState<string | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
+    let cancelled = false
+
     async function checkForSharedData() {
       const urlParams = new URLSearchParams(window.location.search)
       const hasShared = urlParams.get('shared') === 'true'
@@ -62,20 +59,25 @@ export function useShareTarget() {
 
       if (!hasShared) {
         setShareLoadError(null)
-        setIsLoading(false)
         return
       }
 
-      // Remove the query parameters from URL
-      window.history.replaceState({}, '', '/')
+      // 只移除分享参数，保留当前路径与其余查询参数
+      const cleanedUrl = new URL(window.location.href)
+      cleanedUrl.searchParams.delete('shared')
+      cleanedUrl.searchParams.delete('share_id')
+      window.history.replaceState({}, '', cleanedUrl)
       setShareLoadError(null)
 
       let foundData = false
 
       // Method 1: Try to get data from IndexedDB (Service Worker method)
       const dbData = await getShareDataFromDB()
+      if (cancelled) {
+        return
+      }
+
       if (dbData) {
-        setSharedData(dbData)
         setSharedFiles(
           dbData.files
             .filter(file => file.data)
@@ -142,30 +144,33 @@ export function useShareTarget() {
         catch (e) {
           console.error('Error fetching share data:', e)
         }
+
+        if (cancelled) {
+          return
+        }
       }
 
       if (!foundData) {
         setShareLoadError('分享内容已过期或导入失败，请重新分享。')
       }
-
-      setIsLoading(false)
     }
 
-    checkForSharedData()
+    void checkForSharedData()
+
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   const clearSharedData = useCallback(() => {
-    setSharedData(null)
     setSharedFiles([])
     setSharedText('')
   }, [])
 
   return {
-    sharedData,
     sharedFiles,
     sharedText,
     shareLoadError,
-    isLoading,
     hasSharedContent: sharedFiles.length > 0 || sharedText.length > 0,
     clearSharedData,
   }

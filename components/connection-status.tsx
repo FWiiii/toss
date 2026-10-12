@@ -200,13 +200,16 @@ export function ConnectionStatusDisplay({
     = connectionQuality && connectionQuality.latency !== null
       ? STATUS_TONES[getQualityTone(connectionQuality.quality)]
       : null
+  const hasQualityMetrics = Boolean(
+    connectionQuality
+    && (connectionQuality.latency !== null || connectionQuality.bandwidth !== null),
+  )
   const hasDiagnostics
     = status === 'connected'
       && peerCount > 0
       && (
         connectionInfo?.type !== 'unknown'
-        || connectionQuality?.latency !== null
-        || connectionQuality?.bandwidth !== null
+        || hasQualityMetrics
         || isEncrypted
       )
   const diagnosticsExpanded = showDiagnostics && hasDiagnostics

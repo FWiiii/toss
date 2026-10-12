@@ -12,6 +12,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { useAppRuntime } from '@/lib/app-runtime'
+import { formatRoomCode } from '@/lib/room-code'
 import { buildRoomUrl } from '@/lib/room-url'
 import { cn } from '@/lib/utils'
 
@@ -29,7 +30,7 @@ export function QRCodeDisplay({ roomCode, open, onOpenChange }: QRCodeDisplayPro
   const currentOrigin = !native && typeof window !== 'undefined' ? window.location.origin : ''
 
   const roomUrl = buildRoomUrl(safeRoomCode, publicRoomOrigin, currentOrigin, native)
-  const formattedCode = safeRoomCode ? `${safeRoomCode.slice(0, 3)} ${safeRoomCode.slice(3)}` : '--'
+  const formattedCode = safeRoomCode ? formatRoomCode(safeRoomCode) : '--'
 
   const handleOpenChange = useCallback((nextOpen: boolean) => {
     if (!nextOpen) {

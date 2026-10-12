@@ -51,6 +51,13 @@ function getOutcomeCopy(outcome: ReceiveHistoryOutcome) {
         label: '失败',
         tone: 'text-destructive',
       }
+    default:
+      // 历史记录来自存储，可能带有未知结果，降级显示而不是崩溃。
+      return {
+        icon: CircleAlert,
+        label: '未知',
+        tone: 'text-muted-foreground',
+      }
   }
 }
 
@@ -74,28 +81,30 @@ function ReceiveHistoryRow({
   const OutcomeIcon = outcome.icon
 
   return (
-    <button
-      type="button"
-      onClick={onToggle}
-      aria-expanded={expanded}
-      aria-controls={`${entry.id}-details`}
-      className="w-full rounded-lg border border-border/70 bg-background/60 px-3 py-3 text-left transition-colors hover:bg-muted/60"
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 space-y-1">
-          <div className="flex items-center gap-2">
-            <OutcomeIcon className={cn('h-4 w-4 shrink-0', outcome.tone)} />
-            <span className="text-sm font-medium text-foreground">{entry.deviceName}</span>
-            <span className={cn('text-xs', outcome.tone)}>{outcome.label}</span>
+    <div className="w-full rounded-lg border border-border/70 bg-background/60 transition-colors hover:bg-muted/60">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={expanded}
+        aria-controls={`${entry.id}-details`}
+        className="w-full px-3 py-3 text-left"
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 space-y-1">
+            <div className="flex items-center gap-2">
+              <OutcomeIcon className={cn('h-4 w-4 shrink-0', outcome.tone)} />
+              <span className="text-sm font-medium text-foreground">{entry.deviceName}</span>
+              <span className={cn('text-xs', outcome.tone)}>{outcome.label}</span>
+            </div>
+            <p className="truncate text-sm text-foreground">{buildEntrySummary(entry)}</p>
+            <p className="text-xs text-muted-foreground">{formatReceiveHistoryTime(entry.timestamp)}</p>
           </div>
-          <p className="truncate text-sm text-foreground">{buildEntrySummary(entry)}</p>
-          <p className="text-xs text-muted-foreground">{formatReceiveHistoryTime(entry.timestamp)}</p>
+          <ChevronRight className={cn('mt-0.5 h-4 w-4 shrink-0 text-muted-foreground transition-transform', expanded && 'rotate-90')} />
         </div>
-        <ChevronRight className={cn('mt-0.5 h-4 w-4 shrink-0 text-muted-foreground transition-transform', expanded && 'rotate-90')} />
-      </div>
+      </button>
 
       {expanded && (
-        <div id={`${entry.id}-details`} className="mt-3 space-y-3 border-t border-border/70 pt-3">
+        <div id={`${entry.id}-details`} className="space-y-3 border-t border-border/70 px-3 py-3">
           <div className="flex flex-wrap gap-2">
             {entry.summary.riskFlags.map(flag => (
               <span key={flag} className="rounded-full bg-muted px-2 py-1 text-[11px] text-muted-foreground">
@@ -111,7 +120,7 @@ function ReceiveHistoryRow({
 
           <div className="space-y-1">
             {entry.summary.sampleFiles.map(file => (
-              <div key={`${file.name}-${file.size}`} className="flex items-center justify-between gap-3 text-xs">
+              <div key={`${file.name}-${file.size}-${file.type}`} className="flex items-center justify-between gap-3 text-xs">
                 <span className="min-w-0 truncate text-foreground">{file.name}</span>
                 <span className="shrink-0 text-muted-foreground">{formatFileSize(file.size)}</span>
               </div>
@@ -123,26 +132,20 @@ function ReceiveHistoryRow({
           )}
         </div>
       )}
-    </button>
+    </div>
   )
 }
 
 export function ReceiveHistoryPanel({
   entries,
-  isExpanded,
   activeOutcome,
-  showAllLabel = '查看全部',
   onOutcomeChange,
-  onShowAll,
   onBack,
   onClearHistory,
 }: {
   entries: ReceiveHistoryEntry[]
-  isExpanded: boolean
   activeOutcome: ReceiveHistoryFilter
-  showAllLabel?: string
   onOutcomeChange: (outcome: ReceiveHistoryFilter) => void
-  onShowAll: () => void
   onBack: () => void
   onClearHistory: () => void
 }) {
@@ -167,59 +170,6 @@ export function ReceiveHistoryPanel({
   const handleOutcomeChange = (outcome: ReceiveHistoryFilter) => {
     setVisibleEntryLimit(50)
     onOutcomeChange(outcome)
-  }
-
-  if (!isExpanded) {
-    const recentEntries = entries.slice(0, 5)
-
-    if (recentEntries.length === 0) {
-      return (
-        <section className="border-b border-border/70 px-4 py-3">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Inbox className="h-4 w-4" />
-            <span>暂无接收记录</span>
-          </div>
-        </section>
-      )
-    }
-
-    return (
-      <section className="border-b border-border/70 px-4 py-3">
-        <div className="flex items-center justify-between gap-3">
-          <div className="space-y-1">
-            <h3 className="text-sm font-medium text-foreground">最近接收</h3>
-            <p className="text-xs text-muted-foreground">收件箱会保留最近 180 天的接收记录</p>
-          </div>
-          <Button variant="ghost" size="sm" onClick={onShowAll}>
-            {showAllLabel}
-          </Button>
-        </div>
-
-        <div className="mt-3 space-y-2">
-          {recentEntries.map((entry) => {
-            const outcome = getOutcomeCopy(entry.outcome)
-            const OutcomeIcon = outcome.icon
-
-            return (
-              <div key={entry.id} className="flex items-center justify-between gap-3 rounded-lg border border-border/70 px-3 py-2">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <OutcomeIcon className={cn('h-4 w-4 shrink-0', outcome.tone)} />
-                    <p className="truncate text-sm text-foreground">{entry.primaryFileName}</p>
-                  </div>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {entry.deviceName}
-                    {' · '}
-                    {formatReceiveHistoryTime(entry.timestamp)}
-                  </p>
-                </div>
-                <span className={cn('shrink-0 text-xs', outcome.tone)}>{outcome.label}</span>
-              </div>
-            )
-          })}
-        </div>
-      </section>
-    )
   }
 
   return (

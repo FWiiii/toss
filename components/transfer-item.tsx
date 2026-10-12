@@ -103,6 +103,127 @@ function SystemMessage({ content }: { content: string }) {
   return <p className="break-words px-1 py-0.5 text-xs leading-relaxed text-muted-foreground">{content}</p>
 }
 
+// 图片与文件条目共用同一套状态行，避免两处再次漂移。
+interface TransferStatusRowProps {
+  name: string
+  transferredBytes: number
+  totalSize: number
+}
+
+function CancelledItemRow({ name, transferredBytes, totalSize }: TransferStatusRowProps) {
+  return (
+    <div className="flex items-start gap-3 opacity-60">
+      <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center shrink-0">
+        <Ban className="w-5 h-5 text-muted-foreground" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium text-foreground truncate">{name}</p>
+        <p className="text-xs text-muted-foreground mt-1">
+          已取消 ·
+          {' '}
+          {formatFileSize(transferredBytes)}
+          {' '}
+          /
+          {' '}
+          {formatFileSize(totalSize)}
+        </p>
+      </div>
+    </div>
+  )
+}
+
+function FailedItemRow({ name }: { name: string }) {
+  return (
+    <div className="flex items-start gap-3 opacity-90">
+      <div className={cn('w-10 h-10 rounded-lg flex items-center justify-center shrink-0', STATUS_TONES.danger.iconSurface)}>
+        <AlertCircle className={cn('w-5 h-5', STATUS_TONES.danger.inline)} />
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium text-foreground truncate">{name}</p>
+        <p className={cn('text-xs mt-1', STATUS_TONES.danger.inline)}>传输未完成，请等待对方确认或稍后重试</p>
+      </div>
+    </div>
+  )
+}
+
+function ProgressReadout({
+  transferredBytes,
+  totalSize,
+  progress,
+  remainingTime,
+  speed,
+}: {
+  transferredBytes: number
+  totalSize: number
+  progress: number
+  remainingTime?: number
+  speed?: number
+}) {
+  return (
+    <div className="flex items-center justify-between mt-1.5">
+      <p className="text-xs text-muted-foreground">
+        {formatFileSize(transferredBytes)}
+        {' '}
+        /
+        {formatFileSize(totalSize)}
+        <span className="mx-1">·</span>
+        {progress}
+        %
+      </p>
+      <div className="flex items-center gap-2">
+        {typeof remainingTime === 'number' && remainingTime > 0 && (
+          <p className="text-xs text-muted-foreground">
+            {formatTimeRemaining(remainingTime)}
+          </p>
+        )}
+        {typeof speed === 'number' && speed > 0 && (
+          <p className="text-xs text-accent font-medium">
+            {formatSpeed(speed)}
+          </p>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function SaveFileButton({
+  item,
+  native,
+  kind,
+  onSaveFile,
+  onDownload,
+}: {
+  item: TransferItem
+  native: boolean
+  kind: string
+  onSaveFile?: (item: TransferItem) => void
+  onDownload: (url: string, name?: string) => void
+}) {
+  const name = item.name || kind
+  const action = native ? '保存' : '下载'
+
+  return (
+    <Button
+      variant="ghost"
+      size="icon-sm"
+      onClick={(e) => {
+        e.stopPropagation()
+        if (native) {
+          onSaveFile?.(item)
+        }
+        else {
+          onDownload(item.content, item.name)
+        }
+      }}
+      className="shrink-0 bg-background/80 text-foreground/80 hover:bg-background hover:text-foreground"
+      aria-label={`${action}${kind} ${name}`}
+      title={`${action}${kind} ${name}`}
+    >
+      <Download className="w-4 h-4" />
+    </Button>
+  )
+}
+
 // Image item component
 function ImageItem({
   item,
@@ -129,39 +250,11 @@ function ImageItem({
 
   // Show cancelled state
   if (isCancelled) {
-    return (
-      <div className="flex items-start gap-3 opacity-60">
-        <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center shrink-0">
-          <Ban className="w-5 h-5 text-muted-foreground" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-foreground truncate">{imageName}</p>
-          <p className="text-xs text-muted-foreground mt-1">
-            已取消 ·
-            {' '}
-            {formatFileSize(transferredBytes)}
-            {' '}
-            /
-            {' '}
-            {formatFileSize(totalSize)}
-          </p>
-        </div>
-      </div>
-    )
+    return <CancelledItemRow name={imageName} transferredBytes={transferredBytes} totalSize={totalSize} />
   }
 
   if (isError) {
-    return (
-      <div className="flex items-start gap-3 opacity-90">
-        <div className={cn('w-10 h-10 rounded-lg flex items-center justify-center shrink-0', STATUS_TONES.danger.iconSurface)}>
-          <AlertCircle className={cn('w-5 h-5', STATUS_TONES.danger.inline)} />
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-foreground truncate">{imageName}</p>
-          <p className={cn('text-xs mt-1', STATUS_TONES.danger.inline)}>传输未完成，请等待对方确认或稍后重试</p>
-        </div>
-      </div>
-    )
+    return <FailedItemRow name={imageName} />
   }
 
   // Show file-style view when transferring (no preview available yet)
@@ -180,30 +273,13 @@ function ImageItem({
           {/* Progress bar */}
           <ProgressBar progress={progress} className="mt-2" />
 
-          {/* Progress info */}
-          <div className="flex items-center justify-between mt-1.5">
-            <p className="text-xs text-muted-foreground">
-              {formatFileSize(transferredBytes)}
-              {' '}
-              /
-              {formatFileSize(totalSize)}
-              <span className="mx-1">·</span>
-              {progress}
-              %
-            </p>
-            <div className="flex items-center gap-2">
-              {item.remainingTime && item.remainingTime > 0 && (
-                <p className="text-xs text-muted-foreground">
-                  {formatTimeRemaining(item.remainingTime)}
-                </p>
-              )}
-              {item.speed && item.speed > 0 && (
-                <p className="text-xs text-accent font-medium">
-                  {formatSpeed(item.speed)}
-                </p>
-              )}
-            </div>
-          </div>
+          <ProgressReadout
+            transferredBytes={transferredBytes}
+            totalSize={totalSize}
+            progress={progress}
+            remainingTime={item.remainingTime}
+            speed={item.speed}
+          />
         </div>
         {/* Cancel button */}
         {onCancel && (
@@ -253,37 +329,15 @@ function ImageItem({
             {item.direction === 'sent' ? '已发送' : '已接收'}
           </p>
         </div>
-        {item.direction === 'received' && (native
-          ? (
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onSaveFile?.(item)
-                }}
-                className="shrink-0 bg-background/80 text-foreground/80 hover:bg-background hover:text-foreground"
-                aria-label={`保存图片 ${imageName}`}
-                title={`保存图片 ${imageName}`}
-              >
-                <Download className="w-4 h-4" />
-              </Button>
-            )
-          : (
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onDownload(item.content, item.name)
-                }}
-                className="shrink-0 bg-background/80 text-foreground/80 hover:bg-background hover:text-foreground"
-                aria-label={`下载图片 ${imageName}`}
-                title={`下载图片 ${imageName}`}
-              >
-                <Download className="w-4 h-4" />
-              </Button>
-            ))}
+        {item.direction === 'received' && (
+          <SaveFileButton
+            item={item}
+            native={native}
+            kind="图片"
+            onSaveFile={onSaveFile}
+            onDownload={onDownload}
+          />
+        )}
       </div>
     </div>
   )
@@ -314,39 +368,11 @@ function FileItem({
 
   // Show cancelled state
   if (isCancelled) {
-    return (
-      <div className="flex items-start gap-3 opacity-60">
-        <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center shrink-0">
-          <Ban className="w-5 h-5 text-muted-foreground" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-foreground truncate">{fileName}</p>
-          <p className="text-xs text-muted-foreground mt-1">
-            已取消 ·
-            {' '}
-            {formatFileSize(transferredBytes)}
-            {' '}
-            /
-            {' '}
-            {formatFileSize(totalSize)}
-          </p>
-        </div>
-      </div>
-    )
+    return <CancelledItemRow name={fileName} transferredBytes={transferredBytes} totalSize={totalSize} />
   }
 
   if (isError) {
-    return (
-      <div className="flex items-start gap-3 opacity-90">
-        <div className={cn('w-10 h-10 rounded-lg flex items-center justify-center shrink-0', STATUS_TONES.danger.iconSurface)}>
-          <AlertCircle className={cn('w-5 h-5', STATUS_TONES.danger.inline)} />
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-foreground truncate">{fileName}</p>
-          <p className={cn('text-xs mt-1', STATUS_TONES.danger.inline)}>传输未完成，请等待对方确认或稍后重试</p>
-        </div>
-      </div>
-    )
+    return <FailedItemRow name={fileName} />
   }
 
   return (
@@ -372,30 +398,13 @@ function FileItem({
                 {/* Progress bar */}
                 <ProgressBar progress={progress} className="mt-2" />
 
-                {/* Progress info */}
-                <div className="flex items-center justify-between mt-1.5">
-                  <p className="text-xs text-muted-foreground">
-                    {formatFileSize(transferredBytes)}
-                    {' '}
-                    /
-                    {formatFileSize(totalSize)}
-                    <span className="mx-1">·</span>
-                    {progress}
-                    %
-                  </p>
-                  <div className="flex items-center gap-2">
-                    {item.remainingTime && item.remainingTime > 0 && (
-                      <p className="text-xs text-muted-foreground">
-                        {formatTimeRemaining(item.remainingTime)}
-                      </p>
-                    )}
-                    {item.speed && item.speed > 0 && (
-                      <p className="text-xs text-accent font-medium">
-                        {formatSpeed(item.speed)}
-                      </p>
-                    )}
-                  </div>
-                </div>
+                <ProgressReadout
+                  transferredBytes={transferredBytes}
+                  totalSize={totalSize}
+                  progress={progress}
+                  remainingTime={item.remainingTime}
+                  speed={item.speed}
+                />
               </>
             )
           : (
@@ -424,31 +433,15 @@ function FileItem({
         </Button>
       )}
       {/* Download button after transfer */}
-      {item.direction === 'received' && !isTransferring && item.content && (native
-        ? (
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              onClick={() => onSaveFile?.(item)}
-              className="shrink-0 bg-background/80 text-foreground/80 hover:bg-background hover:text-foreground"
-              aria-label={`保存文件 ${fileName}`}
-              title={`保存文件 ${fileName}`}
-            >
-              <Download className="w-4 h-4" />
-            </Button>
-          )
-        : (
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              onClick={() => onDownload(item.content, item.name)}
-              className="shrink-0 bg-background/80 text-foreground/80 hover:bg-background hover:text-foreground"
-              aria-label={`下载文件 ${fileName}`}
-              title={`下载文件 ${fileName}`}
-            >
-              <Download className="w-4 h-4" />
-            </Button>
-          ))}
+      {item.direction === 'received' && !isTransferring && item.content && (
+        <SaveFileButton
+          item={item}
+          native={native}
+          kind="文件"
+          onSaveFile={onSaveFile}
+          onDownload={onDownload}
+        />
+      )}
     </div>
   )
 }
@@ -456,7 +449,12 @@ function FileItem({
 // Text item component
 function TextItem({ item }: { item: TransferItem }) {
   const [copied, setCopied] = useState(false)
+  const copiedResetTimerRef = useRef<number | null>(null)
   const segments = useMemo(() => parseTextWithLinks(item.content), [item.content])
+
+  useEffect(() => () => {
+    window.clearTimeout(copiedResetTimerRef.current ?? undefined)
+  }, [])
 
   const handleCopy = useCallback(async () => {
     try {
@@ -475,7 +473,11 @@ function TextItem({ item }: { item: TransferItem }) {
         document.body.removeChild(textArea)
       }
       setCopied(true)
-      setTimeout(setCopied, 2000, false)
+      window.clearTimeout(copiedResetTimerRef.current ?? undefined)
+      copiedResetTimerRef.current = window.setTimeout(() => {
+        copiedResetTimerRef.current = null
+        setCopied(false)
+      }, 2000)
     }
     catch (err) {
       console.error('Failed to copy:', err)

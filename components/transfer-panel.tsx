@@ -428,27 +428,34 @@ export function TransferPanel({ shareTarget }: { shareTarget?: TransferShareTarg
       return
     }
 
-    let cancelled = false
     const filesToSend = [...pendingShare.files]
     const textsToSend = [...pendingShare.texts]
     dispatchPendingShare({ type: 'replace', value: null })
 
     void (async () => {
-      if (cancelled) {
-        return
-      }
-      for (const text of textsToSend) {
-        if (text.trim()) {
-          sendText(text)
+      try {
+        for (const text of textsToSend) {
+          if (text.trim()) {
+            sendText(text)
+          }
+        }
+        if (filesToSend.length > 0) {
+          await sendFiles(filesToSend)
         }
       }
-      if (filesToSend.length > 0) {
-        await sendFiles(filesToSend)
+      catch (error) {
+        // 发送失败时把内容放回队列，避免待发分享被静默丢弃
+        console.error('Failed to send pending share:', error)
+        if (filesToSend.length > 0) {
+          dispatchPendingShare({ type: 'append-files', files: filesToSend })
+        }
+        for (const text of textsToSend) {
+          if (text.trim()) {
+            dispatchPendingShare({ type: 'append-text', text })
+          }
+        }
       }
     })()
-    return () => {
-      cancelled = true
-    }
   }, [isConnected, pendingShare, sendFiles, sendText])
 
   useEffect(() => {
@@ -901,11 +908,8 @@ export function TransferPanel({ shareTarget }: { shareTarget?: TransferShareTarg
             <div className={SCROLL_AREA_CLASS}>
               <ReceiveHistoryPanel
                 entries={receiveHistoryEntries}
-                isExpanded
                 activeOutcome={activeReceiveHistoryOutcome}
-                showAllLabel="查看全部"
                 onOutcomeChange={setActiveReceiveHistoryOutcome}
-                onShowAll={() => setShowReceiveHistory(true)}
                 onBack={() => setShowReceiveHistory(false)}
                 onClearHistory={() => setShowClearReceiveHistoryConfirm(true)}
               />
