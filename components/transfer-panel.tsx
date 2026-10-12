@@ -49,7 +49,8 @@ export interface TransferShareTarget {
 
 interface PendingShareState {
   files: PendingTransferInput[]
-  text: string
+  /** 每笔分享的文本各自成段，便于计数与逐笔发送。 */
+  texts: string[]
 }
 
 type PendingShareAction = { type: 'replace', value: PendingShareState | null }
@@ -63,14 +64,12 @@ function pendingShareReducer(state: PendingShareState | null, action: PendingSha
     case 'append-files':
       return {
         files: [...(state?.files ?? []), ...action.files],
-        text: state?.text ?? '',
+        texts: state?.texts ?? [],
       }
     case 'append-text':
       return {
         files: state?.files ?? [],
-        text: state?.text
-          ? `${state.text}\n\n${action.text}`
-          : action.text,
+        texts: [...(state?.texts ?? []), action.text],
       }
     default:
       return state
@@ -136,8 +135,10 @@ export function TransferPanel({ shareTarget }: { shareTarget?: TransferShareTarg
     false,
   )
   const [dropFeedbackLabel, setDropFeedbackLabel] = useState<string | null>(null)
-  const hasProcessedShareRef = useRef(false)
-  const hasShownShareLoadErrorRef = useRef(false)
+  // 已消费的分享内容快照。原生入口会在同一挂载实例上收到多笔分享，
+  // 因此不能只用一次性布尔闩锁；按内容识别可避免重复消费同批内容。
+  const consumedShareRef = useRef<{ files: TransferShareTarget['sharedFiles'], text: string } | null>(null)
+  const lastShownShareErrorRef = useRef<string | null>(null)
   const hasFocusedRef = useRef(false)
   const hasHighlightedComposerRef = useRef(false)
   const itemsEndRef = useRef<HTMLDivElement>(null)
@@ -210,15 +211,16 @@ export function TransferPanel({ shareTarget }: { shareTarget?: TransferShareTarg
 
   useEffect(() => {
     if (!shareLoadError) {
-      hasShownShareLoadErrorRef.current = false
+      lastShownShareErrorRef.current = null
       return
     }
-    if (hasShownShareLoadErrorRef.current) {
+    // 同一段文案只提示一次；出现新的错误仍会提示。
+    if (lastShownShareErrorRef.current === shareLoadError) {
       return
     }
 
     addSystemMessage(shareLoadError, true)
-    hasShownShareLoadErrorRef.current = true
+    lastShownShareErrorRef.current = shareLoadError
   }, [addSystemMessage, shareLoadError])
   const { receivedItems, outgoingItems, activityItems } = useMemo(() => {
     const receivedItems: typeof items = []
@@ -251,8 +253,8 @@ export function TransferPanel({ shareTarget }: { shareTarget?: TransferShareTarg
     if (pendingShare.files.length > 0) {
       segments.push(`${pendingShare.files.length} 个文件`)
     }
-    if (pendingShare.text.trim()) {
-      segments.push('1 段文本')
+    if (pendingShare.texts.length > 0) {
+      segments.push(`${pendingShare.texts.length} 段文本`)
     }
     return segments.join(' · ')
   }, [pendingShare])
@@ -376,45 +378,47 @@ export function TransferPanel({ shareTarget }: { shareTarget?: TransferShareTarg
     }
   }, [addSystemMessage, isConnected, sendFiles, sendText])
 
-  // Handle shared content from Web Share Target
+  // Handle shared content from native share (Android/iOS) and Web Share Target.
+  // 原生入口会在同一个挂载实例上收到多笔分享：内容被消费后必须复位闩锁，
+  // 否则第二笔起会被丢弃。
   useEffect(() => {
-    if (!hasSharedContent || hasProcessedShareRef.current) {
+    if (!hasSharedContent) {
+      consumedShareRef.current = null
       return
     }
 
-    let cancelled = false
+    // 同一批内容只消费一次；已消费过的引用不再重复处理。
+    // 新分享会写入新的数组／字符串引用，因此能被识别为下一批。
+    if (consumedShareRef.current
+      && consumedShareRef.current.files === sharedFiles
+      && consumedShareRef.current.text === sharedText) {
+      return
+    }
+
+    consumedShareRef.current = { files: sharedFiles, text: sharedText }
+
+    // 先快照并立即消费，避免 await 期间到达的新分享被随后的清空抹掉。
+    const filesToShare = [...sharedFiles]
+    const textToShare = sharedText
+    clearSharedData?.()
 
     if (isConnected) {
-      hasProcessedShareRef.current = true
       void (async () => {
-        if (cancelled) {
-          return
+        if (textToShare) {
+          sendText(textToShare)
         }
-        if (sharedText) {
-          sendText(sharedText)
-        }
-        await sendFiles(sharedFiles)
-        if (!cancelled) {
-          clearSharedData?.()
-        }
+        await sendFiles(filesToShare)
       })()
-      return () => {
-        cancelled = true
-      }
+      return
     }
-    else {
-      hasProcessedShareRef.current = true
-      dispatchPendingShare({
-        type: 'replace',
-        value: { files: [...sharedFiles], text: sharedText },
-      })
-      if (sharedText) {
-        setText(sharedText)
-      }
-      clearSharedData?.()
-      return () => {
-        cancelled = true
-      }
+
+    // 断连时累积，而不是覆盖上一笔未发送的分享。
+    if (filesToShare.length > 0) {
+      dispatchPendingShare({ type: 'append-files', files: filesToShare })
+    }
+    if (textToShare) {
+      dispatchPendingShare({ type: 'append-text', text: textToShare })
+      setText(textToShare)
     }
   }, [clearSharedData, hasSharedContent, isConnected, sendFiles, sendText, sharedFiles, sharedText])
 
@@ -426,15 +430,17 @@ export function TransferPanel({ shareTarget }: { shareTarget?: TransferShareTarg
 
     let cancelled = false
     const filesToSend = [...pendingShare.files]
-    const textToSend = pendingShare.text
+    const textsToSend = [...pendingShare.texts]
     dispatchPendingShare({ type: 'replace', value: null })
 
     void (async () => {
       if (cancelled) {
         return
       }
-      if (textToSend.trim()) {
-        sendText(textToSend)
+      for (const text of textsToSend) {
+        if (text.trim()) {
+          sendText(text)
+        }
       }
       if (filesToSend.length > 0) {
         await sendFiles(filesToSend)
