@@ -311,6 +311,10 @@ jobs:
     if: always() && needs.version.result == 'success' && needs.android.result == 'success'
     runs-on: ubuntu-latest
     steps:
+      # gh 靠本地 git remote 推导目标仓库；此 job 若未 checkout，
+      # gh release * 会以 "fatal: not a git repository" 失败。
+      # checkout 之外再用 GH_REPO 显式指定，双保险。
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           path: dist
@@ -318,6 +322,7 @@ jobs:
       - name: 產生說明並發布
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
           tag='${{ needs.version.outputs.tag }}'
