@@ -150,6 +150,13 @@ export const MAX_RECONNECT_ATTEMPTS = 10
 export const CONNECTION_TIMEOUT = 40000
 
 /**
+ * Connection timeout for reconnection attempts in milliseconds.
+ * 對方可能還在背景/尚未回到前景,較短的逾時讓失敗的嘗試盡快重排,
+ * 不必等完整逾時才再試一次。
+ */
+export const RECONNECT_CONNECTION_TIMEOUT = 20000
+
+/**
  * ICE disconnected grace period - allow brief disconnects to recover
  */
 export const ICE_DISCONNECTED_GRACE_PERIOD_MS = 8000

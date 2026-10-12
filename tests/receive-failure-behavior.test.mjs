@@ -70,7 +70,7 @@ function createConnectionHarness() {
   const conn = {
     open: true,
     peer: 'peer-1',
-    peerConnection: { connectionState: 'connected', iceConnectionState: 'connected' },
+    peerConnection: { connectionState: 'connected', iceConnectionState: 'connected', addEventListener() {} },
     metadata: null,
     send(payload) { sentPayloads.push(payload) },
     on(event, handler) { handlers.set(event, handler) },
@@ -108,7 +108,7 @@ test('receiver failure stops the sender instead of reporting success', async () 
   const { createSetupConnection } = await import('../lib/transfer-connection.ts')
   const harness = createConnectionHarness()
 
-  const setupConnection = createSetupConnection(harness.refs, harness.callbacks, null)
+  const setupConnection = createSetupConnection(harness.refs, harness.callbacks)
   await setupConnection(harness.conn, false)
   harness.refs.keyExchangePendingRef.current.delete('peer-1')
 

@@ -8,7 +8,7 @@ import type { ReceiveStorageHandle } from './receive-storage'
 import type { PeerHandshakeState } from './transfer-protocol'
 import type { LocalDeviceProfile, TrustedDeviceRecord } from './trusted-devices'
 import type { ConnectionInfo, IncomingFileOffer, PeerDeviceInfo, ReceiveHistoryOutcome } from './types'
-import { HEARTBEAT_TIMEOUT_MS } from './connection-quality'
+import { HEARTBEAT_TIMEOUT_MS, STALE_CONNECTION_CHECK_INTERVAL_MS, STALE_CONNECTION_UNHEALTHY_LIMIT } from './connection-quality'
 import {
   arrayBufferToBase64,
   base64ToArrayBuffer,
@@ -30,6 +30,7 @@ import {
   MAX_FILE_SIZE_BYTES,
   MAX_RECONNECT_ATTEMPTS,
   PEER_PREFIX,
+  RECONNECT_CONNECTION_TIMEOUT,
 } from './peer-config'
 import { createReceiveStorage, hasStorageQuotaFor } from './receive-storage'
 import { createSequentialAsyncProcessor } from './serial-async-processor'
@@ -78,7 +79,7 @@ export interface ConnectionRefs {
   pendingReconnectRef: React.MutableRefObject<boolean>
   peerRef: React.MutableRefObject<any>
   connectingPeersRef: React.MutableRefObject<ConnectionAttemptRegistry>
-  setupConnectionRef: React.MutableRefObject<((conn: any, isOutgoing?: boolean) => void) | null>
+  setupConnectionRef: React.MutableRefObject<((conn: any, isOutgoing?: boolean, options?: SetupConnectionOptions) => void) | null>
   attemptReconnectRef: React.MutableRefObject<(() => void) | null>
   joinRoomRef: React.MutableRefObject<((code: string) => Promise<void>) | null>
   cancelledTransfersRef: React.MutableRefObject<Set<string>>
@@ -125,10 +126,15 @@ export interface ConnectionCallbacks {
   }) => void
 }
 
+export interface SetupConnectionOptions {
+  /** 由自動重連發起的連線嘗試(逾時較短,失敗後盡快重排)。 */
+  reconnectAttempt?: boolean
+}
+
 export function createSetupConnection(
   refs: ConnectionRefs,
   callbacks: ConnectionCallbacks,
-  roomCode: string | null,
+  options: SetupConnectionOptions = {},
 ) {
   const {
     connectionsRef,
@@ -306,6 +312,7 @@ export function createSetupConnection(
   return async (conn: any, isOutgoing = false) => {
     let connectionTimeout: NodeJS.Timeout | null = null
     let disconnectedTimer: NodeJS.Timeout | null = null
+    let staleConnectionTimer: NodeJS.Timeout | null = null
     // PeerJS does not await async data handlers, so preserve protocol order per connection.
     const processIncomingData = createSequentialAsyncProcessor()
     const disconnectedGracePeriodMs = Math.min(
@@ -314,6 +321,35 @@ export function createSetupConnection(
     )
     const releaseConnectionAttempt = () => {
       refs.connectingPeersRef.current.complete(conn.peer)
+    }
+    // 連線遺失(close / error / 底層傳輸 failed)時的共用清理:移除該連線的所有狀態,
+    // 之後才能由 attemptReconnect 重建連線。
+    const teardownLostConnection = () => {
+      if (connectionTimeout)
+        clearTimeout(connectionTimeout)
+      if (disconnectedTimer)
+        clearTimeout(disconnectedTimer)
+      if (staleConnectionTimer) {
+        clearInterval(staleConnectionTimer)
+        staleConnectionTimer = null
+      }
+      releaseConnectionAttempt()
+      connectionsRef.current.delete(conn.peer)
+      markBuffersPendingForPeer(conn.peer)
+      encryptorsRef.current.delete(conn.peer)
+      callbacks.setPeerEncryptionFingerprint?.(conn.peer, null)
+      keyExchangePendingRef.current.delete(conn.peer)
+      removePeerQuality(conn.peer)
+      removePeerTransferState(conn.peer)
+
+      updatePeerCount()
+    }
+    const notifyConnectionLost = () => {
+      // 不看這裡的 roomCode:連線建立時房間碼可能還沒 commit 進 state,
+      // 該閉包會是 null 而讓自動重連永遠不觸發。真正需要房間碼的判斷在 attemptReconnect 內。
+      if (connectionsRef.current.size === 0 && refs.shouldReconnectRef.current && refs.attemptReconnectRef.current) {
+        refs.attemptReconnectRef.current()
+      }
     }
 
     const existingConn = connectionsRef.current.get(conn.peer)
@@ -327,13 +363,21 @@ export function createSetupConnection(
     }
 
     if (isOutgoing) {
+      // 重連嘗試時對方可能仍在背景,縮短逾時以更快重排下一次嘗試;首次建立連線維持原本較寬鬆的逾時。
       connectionTimeout = setTimeout(() => {
         if (!conn.open) {
-          releaseConnectionAttempt()
           conn.close()
-          setError('连接超时，请确保两个设备能够互相访问（同一网络或允许 P2P 连接）')
+          teardownLostConnection()
+          if (options.reconnectAttempt) {
+            // 重連嘗試逾時:必須繼續排程下一次嘗試,否則一次逾時就會讓自動重連永久停止。
+            callbacks.addSystemMessage('连接超时，正在重新尝试连接')
+            notifyConnectionLost()
+          }
+          else {
+            setError('连接超时，请确保两个设备能够互相访问（同一网络或允许 P2P 连接）')
+          }
         }
-      }, CONNECTION_TIMEOUT)
+      }, options.reconnectAttempt ? RECONNECT_CONNECTION_TIMEOUT : CONNECTION_TIMEOUT)
     }
 
     // 生成密钥对用于密钥交换
@@ -361,7 +405,10 @@ export function createSetupConnection(
 
       const pc = conn.peerConnection as RTCPeerConnection | undefined
       if (pc) {
-        pc.oniceconnectionstatechange = () => {
+        // PeerJS 以 `oniceconnectionstatechange` 屬性處理 ICE 失敗並關閉連線,
+        // 必須用 addEventListener 附加自己的監聽,否則會覆寫掉 PeerJS 的處理器,
+        // 導致 ICE 失敗時不再觸發 close/error,自動重連永遠不會啟動。
+        pc.addEventListener('iceconnectionstatechange', () => {
           if (pc.iceConnectionState === 'failed') {
             if (connectionTimeout)
               clearTimeout(connectionTimeout)
@@ -394,7 +441,22 @@ export function createSetupConnection(
             clearTimeout(disconnectedTimer)
             disconnectedTimer = null
           }
-        }
+        })
+
+        // App 被切到背景/鎖屏後,ICE 常停在 'disconnected',只有 connectionState 會變成 'failed',
+        // 而 PeerJS 只在 iceConnectionState 為 'failed' 時才關閉連線。此處主動關閉,
+        // 並直接執行與 close 相同的清理與重連流程(此種失敗下資料通道不會收到 close,
+        // 光靠 PeerJS 的 close 事件不會觸發重連)。
+        pc.addEventListener('connectionstatechange', () => {
+          if (pc.connectionState !== 'failed')
+            return
+          try {
+            conn.close()
+          }
+          catch {}
+          teardownLostConnection()
+          notifyConnectionLost()
+        })
       }
       else {
         monitorAttempts++
@@ -455,42 +517,13 @@ export function createSetupConnection(
     })
 
     conn.on('close', () => {
-      if (connectionTimeout)
-        clearTimeout(connectionTimeout)
-      if (disconnectedTimer)
-        clearTimeout(disconnectedTimer)
-      releaseConnectionAttempt()
-      connectionsRef.current.delete(conn.peer)
-      markBuffersPendingForPeer(conn.peer)
-      encryptorsRef.current.delete(conn.peer)
-      callbacks.setPeerEncryptionFingerprint?.(conn.peer, null)
-      keyExchangePendingRef.current.delete(conn.peer)
-      removePeerQuality(conn.peer)
-      removePeerTransferState(conn.peer)
-
-      updatePeerCount()
-
-      if (connectionsRef.current.size === 0 && roomCode && refs.shouldReconnectRef.current && refs.attemptReconnectRef.current) {
-        refs.attemptReconnectRef.current()
-      }
+      teardownLostConnection()
+      notifyConnectionLost()
     })
 
     conn.on('error', (err: unknown) => {
       console.error('Connection error:', err)
-      if (connectionTimeout)
-        clearTimeout(connectionTimeout)
-      if (disconnectedTimer)
-        clearTimeout(disconnectedTimer)
-      releaseConnectionAttempt()
-      connectionsRef.current.delete(conn.peer)
-      markBuffersPendingForPeer(conn.peer)
-      encryptorsRef.current.delete(conn.peer)
-      callbacks.setPeerEncryptionFingerprint?.(conn.peer, null)
-      keyExchangePendingRef.current.delete(conn.peer)
-      removePeerQuality(conn.peer)
-      removePeerTransferState(conn.peer)
-
-      updatePeerCount()
+      teardownLostConnection()
 
       if (isOutgoing && connectionsRef.current.size === 0 && refs.shouldReconnectRef.current && refs.attemptReconnectRef.current) {
         refs.attemptReconnectRef.current()
@@ -499,6 +532,46 @@ export function createSetupConnection(
         setError('连接失败，正在尝试重连...')
       }
     })
+
+    // 底層連線可能其實已經斷了,但雙方都收不到 close/error(例如 App 被切到背景後
+    // 兩端各自 restartIce、ICE 狀態又回到 connected)。這時 UI 會一直顯示已連線,
+    // 而對方永遠不會重連。定期確認對端是否還在送資料(心跳),沒有就主動清理並重連。
+    let unhealthyChecks = 0
+    let lastStaleCheckAt = Date.now()
+    staleConnectionTimer = setInterval(() => {
+      const now = Date.now()
+      const sinceLastCheck = now - lastStaleCheckAt
+      lastStaleCheckAt = now
+
+      if (!conn.open || conn.destroyed) {
+        unhealthyChecks = 0
+        return
+      }
+      // 計時器可能被凍結過(分頁或 App 在背景),此時健康度不可信,重新計時。
+      if (sinceLastCheck > STALE_CONNECTION_CHECK_INTERVAL_MS * 2) {
+        unhealthyChecks = 0
+        return
+      }
+      if (isPeerHealthy(conn.peer)) {
+        unhealthyChecks = 0
+        return
+      }
+
+      unhealthyChecks += 1
+      if (unhealthyChecks < STALE_CONNECTION_UNHEALTHY_LIMIT)
+        return
+
+      unhealthyChecks = 0
+      try {
+        conn.close()
+      }
+      catch {}
+      teardownLostConnection()
+      notifyConnectionLost()
+    }, STALE_CONNECTION_CHECK_INTERVAL_MS)
+    // Node 測試環境不需要為此計時器保留事件迴圈;瀏覽器計時器沒有 unref。
+    const staleCheckTimerHandle = staleConnectionTimer as unknown as { unref?: () => void }
+    staleCheckTimerHandle.unref?.()
 
     const handleIncomingData = async (data: unknown) => {
       const validatedData = validateIncomingRawPeerPayload(data)
@@ -1107,20 +1180,21 @@ export function createAttemptReconnect(
       return
     }
 
-    if (refs.reconnectAttemptsRef.current >= MAX_RECONNECT_ATTEMPTS) {
-      callbacks.setConnectionStatus('error')
-      callbacks.setErrorMessage('重连失败，请手动重新加入房间')
-      callbacks.addSystemMessage('自动重连失败，连接已断开')
-      return
-    }
-
     refs.reconnectAttemptsRef.current += 1
-    const baseDelay = Math.min(1000 * 2 ** (refs.reconnectAttemptsRef.current - 1), 10000)
+    // 超過快速重試上限後不停下:App 被切到背景/鎖屏期間對端可能長時間不可達,
+    // 一旦停止重試,回到前景就再也無法恢復連線;因此改為持續以固定間隔重試。
+    const attempt = refs.reconnectAttemptsRef.current
+    const withinFastBudget = attempt <= MAX_RECONNECT_ATTEMPTS
+    const baseDelay = Math.min(1000 * 2 ** (attempt - 1), 10000)
     const jitter = Math.floor(Math.random() * 500)
     const delay = baseDelay + jitter
 
     callbacks.setConnectionStatus('reconnecting')
-    callbacks.setErrorMessage(`正在尝试重新连接... (${refs.reconnectAttemptsRef.current}/${MAX_RECONNECT_ATTEMPTS})`)
+    callbacks.setErrorMessage(
+      withinFastBudget
+        ? `正在尝试重新连接... (${attempt}/${MAX_RECONNECT_ATTEMPTS})`
+        : '对方暂时离线，仍在持续尝试重新连接...',
+    )
 
     refs.reconnectTimeoutRef.current = setTimeout(() => {
       refs.reconnectTimeoutRef.current = null
@@ -1129,9 +1203,12 @@ export function createAttemptReconnect(
       if (refs.connectionsRef.current.size > 0)
         return
 
-      // 简化：只在第一次重连时显示消息
-      if (refs.reconnectAttemptsRef.current === 1) {
+      // 简化：只在第一次重连与快速重试用尽时显示消息
+      if (attempt === 1) {
         callbacks.addSystemMessage('正在尝试重新连接...')
+      }
+      else if (attempt === MAX_RECONNECT_ATTEMPTS + 1) {
+        callbacks.addSystemMessage('对方暂时离线，仍在持续尝试重新连接')
       }
 
       if (isHost) {
@@ -1157,7 +1234,7 @@ export function createAttemptReconnect(
           try {
             const conn = refs.peerRef.current.connect(hostPeerId, { reliable: true })
             if (conn && refs.setupConnectionRef.current) {
-              refs.setupConnectionRef.current(conn, true)
+              refs.setupConnectionRef.current(conn, true, { reconnectAttempt: true })
             }
             else {
               refs.connectingPeersRef.current.complete(hostPeerId)

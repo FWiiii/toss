@@ -4,6 +4,14 @@ const MAX_SAMPLES = 10
 const PING_TTL_MS = 5000
 export const HEARTBEAT_INTERVAL_MS = 4000
 export const HEARTBEAT_TIMEOUT_MS = 15000
+/**
+ * 連線健康檢查間隔:定期確認對端是否仍有心跳
+ */
+export const STALE_CONNECTION_CHECK_INTERVAL_MS = 5000
+/**
+ * 連續幾次健康檢查都收不到對端任何資料,即判定底層連線已死
+ */
+export const STALE_CONNECTION_UNHEALTHY_LIMIT = 2
 
 type MetricSamples = Map<string, number[]>
 type PendingPings = Map<string, Map<string, number>>

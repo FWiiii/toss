@@ -86,7 +86,7 @@ function createConnectionHarness() {
   const conn = {
     open: true,
     peer: 'peer-1',
-    peerConnection: { connectionState: 'disconnected', iceConnectionState: 'connected' },
+    peerConnection: { connectionState: 'disconnected', iceConnectionState: 'connected', addEventListener() {} },
     metadata: null,
     send(payload) {
       sentPayloads.push(payload)
@@ -113,7 +113,7 @@ test('createSetupConnection rejects file-start payloads that bypass approval', a
   const { createSetupConnection } = await import('../lib/transfer-connection.ts')
   const harness = createConnectionHarness()
 
-  const setupConnection = createSetupConnection(harness.refs, harness.callbacks, null)
+  const setupConnection = createSetupConnection(harness.refs, harness.callbacks)
   await setupConnection(harness.conn, false)
 
   // 该测试关注 offer 处理逻辑而非握手门控：清除 setupConnection 登记的
@@ -156,7 +156,7 @@ test('createSetupConnection keeps trusted executable offers pending when risk co
     trustedAt: Date.now(),
   })
 
-  const setupConnection = createSetupConnection(harness.refs, harness.callbacks, null)
+  const setupConnection = createSetupConnection(harness.refs, harness.callbacks)
   await setupConnection(harness.conn, false)
 
   // 同上：该测试关注 offer 处理逻辑，置为 unknown（兼容）状态。

@@ -1,7 +1,7 @@
 'use client'
 
 import type { generateKeyPair, SessionEncryptor } from './crypto'
-import type { ActiveReceiveBuffer, ConnectionCallbacks, ConnectionRefs } from './transfer-connection'
+import type { ActiveReceiveBuffer, ConnectionCallbacks, ConnectionRefs, SetupConnectionOptions } from './transfer-connection'
 import type { DataTransferCallbacks } from './transfer-data'
 import type { FileOfferSummary } from './transfer-protocol'
 import type { RoomCallbacks } from './transfer-room'
@@ -429,7 +429,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
   const connectingPeersRef = useRef(createConnectionAttemptRegistry())
   const receiveHistoryReloadSequenceRef = useRef(0)
 
-  const setupConnectionRef = useRef<((conn: any, isOutgoing?: boolean) => void) | null>(null)
+  const setupConnectionRef = useRef<((conn: any, isOutgoing?: boolean, options?: SetupConnectionOptions) => void) | null>(null)
   const attemptReconnectRef = useRef<(() => void) | null>(null)
   const joinRoomRef = useRef<((code: string) => Promise<void>) | null>(null)
   const startQualityMonitoringRef = useRef<(() => void) | null>(null)
@@ -1142,10 +1142,10 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
 
   // ============ Connection Setup ============
 
-  const setupConnection = useCallback(async (conn: any, isOutgoing = false) => {
-    const setupFn = createSetupConnection(connectionRefs, connectionCallbacks, roomCode)
+  const setupConnection = useCallback(async (conn: any, isOutgoing = false, options?: SetupConnectionOptions) => {
+    const setupFn = createSetupConnection(connectionRefs, connectionCallbacks, options)
     return setupFn(conn, isOutgoing)
-  }, [connectionCallbacks, connectionRefs, roomCode])
+  }, [connectionCallbacks, connectionRefs])
 
   // ============ Reconnection Logic ============
   const attemptReconnect = useCallback(() => {
