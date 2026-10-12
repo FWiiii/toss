@@ -1,7 +1,9 @@
 import { AppShell } from '@/components/app-shell'
 import { AppRuntimeProvider, DEFAULT_STUN_SERVERS } from '@/lib/app-runtime'
+import { registerNativeBarcodeScanner, scanRoomCodeNative } from '@/lib/native-barcode'
 import { registerNativeFileSaving } from '@/lib/native-file-save'
 import { registerNativeFileStorage } from '@/lib/native-receive-storage'
+import { cleanupNativeStorage } from '@/lib/native-storage-cleanup'
 import { TransferProvider } from '@/lib/transfer-context'
 import logoSrc from '@/public/logo.svg?url'
 
@@ -9,6 +11,10 @@ import logoSrc from '@/public/logo.svg?url'
 registerNativeFileStorage()
 // 保存到本地／其他应用走系统分享面板。
 registerNativeFileSaving()
+// 扫码走系统原生相机（Capacitor 条码插件），不占用 WebView 的 getUserMedia。
+registerNativeBarcodeScanner({ scan: () => scanRoomCodeNative() })
+// 启动时清理中断传输残留的分片与过期分享暂存；不动已接收文件。
+void cleanupNativeStorage().catch(() => {})
 
 // Entry-specific configuration: no Next environment shim in shared code.
 const runtime = {

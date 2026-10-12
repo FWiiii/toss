@@ -13,7 +13,7 @@ import { registerNativeReceiveStorage } from './receive-storage'
  * Android 为应用内部 files 目录。
  */
 export const RECEIVED_DIRECTORY = 'toss-received'
-const STAGING_DIRECTORY = Directory.Library
+export const STAGING_DIRECTORY = Directory.Library
 
 const MAX_FILE_NAME_LENGTH = 128
 // 控制字符与文件系统保留字符：出现在对端文件名中时替换为下划线。
