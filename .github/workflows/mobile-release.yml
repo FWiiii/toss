@@ -9,7 +9,8 @@ name: Mobile release
 #   未設定時改為編譯 debug APK（debug 金鑰簽名，可直接安裝測試）。
 #   iOS：IOS_TEAM_ID、IOS_CERTIFICATE_BASE64、IOS_CERTIFICATE_PASSWORD、
 #        ASC_KEY_ID、ASC_ISSUER_ID、ASC_KEY_BASE64（App Store Connect API 金鑰）
-#    未設定 IOS_TEAM_ID 時整個 iOS job 略過。
+#    未設定 IOS_TEAM_ID 時改為編譯「未簽名」IPA，僅供自行重簽／驗證，無法直接安裝。
+#    本機等價指令見 README「行動端發布」一節。
 
 on:
   push:
@@ -166,7 +167,6 @@ jobs:
   ios:
     name: iOS 安裝包
     needs: version
-    if: needs.version.outputs.ios_configured == 'true'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -181,6 +181,7 @@ jobs:
       - run: pnpm mobile:build
       - run: npx cap sync ios
       - name: 匯入簽名憑證與 App Store Connect 金鑰
+        if: needs.version.outputs.ios_configured == 'true'
         env:
           CERTIFICATE_BASE64: ${{ secrets.IOS_CERTIFICATE_BASE64 }}
           CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
@@ -216,7 +217,8 @@ jobs:
           {
             echo "ASC_KEY_PATH=$RUNNER_TEMP/asc-key.p8"
           } >> "$GITHUB_ENV"
-      - name: Archive 並匯出 IPA
+      - name: Archive 並匯出 ad-hoc IPA
+        if: needs.version.outputs.ios_configured == 'true'
         env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
@@ -265,6 +267,38 @@ jobs:
           mkdir -p dist
           cp "$RUNNER_TEMP/export/"*.ipa "dist/toss-${version}.ipa"
           ls -l dist
+      # 未設定 Apple 憑證時仍產出未簽名 IPA：iOS 不會安裝未簽名或與描述檔不符的包，
+      # 這份產物只能由持有付費帳號的人重簽，或作為本機驗證用途（詳見 README）。
+      - name: 編譯未簽名 IPA
+        if: needs.version.outputs.ios_configured != 'true'
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          CODE: ${{ needs.version.outputs.code }}
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project mobile/ios/App/App.xcodeproj \
+            -scheme App \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/Toss-unsigned.xcarchive" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            MARKETING_VERSION="$VERSION" \
+            CURRENT_PROJECT_VERSION="$CODE" \
+            archive
+
+          app="$RUNNER_TEMP/Toss-unsigned.xcarchive/Products/Applications/App.app"
+          if [ ! -d "$app" ]; then
+            echo "封存檔中找不到 App.app：$app" >&2
+            exit 1
+          fi
+          mkdir -p "$RUNNER_TEMP/ipa/Payload" dist
+          cp -R "$app" "$RUNNER_TEMP/ipa/Payload/"
+          # -y 保留符號連結，避免 App.framework 之類的結構被展開成實體檔案。
+          (cd "$RUNNER_TEMP/ipa" && zip -qry "$GITHUB_WORKSPACE/dist/toss-${VERSION}-unsigned.ipa" Payload)
+          ls -l dist
       - uses: actions/upload-artifact@v4
         with:
           name: ios
@@ -307,9 +341,14 @@ jobs:
               echo
               echo "> 本次未設定 Android release 簽名金鑰，附上的是 debug 金鑰簽名的測試包。"
             fi
-            if ls dist/*.ipa > /dev/null 2>&1; then
+            if [ -f "dist/toss-${version}-unsigned.ipa" ]; then
               echo
-              echo "iOS：IPA 使用 ad-hoc 描述檔，只有描述檔內註冊的裝置可以安裝。"
+              echo "> 本次未設定 Apple 憑證，附上的是**未簽名** IPA。iOS 不會安裝未簽名或與描述檔不符的包，"
+              echo "> 這份產物需由持有 Apple Developer Program 帳號的人重簽，或作為本機驗證用途。"
+              echo "> 要讓測試者直接安裝，請參閱 README「行動端發布」一節的 iOS 分發說明。"
+            elif ls dist/*.ipa > /dev/null 2>&1; then
+              echo
+              echo "iOS：IPA 使用 ad-hoc 描述檔，只有描述檔內註冊的裝置可以安裝；iOS 16 以上需在裝置上開啟開發者模式。"
             fi
           } > "$RUNNER_TEMP/notes.md"
 

@@ -120,11 +120,38 @@ Android 需要 Android Studio 2025.2.1+、JDK 21、SDK Platform 36、对应构�
 
 - 版本映射：标签 `v1.2.3` → Android `versionName=1.2.3`、`versionCode=10203`（major×10000 + minor×100 + patch）；iOS 同一组数字写入 `MARKETING_VERSION`／`CURRENT_PROJECT_VERSION`。
 - Android 产物：release APK 与 AAB；未配置签名金钥时改出 debug APK（debug 金钥签名，可直接安装测试）。
-- iOS 产物：ad-hoc IPA，只有描述档内注册的装置可安装。**iOS 流程需要真实 Apple 凭据，目前只有本机模拟器构建验证，尚未在 CI 实测。**
+- iOS 产物：设定 Apple 凭据时产出 ad-hoc IPA，只有描述档内注册的装置可安装（iOS 16 以上需在装置上开启开发者模式）；未设定 `IOS_TEAM_ID` 时改出**未签名** IPA `toss-<版本>-unsigned.ipa`，它无法直接安装，只能由持有付费帐号的人重签或用于本机验证，详见下节。**这两条 iOS 路径目前都只有本机构建验证，尚未在 CI 实测。**
 - 仓库 secrets（`Settings → Secrets and variables → Actions`）：
   - Android：`ANDROID_KEYSTORE_BASE64`（`base64 -i release.jks | pbcopy`）、`ANDROID_KEYSTORE_PASSWORD`、`ANDROID_KEY_ALIAS`、`ANDROID_KEY_PASSWORD`。
   - iOS：`IOS_TEAM_ID`、`IOS_CERTIFICATE_BASE64`（导出为 .p12）、`IOS_CERTIFICATE_PASSWORD`、`ASC_KEY_ID`、`ASC_ISSUER_ID`、`ASC_KEY_BASE64`（App Store Connect API 金钥 .p8）。分享扩充需要 App Group 与对应描述档。
 - 本机等价的 Android release 构建：`pnpm mobile:build && npx cap sync android && cd mobile/android && ./gradlew assembleRelease bundleRelease -PversionName=1.2.3 -PversionCode=10203`；签名由 `ANDROID_KEYSTORE_PATH`、`ANDROID_KEYSTORE_PASSWORD`、`ANDROID_KEY_ALIAS`、`ANDROID_KEY_PASSWORD` 环境变量启用，密钥不写入仓库。
+- 本机等价的 iOS 未签名 IPA：
+  ```bash
+  pnpm mobile:build && npx cap sync ios
+  xcodebuild -project mobile/ios/App/App.xcodeproj -scheme App -configuration Release \
+    -destination 'generic/platform=iOS' -archivePath /tmp/Toss-unsigned.xcarchive \
+    CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+    MARKETING_VERSION=1.2.3 CURRENT_PROJECT_VERSION=10203 archive
+  mkdir -p /tmp/ipa/Payload
+  cp -R /tmp/Toss-unsigned.xcarchive/Products/Applications/App.app /tmp/ipa/Payload/
+  (cd /tmp/ipa && zip -qry toss-1.2.3-unsigned.ipa Payload)
+  ```
+
+#### iOS 安装包与分发手续
+
+要让别人（或自己）在 iPhone／iPad 上装 Toss，只有以下合法路径，全部需要 Apple 帐号：
+
+| 方式 | 手续 / 费用 | 台数与有效期 | 使用者要做什么 |
+| --- | --- | --- | --- |
+| 免费 Apple ID（Personal Team） | 只需 Apple ID + Mac 上的 Xcode，0 元 | 只能装在自己用 Xcode 连过的装置；描述档 **7 天**到期，需重签 | 需要有 Mac 与 Xcode（或用 AltStore／SideStore 等工具自行重签） |
+| Apple Developer Program（付费）ad-hoc | **$99/年**；需在帐号注册装置 UDID；App Group 等 capability 只有付费帐号能注册 | 每个产品类型每年 ≤100 台；描述档有效期 1 年 | 用 Apple Configurator 或安装链接装入，需在装置上开启开发者模式 |
+| TestFlight | 同一付费会员 | 外部测试者上限 10,000；对外测试需 beta 审核 | 装 TestFlight 后用邀请链接安装 |
+| Unlisted App Store（不公开上架） | 同一付费会员 + App Review | 走 App Store 直链，不列入搜索与分类 | 用直链从 App Store 安装 |
+| Apple Developer Enterprise Program | **$299/年**，仅限组织内部员工，需 D-U-N-S 与 Apple 审核 | 组织内不限台数 | — |
+
+零手续能做到的部分：可以编译出 `.ipa` 文件（CI 的 `toss-<版本>-unsigned.ipa` 就是这么来的），但 iOS 只会安装「签名与描述档匹配」的包 —— 未签名 IPA 装不上（越狱／TrollStore 除外，本项目不支持），所以零手续的产物必须由**使用者自己**用 Apple ID 重签，或自己用 Xcode 编译源码。而且免费的 Personal Team 不能注册 App Group capability，本项目含 Share Extension，用免费帐号签名会报描述档不支持 App Group，等于系统分享接收功能没法用。要在 iOS 上保留分享接收又不上架，现实选项是 $99/年的 ad-hoc（≤100 台）。
+
+完全不想付费时，手机端仍可使用现有 PWA（浏览器菜单「添加到主屏幕」），代价是没有 Share Extension 与原生储存。Apple 的帐号等级与能力对应关系见 [Supported capabilities (iOS)](https://developer.apple.com/help/account/reference/supported-capabilities-ios)，ad-hoc 与开发者模式的安装要求见 [Distributing your app to registered devices](https://developer.apple.com/documentation/xcode/distributing-your-app-to-registered-devices)。
 
 完整后续范围见 [Capacitor 行动 App 计划书](docs/product/capacitor-mobile-app-plan.md)。
 
