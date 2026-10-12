@@ -127,7 +127,23 @@ jobs:
         run: |
           set -euo pipefail
           printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.keystore"
-          echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/release.keystore" >> "$GITHUB_ENV"
+          # keystore 二进制被截断/粘贴损坏时，Gradle 只在 packageRelease 才以
+          # "Given final block not properly padded" 爆炸，晚且难定位；这里先挡一道。
+          # 不提供口令，只验证「这是不是一个结构完好的 keystore 文件」。
+          if keytool -list -keystore "$RUNNER_TEMP/release.keystore" -storepass dummy-probe \
+               > "$RUNNER_TEMP/keystore-probe.txt" 2>&1; then
+            echo "keystore 解密成功（口令看起来也对）"
+          elif grep -q 'password was incorrect\|password was not correct\|integrity' "$RUNNER_TEMP/keystore-probe.txt"; then
+            echo "keystore 文件结构完好（口令需另验）"
+          else
+            echo "keystore 解出的檔案不完整或不是有效 JKS/PKCS12。常见原因：" >&2
+            echo "  1) secret 里的 base64 被截断（尾部缺字符）" >&2
+            echo "  2) 粘贴时带入了空格/漏了字符" >&2
+            echo "  3) base64 的不是 .jks 二进制本身" >&2
+            sed 's/^/    /' "$RUNNER_TEMP/keystore-probe.txt" >&2
+            exit 1
+          fi
+          echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/release.keystore" >> "${GITHUB_ENV:-/dev/null}"
       - name: 編譯已簽名 release（APK 與 AAB）
         if: needs.version.outputs.android_signed == 'true'
         working-directory: mobile/android
