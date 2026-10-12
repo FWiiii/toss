@@ -15,11 +15,15 @@
 ## ✨ 特性
 
 - **设备直传** - 基于 WebRTC 技术，传输内容优先在设备间直接发送
-- **端到端加密** - 数据传输全程加密，并提供会话指纹供两端人工核对
-- **连接链路可见** - 可查看当前连接是局域网直连、P2P 穿透还是服务器中转
-- **大文件传输** - 单文件上限 4 GiB，传输速度取决于您的网络环境与当前连接方式
-- **跨平台支持** - 支持手机、平板、电脑等任何现代浏览器设备
-- **PWA 支持** - 可安装为本地应用，支持系统分享功能
+- **端到端加密** - ECDH 密钥协商 + AES-GCM 会话加密（Web Crypto），并提供会话指纹供两端人工核对
+- **连接链路可见** - 可查看当前连接是局域网直连、P2P 穿透还是服务器中转，以及延迟与带宽
+- **断线自动恢复** - 连接中断后自动重连并持续重试，不会因为短时断线清空待发内容
+- **大文件传输** - 单文件上限 4 GiB，分块串行发送（单块上限 128 KiB）
+- **接收收件箱** - 接收、拒绝、取消、失败均留档，可按结果筛选
+- **系统分享接收** - Android `ACTION_SEND` 与 iOS Share Extension 分享进来的内容直接进入待发队列
+- **原生扫码** - 移动端使用系统相机扫码，不申请 WebView 摄像头权限
+- **跨平台支持** - 支持手机、平板、电脑等现代浏览器设备
+- **PWA 支持** - 可安装为本地应用，支持 Web Share Target
 - **暗色模式** - 支持浅色/深色主题切换
 - **简洁易用** - 6 位房间代码，一键创建或加入
 
@@ -27,23 +31,25 @@
 
 创建或加入房间后，即可在设备间自由传输文本和文件：
 
-- 📝 发送文本消息
-- 📁 传输任意类型文件
+- 📝 发送文本消息（含剪贴板一键发送）
+- 📁 传输任意类型文件，支持一次选择多个
 - 🖼️ 图片预览与下载
 - 📋 一键复制房间代码
+- 📥 收件箱：按时间倒序查看接收、拒绝、取消与失败记录
 
 ## 🚀 快速开始
 
 ### 环境要求
 
-- Node.js 22.12+（Capacitor 8 与 Vite 8 的共同要求）
-- pnpm (推荐) 或 npm
+- Node.js 22.12+（Vite 8 要求 `^20.19.0 || >=22.12.0`，Capacitor 8 CLI 要求 `>=22`）
+- pnpm 10（或 npm）
+- 浏览器需支持 WebRTC DataChannel、Web Crypto、OPFS 与 `Promise.withResolvers`（Chromium 119+ / Safari 17.4+ / Firefox 121+）
 
 ### 安装
 
 ```bash
 # 克隆项目
-git clone https://github.com/your-username/toss.git
+git clone https://github.com/FWiiii/toss.git
 cd toss
 
 # 安装依赖
@@ -65,9 +71,19 @@ pnpm start
 
 访问 http://localhost:3000 即可使用。
 
+### 类型检查与测试
+
+```bash
+npx tsc --noEmit   # 类型检查
+pnpm lint          # ESLint
+pnpm test          # node:test + tsx，覆盖房间、加密、传输协议、接收存储、断线恢复等行为
+```
+
+`pnpm test` 里的用例是可离线运行的行为测试（IndexedDB、原生插件等以假体替换），因此提交前必须至少跑通类型检查与测试；`.github/workflows/mobile-release.yml` 的 `verify` 作业也是先跑这两步再编译安装包。浏览器端的真实传输仍以手动冒烟为准，不能用测试代替。
+
 ### 行动端本地入口（Capacitor）
 
-P0 第二步已接入共用房间与传输页：创建／加入六位房间、双向文字与文件、接收确认、会话指纹、进度、取消和图片预览。移动端复用网站协议与加密，不是加载远端网站。网站和 PWA 保持原有入口。
+移动端不复用网站的 Next.js 页面，而是用同一套 `components/` 与传输核心（`lib/`）经 Vite 构建本地资源，再同步到 `mobile/android`、`mobile/ios` 两个原生工程：创建／加入六位房间、双向文字与文件、接收确认、会话指纹、进度、取消、图片预览、系统分享接收与原生扫码。移动端复用网站协议与加密，不是加载远端网站；网站和 PWA 保持原有入口。
 
 固定版本：Capacitor core / CLI / Android / iOS 8.5.3、App 插件 8.1.2、Vite 8.3.4、React 插件 6.1.2。
 
@@ -109,6 +125,8 @@ Android 需要 Android Studio 2025.2.1+、JDK 21、SDK Platform 36、对应构�
 已知限制：分享进来的文件经 `fetch(convertFileSrc(uri))` 读入 WebView 内存后再发送，大文件会占用与其大小相当的内存；有界发送需发送端接受 range-read 来源，属后续步骤。
 
 可选信令配置为 `VITE_PEER_HOST`、`VITE_PEER_PORT`、`VITE_PEER_PATH`、`VITE_PEER_SECURE`；默认与网站相同的公共 PeerJS 和 STUN。网站对应 `NEXT_PUBLIC_PEER_*`、`NEXT_PUBLIC_ROOM_ORIGIN`，保留原有 `NEXT_PUBLIC_TURN_*`。移动包不嵌入长效 TURN 密码，短效凭证仍属后续工作；当前不保证受限网络互通。
+
+验证记录（2026-10-13，代码卫生整理后）：`tsc --noEmit` 无错误、`pnpm test` 90/90 通过（25 个测试文件）、`eslint .` 0 error（3 项既存 `<img>` 优化建议）、`next build` 与 `pnpm mobile:build`（tsc + Vite）通过。生产构建下用两个 Chromium 标签页实测：创建／加入同一房间、双向文本、2.0 MiB 文件（报价→接受→接收完成）与收件箱记录均正常；另以注入 `getUserMedia` 计数器验证扫码在途重入已消除（错误态连点两次重试由 3 次调用降为 2 次），并验证分享参数清理只移除 `shared`／`share_id`、保留其余查询参数。**这些是模拟器／浏览器层面的验证，不是真机互传验收。**
 
 验证记录（2026-10-12）：移动类型检查、Vite 构建、两平台 sync、Next.js 构建及 64 项行为测试通过；变更文件 ESLint 无错误（3 项普通 `<img>` 优化建议）。Android Debug APK、iOS 模拟器包构建通过。浏览器运行移动生产入口与网站，双向文字、会话指纹、双向 100 MiB 文件及 SHA-256 校验通过；拒收、等待确认时取消、图片预览、深浅色和 390px 无横向溢出已检查。原生接收存储在 iOS 模拟器真实运行时写入 65541 字节文件并核对字节内容通过。**这些不是 Android／iOS 真机互传验收。**
 
@@ -178,37 +196,58 @@ Android 需要 Android Studio 2025.2.1+、JDK 21、SDK Platform 36、对应构�
 2. 选择 Toss 作为分享目标
 3. 内容会自动加载，连接设备后即可发送
 
+### 接收、取消与失败
+
+- 收到的文件用列表中的保存／下载按钮落地；图片可点击预览。
+- 接收端拒绝、空间不足或落盘失败都会通过 `file-error` 回传，发送端显示为**失败**，不会显示成「已完成」。
+- 发送方在等待对方确认时可以直接取消；接收、拒绝、取消、失败都会写入「收件箱」，按时间倒序保留，可按结果筛选。
+- 连接中断会自动按退避重连并持续尝试（不会因为重试次数用尽而停止）；等待确认与排队中的内容会保留，无需重新创建房间。
+
 ## 🛠️ 技术栈
 
-- **框架**: [Next.js 16](https://nextjs.org/) + [React 19](https://react.dev/)
-- **样式**: [Tailwind CSS 4](https://tailwindcss.com/)
-- **UI 组件**: [Radix UI](https://www.radix-ui.com/)
-- **P2P 通信**: [PeerJS](https://peerjs.com/) (WebRTC)
-- **图标**: [Lucide React](https://lucide.dev/)
-- **主题**: [next-themes](https://github.com/pacocoursey/next-themes)
+- **框架**: [Next.js 16](https://nextjs.org/) + [React 19](https://react.dev/)（网站／PWA 入口）
+- **移动端**: [Capacitor 8](https://capacitorjs.com/) + [Vite 8](https://vite.dev/)（复用同一套组件与传输核心）
+- **样式**: [Tailwind CSS 4](https://tailwindcss.com/) + [Radix UI](https://www.radix-ui.com/)
+- **P2P 通信**: [PeerJS](https://peerjs.com/) (WebRTC DataChannel，信令可自行配置)
+- **加密**: Web Crypto API —— ECDH 协商 + HKDF 派生 + AES-GCM 会话加密
+- **扫码／二维码**: [html5-qrcode](https://github.com/mebjas/html5-qrcode)（网站）、`@capacitor/barcode-scanner`（App）、[qrcode.react](https://github.com/zpao/qrcode.react)（展示）
+- **图标 / 主题**: [Lucide React](https://lucide.dev/) / [next-themes](https://github.com/pacocoursey/next-themes)
+- **类型与测试**: TypeScript 5.9、`node:test` + `tsx`（离线行为测试）
 
 ## 📁 项目结构
 
 ```
-├── app/                    # Next.js App Router
-│   ├── page.tsx           # 主页面
-│   ├── layout.tsx         # 根布局
-│   ├── share/             # Web Share Target API 路由
-│   └── globals.css        # 全局样式
-├── components/            # React 组件
-│   ├── room-panel.tsx     # 房间面板（创建/加入）
-│   ├── transfer-panel.tsx # 传输面板（消息列表）
-│   ├── transfer-item.tsx  # 传输项（文本/文件）
-│   └── ui/                # 基础 UI 组件
-├── lib/                   # 工具库
-│   ├── transfer-context.tsx # 传输状态管理
-│   ├── types.ts           # TypeScript 类型
-│   └── utils.ts           # 工具函数
-├── hooks/                 # 自定义 Hooks
-│   └── use-share-target.ts # Web Share Target Hook
-└── public/                # 静态资源
-    ├── manifest.json      # PWA 配置
-    └── sw.js              # Service Worker
+├── app/                        # Next.js App Router（网站／PWA 入口）
+│   ├── page.tsx                # 渲染 AppClientPage
+│   ├── layout.tsx              # 根布局、主题与 PWA 元数据
+│   ├── share/route.ts          # Web Share Target 接收端点（POST /share）
+│   ├── error.tsx               # 路由级 / 全局错误边界
+│   └── globals.css             # 全局样式与设计令牌
+├── components/                 # React 组件（网站与 App 共用）
+│   ├── app-shell.tsx           # 应用骨架、视图切换与分享内容接入
+│   ├── app-client-page.tsx     # 网站入口装配（信令、房间来源配置）
+│   ├── room-panel.tsx          # 创建／加入房间、房间代码与二维码
+│   ├── transfer-panel.tsx      # 传输面板：待发队列、消息列表、收件箱入口
+│   ├── transfer-item.tsx       # 传输项（文本／文件／图片／流）
+│   ├── receive-history-panel.tsx # 收件箱（接收、拒绝、取消、失败）
+│   ├── connection-status.tsx   # 连接状态、会话指纹、延迟／带宽诊断
+│   ├── qr-code-scanner.tsx     # 扫码入口（浏览器相机 / 原生相机）
+│   ├── notification-settings.tsx / link-preview.tsx / theme-provider.tsx
+│   └── ui/                     # 基础 UI 组件（button、dialog 等）
+├── hooks/                      # 自定义 Hooks（加入码、分享目标、通知、连接设置等）
+├── lib/                        # 传输核心、加密、存储与平台适配
+│   ├── transfer-context.tsx    # 传输状态管理（房间、连接、条目）
+│   ├── transfer-connection.ts  # 连接生命周期、重连与协议入口
+│   ├── transfer-data.ts / transfer-chunk.ts / transfer-protocol.ts
+│   ├── crypto.ts               # ECDH + AES-GCM 会话加密
+│   ├── room-code.ts / room-url.ts / peer-config.ts
+│   ├── receive-storage.ts / receive-history-storage.ts / indexed-db.ts
+│   ├── native-*.ts             # 原生接收存储、保存、扫码、分享与清理
+│   └── app-runtime.tsx         # 两个入口的平台差异注入点
+├── mobile/                     # Capacitor 工程（src/、vite.config.mts、android/、ios/）
+├── public/                     # 静态资源（manifest.json、sw.js、offline.html、图标）
+├── tests/                      # node:test 行为测试
+└── docs/                       # 产品计划与 UI 文档（ui-system.md 等）
 ```
 
 ## 🔒 安全说明
@@ -217,6 +256,8 @@ Android 需要 Android Studio 2025.2.1+、JDK 21、SDK Platform 36、对应构�
 - **连接建立**：建立连接时需要通过 PeerJS 信令服务器交换建链信息。信令仅用于协调连接，不承载实际传输内容。
 - **连接方式**：根据网络环境不同，实际链路可能表现为局域网直连、NAT 穿透后的 P2P 直连，或经 TURN 服务器中转。
 - **链路加密**：所有 WebRTC 数据通道默认启用 DTLS 加密；即使在 TURN 中转场景下，传输链路仍受 WebRTC 加密保护。
+- **应用层加密**：连上后两端用 ECDH 协商会话密钥并经 HKDF 派生，文本、文件分片与控制消息都以 AES-GCM 加密后再进入数据通道；密钥材料只在两端之间交换，不经过信令服务器。
+- **接收侧防护**：入站消息先做协议校验（消息类型、字段长度、分片上限、单文件 4 GiB 上限），远端可反复推送的取消／失败标记有固定上限，避免异常或恶意对端在会话内撑大内存。
 - **会话校验**：连接建立后会显示短会话指纹，可在两端人工核对当前会话是否一致。
 
 ## 🧭 连接模型
@@ -234,7 +275,7 @@ Android 需要 Android Studio 2025.2.1+、JDK 21、SDK Platform 36、对应构�
 
 ## 📄 许可证
 
-[MIT License](LICENSE)
+本项目以 MIT 许可证发布（仓库当前未附带 `LICENSE` 文件）。
 
 ---
 
