@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { STATUS_TONES } from '@/lib/design-tokens'
+import { getNativeBarcodeScanner } from '@/lib/native-barcode'
 
 const ROOM_CODE_REGEX = /^[A-Z0-9]{6}$/i
 const ROOM_CODE_SANITIZE_REGEX = /[^A-Z0-9]/g
@@ -55,11 +56,23 @@ export function QRCodeScanner({ open, onOpenChange, onScan }: QRCodeScannerProps
   const [showManualInput, setShowManualInput] = useState(false)
   const manualCodeInputId = useId()
   const manualCodeHintId = useId()
+  // 原生入口在模块加载时注册；非空即表示运行在 App 内，应使用系统相机而非 WebView 相机。
+  const [nativeScanner] = useState(() => getNativeBarcodeScanner())
+  const isNativeScanner = nativeScanner !== null
+  // 防止依赖变化时重复唤起系统相机：每次打开对话框只自动拉起一次。
+  const nativeScanGuardRef = useRef(false)
+  // 系统相机是原生模态界面，期间对话框可能已被关闭；用它丢弃过期结果。
+  const openRef = useRef(open)
+  openRef.current = open
 
-  // Check camera support on mount
+  // Check camera support on mount（原生路径由系统相机提供能力，无需 getUserMedia）
   useEffect(() => {
+    if (isNativeScanner) {
+      setCameraSupported(true)
+      return
+    }
     setCameraSupported(isCameraSupported())
-  }, [setCameraSupported])
+  }, [setCameraSupported, isNativeScanner])
 
   const extractRoomCode = useCallback((text: string): string | null => {
     // Try to extract room code from URL
@@ -99,6 +112,9 @@ export function QRCodeScanner({ open, onOpenChange, onScan }: QRCodeScannerProps
   }, [])
 
   const startScanner = useCallback(async () => {
+    // 原生路径由系统相机完成扫描，绝不调用 WebView 的 getUserMedia。
+    if (isNativeScanner)
+      return
     if (!scannerRef.current || !open || !cameraSupported)
       return
 
@@ -167,7 +183,7 @@ export function QRCodeScanner({ open, onOpenChange, onScan }: QRCodeScannerProps
     finally {
       setIsStarting(false)
     }
-  }, [open, facingMode, extractRoomCode, onScan, onOpenChange, stopScanner, cameraSupported])
+  }, [open, facingMode, extractRoomCode, onScan, onOpenChange, stopScanner, cameraSupported, isNativeScanner])
 
   // Handle image file upload for QR scanning
   const handleFileUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -212,17 +228,68 @@ export function QRCodeScanner({ open, onOpenChange, onScan }: QRCodeScannerProps
     }
   }, [manualCode, onScan, onOpenChange])
 
-  // Start scanner when dialog opens
+  // 原生扫码：调用系统相机，用户取消（null）时静默关闭，出错则保留手动输入入口。
+  const runNativeScan = useCallback(async () => {
+    if (!nativeScanner)
+      return
+
+    setIsStarting(true)
+    setError(null)
+
+    try {
+      const raw = await nativeScanner.scan()
+
+      // 对话框已关闭（用户在系统相机界面取消并关掉弹窗），丢弃结果。
+      if (!openRef.current)
+        return
+
+      const roomCode = raw ? extractRoomCode(raw) : null
+
+      if (roomCode) {
+        onScan(roomCode)
+        onOpenChange(false)
+      }
+      else if (raw === null) {
+        // 用户取消，不算错误。
+        onOpenChange(false)
+      }
+      else {
+        setError('未能从扫描结果中识别房间代码，请重试或手动输入')
+      }
+    }
+    catch (err) {
+      console.error('Native scanner error:', err)
+      setError('无法启动系统相机扫码，请重试、上传二维码图片或手动输入房间代码')
+    }
+    finally {
+      setIsStarting(false)
+    }
+  }, [nativeScanner, extractRoomCode, onScan, onOpenChange])
+
+  // Start scanner when dialog opens（原生路径直接唤起系统相机）
   useEffect(() => {
-    if (open && cameraSupported && !showManualInput) {
+    if (!open || showManualInput) {
+      nativeScanGuardRef.current = false
+      stopScanner()
+      return
+    }
+
+    if (isNativeScanner) {
+      if (!nativeScanGuardRef.current) {
+        nativeScanGuardRef.current = true
+        void runNativeScan()
+      }
+      return
+    }
+
+    if (cameraSupported) {
       // Small delay to ensure DOM is ready
       const timer = setTimeout(startScanner, 100)
       return () => clearTimeout(timer)
     }
-    else {
-      stopScanner()
-    }
-  }, [open, startScanner, stopScanner, cameraSupported, showManualInput])
+
+    stopScanner()
+  }, [open, startScanner, stopScanner, cameraSupported, showManualInput, isNativeScanner, runNativeScan])
 
   // Cleanup on unmount
   useEffect(() => {
@@ -260,7 +327,11 @@ export function QRCodeScanner({ open, onOpenChange, onScan }: QRCodeScannerProps
             {showManualInput ? '手动输入房间代码' : '扫描二维码'}
           </DialogTitle>
           <DialogDescription className="text-center">
-            {showManualInput ? '输入对方设备上显示的 6 位连接码' : '允许摄像头访问，将房间二维码置于扫描框内'}
+            {showManualInput
+              ? '输入对方设备上显示的 6 位连接码'
+              : isNativeScanner
+                ? '将使用系统相机扫描二维码，无需网页摄像头权限'
+                : '允许摄像头访问，将房间二维码置于扫描框内'}
           </DialogDescription>
         </DialogHeader>
 
@@ -338,8 +409,8 @@ export function QRCodeScanner({ open, onOpenChange, onScan }: QRCodeScannerProps
                     aria-busy={isStarting}
                   />
 
-                  {/* Scanning overlay */}
-                  {!error && !isStarting && cameraSupported && (
+                  {/* Scanning overlay（仅 WebView 相机路径） */}
+                  {!isNativeScanner && !error && !isStarting && cameraSupported && (
                     <div className="absolute inset-0 pointer-events-none">
                       {/* Corner markers */}
                       <div className="qr-scan-frame absolute left-1/2 top-1/2 h-[250px] w-[250px] -translate-x-1/2 -translate-y-1/2">
@@ -358,7 +429,7 @@ export function QRCodeScanner({ open, onOpenChange, onScan }: QRCodeScannerProps
                     <div className="absolute inset-0 flex items-center justify-center bg-black/80">
                       <div className="text-center text-white" role="status" aria-live="polite">
                         <Camera className="w-12 h-12 mx-auto mb-2 animate-pulse" />
-                        <p className="text-sm">正在启动摄像头...</p>
+                        <p className="text-sm">{isNativeScanner ? '正在启动系统相机...' : '正在启动摄像头...'}</p>
                       </div>
                     </div>
                   )}
@@ -394,7 +465,7 @@ export function QRCodeScanner({ open, onOpenChange, onScan }: QRCodeScannerProps
                               variant="ghost"
                               size="sm"
                               className="w-full text-white/80 hover:text-white hover:bg-white/10"
-                              onClick={startScanner}
+                              onClick={() => void (isNativeScanner ? runNativeScan() : startScanner())}
                             >
                               重新尝试扫描
                             </Button>
@@ -407,11 +478,22 @@ export function QRCodeScanner({ open, onOpenChange, onScan }: QRCodeScannerProps
 
                 <div className="p-4 space-y-3">
                   <p className="text-xs text-muted-foreground text-center">
-                    将二维码对准框内即可自动识别
+                    {isNativeScanner ? '使用系统相机扫描二维码，识别后自动返回' : '将二维码对准框内即可自动识别'}
                   </p>
 
                   <div className="flex gap-2">
-                    {cameraSupported && !error && (
+                    {isNativeScanner && !error && (
+                      <Button
+                        variant="secondary"
+                        className="flex-1"
+                        onClick={() => void runNativeScan()}
+                        disabled={isStarting}
+                      >
+                        <Camera className="w-4 h-4 mr-2" />
+                        重新扫描
+                      </Button>
+                    )}
+                    {!isNativeScanner && cameraSupported && !error && (
                       <Button
                         variant="secondary"
                         className="flex-1"
@@ -420,6 +502,17 @@ export function QRCodeScanner({ open, onOpenChange, onScan }: QRCodeScannerProps
                       >
                         <SwitchCamera className="w-4 h-4 mr-2" />
                         切换
+                      </Button>
+                    )}
+                    {isNativeScanner && (
+                      <Button
+                        variant="secondary"
+                        className="flex-1"
+                        onClick={() => setShowManualInput(true)}
+                        disabled={isStarting}
+                      >
+                        <Keyboard className="w-4 h-4 mr-2" />
+                        手动
                       </Button>
                     )}
                     <Button

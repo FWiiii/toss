@@ -1,5 +1,7 @@
 ext {
-    minSdkVersion = 24
+    // 26 是 @capacitor/barcode-scanner 依赖的 ionbarcode-android 的最低要求；
+    // 计划书基线为 Android 10+（API 29），因此该下限不影响支持范围。
+    minSdkVersion = 26
     compileSdkVersion = 36
     targetSdkVersion = 36
     androidxActivityVersion = '1.11.0'
