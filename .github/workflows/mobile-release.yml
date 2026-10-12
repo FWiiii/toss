@@ -144,6 +144,62 @@ jobs:
             exit 1
           fi
           echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/release.keystore" >> "${GITHUB_ENV:-/dev/null}"
+      # 用真实口令读 alias，把 Gradle 的 "Given final block not properly padded"
+      # 提前拆成具体是哪个 secret 填错。keytool 的错误文案：
+      #   store 口令错  → "keystore password was incorrect"
+      #   key 口令错   → "Get Key failed: Given final block not properly padded"
+      #   alias 不存在  → "Alias <x> does not exist"
+      - name: 校驗簽名金鑰別名與口令
+        if: needs.version.outputs.android_signed == 'true'
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          keystore="${ANDROID_KEYSTORE_PATH:-$RUNNER_TEMP/release.keystore}"
+          probe="$RUNNER_TEMP/keystore-key-probe.txt"
+
+          # keytool -list 只驗 store 口令，不會碰 key 口令；Gradle 真正簽名時會取私鑰，
+          # 那時才以 "Get Key failed: Given final block not properly padded" 爆炸。
+          # 這裡先真的把私鑰取出來：certreq 會對 alias 的私鑰簽名。
+          # PKCS12 的 key 口令與 store 口令相同，忽略 -keypass 也無妨。
+          if ! keytool -list -v \
+               -keystore "$keystore" \
+               -storepass "$ANDROID_KEYSTORE_PASSWORD" \
+               -alias "$ANDROID_KEY_ALIAS" > "$probe" 2>&1; then
+            sed 's/^/    /' "$probe" >&2
+            if grep -qi 'keystore password was incorrect\|integrity check failed\|EOFException\|Input/output error' "$probe"; then
+              echo "→ ANDROID_KEYSTORE_PASSWORD（store 口令）不正確，或 base64 解出的檔案損壞。" >&2
+              echo "  本機重建：keytool -list -keystore <jks>" >&2
+            elif grep -qi 'does not exist\|不存在\|Cannot find' "$probe"; then
+              echo "→ ANDROID_KEY_ALIAS 不是這個 keystore 裡的別名，請確認值是 '$ANDROID_KEY_ALIAS'。" >&2
+            else
+              echo "→ keystore 打不開，請把上面輸出整段貼出來。" >&2
+            fi
+            exit 1
+          fi
+          echo "keystore 可開啟：alias=$ANDROID_KEY_ALIAS"
+
+          if ! keytool -certreq -alias "$ANDROID_KEY_ALIAS" \
+               -keystore "$keystore" \
+               -storepass "$ANDROID_KEYSTORE_PASSWORD" \
+               -keypass "$ANDROID_KEY_PASSWORD" > "$probe" 2>&1; then
+            sed 's/^/    /' "$probe" >&2
+            if grep -q 'Get Key failed' "$probe"; then
+              echo "→ ANDROID_KEY_PASSWORD（key 口令）打不開這個 key；" >&2
+              echo "  store 口令（ANDROID_KEYSTORE_PASSWORD）是對的，問題在 key 口令。" >&2
+              echo "  生成時兩次交互輸入若是不同口令，兩個 secret 必須分別填對應的值。" >&2
+              echo "  口令忘了只能重生成金鑰，且無法再更新已用舊金鑰發布的安裝。" >&2
+            elif grep -qi 'does not exist\|不存在' "$probe"; then
+              echo "→ ANDROID_KEY_ALIAS 不是這個 keystore 裡的別名，請確認值是 '$ANDROID_KEY_ALIAS'。" >&2
+            else
+              echo "→ 未預期的 keytool 錯誤，請把上面輸出整段貼出來。" >&2
+            fi
+            exit 1
+          fi
+
+          echo "金鑰可用：alias=$ANDROID_KEY_ALIAS（私鑰可取）"
       - name: 編譯已簽名 release（APK 與 AAB）
         if: needs.version.outputs.android_signed == 'true'
         working-directory: mobile/android
