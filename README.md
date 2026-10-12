@@ -98,7 +98,15 @@ Android 需要 Android Studio 2025.2.1+、JDK 21、SDK Platform 36、对应构�
 
 原生接收路径（`@capacitor/filesystem` 8.1.4）：收到的文件按块写入 App **私有目录** `toss-received/`（iOS `Library`、Android 内部 files），传输中先写 `*.part`，完成后再原子改名为最终文件名；重名自动追加序号，文件名去除路径分隔与控制字符。WebView 不再聚合整文件 Blob，单块经 Base64 桥接且上限由 `FILE_CHUNK_MAX_SIZE` 约束。原生下不再用 WebView 源配额预检，改由真实写入错误判定空间不足。**接收不会自动出现在系统「文件」App 中**：暂存目录是用户不可见的私有位置，iOS 也不再开启文件共享暴露 Documents。
 
-原生保存到本地（`@capacitor/share` 8.0.3）：只有用户点击接收项的下载图标时才导出——打开系统分享面板，可选择「存储到文件」或发送到其他应用。Android 通过 `FileProvider` 授权私有 `files/` 目录。**跨重启持久收件箱、原生扫码、系统分享接收与短效 TURN 仍未实现**；`*.part` 残留清理规则仍待补。
+原生扫码（`@capacitor/barcode-scanner` 3.1.3）：App 内扫码走系统相机，不申请 WebView 摄像头权限，也不再调用 `getUserMedia`；取消返回后仍可手动输入或上传二维码图片。网站继续使用浏览器相机。
+
+系统分享接收（Android `ACTION_SEND`、iOS Share Extension）：分享进来的内容先复制到 App 私有暂存 `toss-inbox/`，再进入待发队列，不会自动出现在用户可见目录。iOS 扩展依赖 App Group 与真实开发者团队描述文件，必须在 Xcode 中确认签名与 App Group 后才能真机验证。
+
+存储清理：App 启动时清理中断传输残留的 `*.part` 分片与超过 24 小时的分享暂存；**不删除已完成接收的文件**，因为那是用户尚未导出的内容。用户可见的删除与容量管理属后续步骤。
+
+传输失败语义：接收端拒绝、空间不足或落盘失败都会通过 `file-error` 通知发送端，发送端显示为**失败**而不是"已取消"或"已完成"，避免假成功。
+
+已知限制：分享进来的文件经 `fetch(convertFileSrc(uri))` 读入 WebView 内存后再发送，大文件会占用与其大小相当的内存；有界发送需发送端接受 range-read 来源，属后续步骤。
 
 可选信令配置为 `VITE_PEER_HOST`、`VITE_PEER_PORT`、`VITE_PEER_PATH`、`VITE_PEER_SECURE`；默认与网站相同的公共 PeerJS 和 STUN。网站对应 `NEXT_PUBLIC_PEER_*`、`NEXT_PUBLIC_ROOM_ORIGIN`，保留原有 `NEXT_PUBLIC_TURN_*`。移动包不嵌入长效 TURN 密码，短效凭证仍属后续工作；当前不保证受限网络互通。
 

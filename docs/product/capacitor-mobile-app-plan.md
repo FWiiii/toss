@@ -232,7 +232,13 @@ TURN 成本按「活躍用戶 × 每人傳輸量 × relay 占比 × 供應商計
 - 接收完成的文件恢复下载图标：原生端点击后经 `@capacitor/share` 8.0.3 打开系统分享面板保存到「文件」App 或其他应用；Android 补 `files-path` 授权。
 - **修正接收即暴露文件的问题**：iOS 的 `Directory.Data` 实为 Documents 目录，配合 `UIFileSharingEnabled` 会让文件在用户确认前就出现在系统「文件」App。现改为暂存到用户不可见的私有 `Library`，并移除 iOS 文件共享键；只有点击保存才导出。
 - 大文件验证（浏览器移动入口 ↔ 网站，同一机器）：1 GiB 双向传输 SHA-256 一致；接收期间 JS 堆采样 196 次，峰值 246 MB、结束回落 8 MB，未随文件大小线性增长。**该结果来自浏览器环境，不能替代原生真机的内存与落盘验证。**
-- 未实现：跨重启持久收件箱、原生扫码、系统分享接收、短效 TURN；`*.part` 残留与私有暂存的清理规则仍待补。
+- 未实现：跨重启持久收件箱、短效 TURN。
+- **P0 剩余四项已实现（真机验收待完成）**：
+  - 清理规则：启动时清除中断传输的 `*.part` 与超过 24 小时的分享暂存；不删除已完成接收的文件。
+  - 原生扫码：接入 `@capacitor/barcode-scanner` 3.1.3，原生不再调用 `getUserMedia`；保留手动输入与图片上传。
+  - 系统分享接收：Android `ACTION_SEND`／iOS Share Extension 写入私有 `toss-inbox/` 后进入待发队列；iOS 需 App Group 与开发者团队描述文件。
+  - 失败语义：新增 `file-error` 控制消息与 `failedTransfersRef`，接收端拒绝／空间不足／落盘失败均显示为失败，消除发送端假成功。
+- 已知限制：分享进来的文件经 `fetch(convertFileSrc(uri))` 读入 WebView 内存再发送，大文件内存占用与其大小相当；有界发送需发送端接受 range-read 来源。
 - `VITE_PUBLIC_ROOM_ORIGIN` 必须是实际公开 HTTPS 网站 origin；未配置时可用房间码，不生成本地邀请链接。
 - 下一放行条件仍是 Android↔Web、iOS↔Web、Android↔iOS 真机双向文字／100 MiB 文件和内容校验。随后继续 1 GiB／容量不足、内存曲线、分享与生命周期实验；P0 尚未完成。
 
