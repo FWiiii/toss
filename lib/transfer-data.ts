@@ -526,6 +526,7 @@ export function createDataTransfer(
 
       updateAggregateProgress(true)
 
+      const failedByReceiver = refs.failedTransfersRef.current.has(itemId)
       cancelled = refs.cancelledTransfersRef.current.has(itemId)
         || peerResults.some(result => result.status === 'cancelled')
 
@@ -533,7 +534,17 @@ export function createDataTransfer(
       const failedCount = peerResults.filter(result => result.status === 'failed').length
       const rejectedCount = peerResults.filter(result => result.status === 'rejected').length
 
-      if (cancelled) {
+      if (failedByReceiver) {
+        // 接收端明确报告无法落盘：必须显示为失败，不能显示为已取消或已完成。
+        refs.failedTransfersRef.current.delete(itemId)
+        refs.cancelledTransfersRef.current.delete(itemId)
+        updateItemProgress(itemId, {
+          status: 'error',
+          speed: undefined,
+          remainingTime: undefined,
+        })
+      }
+      else if (cancelled) {
         updateItemProgress(itemId, {
           status: 'cancelled',
           speed: undefined,

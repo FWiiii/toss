@@ -44,6 +44,15 @@ export interface FileCancelPayload {
   itemId?: string
 }
 
+/**
+ * 接收端无法落盘（磁盘写满、写入失败）时通知发送端，避免发送端显示假成功。
+ */
+export interface FileErrorPayload {
+  type: 'file-error'
+  itemId?: string
+  reason: string
+}
+
 export interface RoomDissolvedPayload {
   type: 'room-dissolved'
 }
@@ -94,6 +103,7 @@ export type TransferPayload
     | FileStartPayload
     | FileEndPayload
     | FileCancelPayload
+    | FileErrorPayload
     | RoomDissolvedPayload
     | PingPayload
     | DeviceIntroPayload
@@ -234,6 +244,16 @@ export function validateIncomingTransferPayload(data: unknown): TransferPayload 
       return {
         type: data.type,
         itemId: typeof data.itemId === 'string' ? data.itemId : undefined,
+      }
+
+    case 'file-error':
+      if (data.itemId !== undefined && !isValidBoundedString(data.itemId)) {
+        return null
+      }
+      return {
+        type: data.type,
+        itemId: typeof data.itemId === 'string' ? data.itemId : undefined,
+        reason: typeof data.reason === 'string' ? data.reason.slice(0, 200) : '接收方写入失败',
       }
 
     case 'room-dissolved':

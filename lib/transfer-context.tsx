@@ -439,6 +439,8 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
 
   // Transfer cancellation tracking
   const cancelledTransfersRef = useRef<Set<string>>(new Set())
+  // 接收端报告无法落盘的传输项（显示为失败，不是取消）
+  const failedTransfersRef = useRef<Set<string>>(new Set())
 
   // Store quality monitoring functions in refs
   useEffect(() => {
@@ -1071,6 +1073,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     attemptReconnectRef,
     joinRoomRef,
     cancelledTransfersRef,
+    failedTransfersRef,
   }), [])
 
   // ============ Connection Callbacks Setup ============

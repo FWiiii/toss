@@ -28,6 +28,7 @@ test('cancelling an offer wakes approval wait and sends no file bytes or complet
     encryptorsRef: { current: new Map([['peer', sender]]) },
     pendingFileOfferResponsesRef: { current: new Map() },
     cancelledTransfersRef: { current: new Set() },
+    failedTransfersRef: { current: new Set() },
   }
   refs.connectionsRef.current.set('peer', {
     open: true,

@@ -82,6 +82,11 @@ export interface ConnectionRefs {
   attemptReconnectRef: React.MutableRefObject<(() => void) | null>
   joinRoomRef: React.MutableRefObject<((code: string) => Promise<void>) | null>
   cancelledTransfersRef: React.MutableRefObject<Set<string>>
+  /**
+   * 接收端报告无法落盘（空间不足、写入失败）的传输项。
+   * 与用户主动取消区分：这些必须显示为失败，不能显示为已取消或已完成。
+   */
+  failedTransfersRef: React.MutableRefObject<Set<string>>
 }
 
 export interface ConnectionCallbacks {
@@ -214,6 +219,13 @@ export function createSetupConnection(
       console.error('Failed to send peer control payload:', error)
       return false
     }
+  }
+
+  /**
+   * 接收端拒绝或无法落盘时通知发送端，避免发送端继续传输并显示成功。
+   */
+  const notifyReceiveFailure = async (peerId: string, itemId: string, reason: string) => {
+    await sendPeerControl(peerId, { type: 'file-error', itemId, reason })
   }
 
   const removePeerTransferState = (peerId: string) => {
@@ -623,6 +635,12 @@ export function createSetupConnection(
               outcome: 'failed',
               failureReason: '写入文件片段失败',
             })
+            // 通知发送端停止并标记失败，避免对方仍显示传输完成。
+            await sendPeerControl(conn.peer, {
+              type: 'file-error',
+              itemId: buffer.remoteItemId,
+              reason: '接收方无法写入文件（可能空间不足）',
+            })
             return
           }
 
@@ -839,6 +857,7 @@ export function createSetupConnection(
               outcome: 'failed',
               failureReason: '文件超过大小上限',
             })
+            await notifyReceiveFailure(conn.peer, newRemoteItemId, '文件超过大小上限')
             return
           }
 
@@ -853,6 +872,7 @@ export function createSetupConnection(
               outcome: 'failed',
               failureReason: '本地存储空间不足',
             })
+            await notifyReceiveFailure(conn.peer, newRemoteItemId, '接收方本地存储空间不足')
             return
           }
 
@@ -875,6 +895,7 @@ export function createSetupConnection(
               outcome: 'failed',
               failureReason: '存储初始化失败',
             })
+            await notifyReceiveFailure(conn.peer, newRemoteItemId, '接收方存储初始化失败')
             return
           }
 
@@ -1027,6 +1048,16 @@ export function createSetupConnection(
         if (decryptedData.itemId) {
           refs.cancelledTransfersRef.current.add(decryptedData.itemId)
         }
+      }
+      else if (decryptedData.type === 'file-error') {
+        // 接收端无法落盘：停止发送并把该项标记为失败，不能显示成功。
+        if (decryptedData.itemId) {
+          refs.failedTransfersRef.current.add(decryptedData.itemId)
+          refs.cancelledTransfersRef.current.add(decryptedData.itemId)
+        }
+        callbacks.addSystemMessage(
+          `对方无法接收文件：${decryptedData.reason}`,
+        )
       }
     }
 

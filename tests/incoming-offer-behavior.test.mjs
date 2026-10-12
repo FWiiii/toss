@@ -50,6 +50,7 @@ function createConnectionHarness() {
     attemptReconnectRef: createMockRef(null),
     joinRoomRef: createMockRef(null),
     cancelledTransfersRef: createMockRef(new Set()),
+    failedTransfersRef: createMockRef(new Set()),
   }
 
   const callbacks = {
