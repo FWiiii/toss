@@ -238,6 +238,9 @@ TURN 成本按「活躍用戶 × 每人傳輸量 × relay 占比 × 供應商計
   - 原生扫码：接入 `@capacitor/barcode-scanner` 3.1.3，原生不再调用 `getUserMedia`；保留手动输入与图片上传。
   - 系统分享接收：Android `ACTION_SEND`／iOS Share Extension 写入私有 `toss-inbox/` 后进入待发队列；iOS 需 App Group 与开发者团队描述文件。
   - 失败语义：新增 `file-error` 控制消息与 `failedTransfersRef`，接收端拒绝／空间不足／落盘失败均显示为失败，消除发送端假成功。
+- **分享接收的失败项不再静默丢弃（Android 已在模拟器实测）**：`ShareReceiverPlugin` 改为逐项捕获，单项 URI 读取失败（授权失效等）不再中断同一批其余文件与文本；失败项经新增的 `failed` 字段上报，并在「活动记录」提示名称。该字段在 `merge()`、`.pending-share.json` 与 JS 积压投递三处均保留，只有失败项的分享也会投递。iOS `importEntry`／`mergePending` 已按同一契约对齐。实测：坏 URI 与文本同批 → 文本保留且提示「有 1 个分享项无法读取」；两笔坏分享合并 → 单条投递提示两项；桥接原始 payload 为 `{"items":[],"text":"","failed":[…]}`（旧 JS 会整体丢弃），无 `FATAL EXCEPTION`。iOS 仍只有编译验证。同时修正 App 内已过期的「系统分享接收尚未接入」提示。
+- **斷線後的自動恢復已修正並在 Android 模擬器 ↔ 瀏覽器實測**：先前有四種情況會讓會話斷掉後不再自動重連，均已修正並補行為測試——(1) 連線遺失的處理讀取建立連線當下尚未 commit 的房間碼，重連永遠不觸發；(2) PeerJS 在 App 被凍結時常不發 `close`（底層轉 `failed`，資料通道不通知），改由 `connectionstatechange` 主動清理並重連；(3) 重連排程逾時後不再排下一次、達到次數上限即永久停止，改為持續以指數上限 10 秒重試；(4) 連線其實已死但雙方都收不到 `close`（兩端各自 ICE 重啟後又回到 connected），新增心跳看門狗：連續兩次健康檢查（間隔 5 秒、心跳逾時 15 秒）收不到對端任何資料就重建連線，並跳過計時器被凍結的週期。重連嘗試另改用較短連線逾時（20 秒；首次連線仍 40 秒）。
+- 上項實測：背景 30 秒後回前景約 19 秒恢復；背景 40 秒約 25 秒恢復；短暫切換 6 秒不需重連即恢復；系統選檔停留約 4 分鐘後返回，約 28 秒恢復、排隊檔案自動送出，接收端內容為 28 bytes 原文一致。模擬器與同機瀏覽器仍不代替 Android↔iOS 真機驗收。
 - 已知限制：分享进来的文件经 `fetch(convertFileSrc(uri))` 读入 WebView 内存再发送，大文件内存占用与其大小相当；有界发送需发送端接受 range-read 来源。
 - `VITE_PUBLIC_ROOM_ORIGIN` 必须是实际公开 HTTPS 网站 origin；未配置时可用房间码，不生成本地邀请链接。
 - 下一放行条件仍是 Android↔Web、iOS↔Web、Android↔iOS 真机双向文字／100 MiB 文件和内容校验。随后继续 1 GiB／容量不足、内存曲线、分享与生命周期实验；P0 尚未完成。
