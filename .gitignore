@@ -28,3 +28,8 @@ next-env.d.ts
 
 # mobile build output (native source projects remain tracked)
 /mobile/dist/
+
+# android 发布签名（密钥不提交）
+*.jks
+*.keystore
+keystore.properties

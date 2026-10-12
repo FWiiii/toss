@@ -1,0 +1,321 @@
+name: Mobile release
+
+# 推送 v<major>.<minor>.<patch> 標籤時，自動編譯 Android／iOS 安裝包並附到該標籤的 GitHub Release。
+# 也可在 Actions 頁面以 workflow_dispatch 手動觸發（需填版本號）。
+#
+# 需要的 secrets（未設定時對應步驟會略過，不會中斷流程）：
+#   Android release 簽名：ANDROID_KEYSTORE_BASE64、ANDROID_KEYSTORE_PASSWORD、
+#                        ANDROID_KEY_ALIAS、ANDROID_KEY_PASSWORD
+#   未設定時改為編譯 debug APK（debug 金鑰簽名，可直接安裝測試）。
+#   iOS：IOS_TEAM_ID、IOS_CERTIFICATE_BASE64、IOS_CERTIFICATE_PASSWORD、
+#        ASC_KEY_ID、ASC_ISSUER_ID、ASC_KEY_BASE64（App Store Connect API 金鑰）
+#    未設定 IOS_TEAM_ID 時整個 iOS job 略過。
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 版本號，例如 1.2.3（手動觸發時必填）
+        required: true
+        type: string
+
+permissions:
+  contents: write # 建立 Release 與上傳安裝包
+
+concurrency:
+  group: mobile-release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: '22'
+  PNPM_VERSION: '10.28.2'
+
+jobs:
+  verify:
+    name: 型別與測試
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec tsc --noEmit -p tsconfig.json
+      - run: pnpm test
+
+  version:
+    name: 解析版本
+    needs: verify
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.parse.outputs.version }}
+      code: ${{ steps.parse.outputs.code }}
+      tag: ${{ steps.parse.outputs.tag }}
+      android_signed: ${{ steps.parse.outputs.android_signed }}
+      ios_configured: ${{ steps.parse.outputs.ios_configured }}
+    steps:
+      # 標籤 v1.2.3 → versionName 1.2.3、versionCode 10203（可遞增且可讀）。
+      - id: parse
+        env:
+          REQUESTED: ${{ github.ref_type == 'tag' && github.ref_name || inputs.version }}
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          IOS_TEAM_ID: ${{ secrets.IOS_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          requested="${REQUESTED#v}"
+          if ! printf '%s' "$requested" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "版本號必須是 <major>.<minor>.<patch>（可帶 v 前綴），收到：$REQUESTED" >&2
+            exit 1
+          fi
+          IFS=. read -r major minor patch <<< "$requested"
+          android_signed=false
+          if [ -n "${ANDROID_KEYSTORE_BASE64:-}" ]; then android_signed=true; fi
+          ios_configured=false
+          if [ -n "${IOS_TEAM_ID:-}" ]; then ios_configured=true; fi
+          {
+            echo "version=$requested"
+            echo "code=$(( major * 10000 + minor * 100 + patch ))"
+            echo "tag=v$requested"
+            echo "android_signed=$android_signed"
+            echo "ios_configured=$ios_configured"
+          } >> "$GITHUB_OUTPUT"
+
+  android:
+    name: Android 安裝包
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      # AGP 8.13／Gradle 8.14.3 需要 JDK 21；runner 預設的較新 JDK 無法執行本專案 Gradle。
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: 確保 Android SDK 元件
+        run: |
+          set -euo pipefail
+          sdk_root="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          if [ -z "$sdk_root" ]; then
+            echo "找不到 ANDROID_HOME／ANDROID_SDK_ROOT" >&2
+            exit 1
+          fi
+          if [ ! -d "$sdk_root/platforms/android-36" ]; then
+            sdkmanager --install "platforms;android-36" "build-tools;36.0.0"
+          fi
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm mobile:build
+      - run: npx cap sync android
+      - name: 解出簽名金鑰
+        if: needs.version.outputs.android_signed == 'true'
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+          echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/release.keystore" >> "$GITHUB_ENV"
+      - name: 編譯已簽名 release（APK 與 AAB）
+        if: needs.version.outputs.android_signed == 'true'
+        working-directory: mobile/android
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          ./gradlew --no-daemon assembleRelease bundleRelease \
+            -PversionName=${{ needs.version.outputs.version }} \
+            -PversionCode=${{ needs.version.outputs.code }}
+      - name: 編譯 debug（未設定簽名金鑰時）
+        if: needs.version.outputs.android_signed != 'true'
+        working-directory: mobile/android
+        run: |
+          ./gradlew --no-daemon assembleDebug \
+            -PversionName=${{ needs.version.outputs.version }} \
+            -PversionCode=${{ needs.version.outputs.code }}
+      - name: 收集安裝包
+        run: |
+          set -euo pipefail
+          version=${{ needs.version.outputs.version }}
+          mkdir -p dist
+          if [ -f mobile/android/app/build/outputs/apk/release/app-release.apk ]; then
+            cp mobile/android/app/build/outputs/apk/release/app-release.apk "dist/toss-${version}.apk"
+            cp mobile/android/app/build/outputs/bundle/release/app-release.aab "dist/toss-${version}.aab"
+          else
+            cp mobile/android/app/build/outputs/apk/debug/app-debug.apk "dist/toss-${version}-debug.apk"
+          fi
+          ls -l dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android
+          path: dist/*
+          if-no-files-found: error
+
+  ios:
+    name: iOS 安裝包
+    needs: version
+    if: needs.version.outputs.ios_configured == 'true'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm mobile:build
+      - run: npx cap sync ios
+      - name: 匯入簽名憑證與 App Store Connect 金鑰
+        env:
+          CERTIFICATE_BASE64: ${{ secrets.IOS_CERTIFICATE_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
+          ASC_KEY_BASE64: ${{ secrets.ASC_KEY_BASE64 }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          for name in CERTIFICATE_BASE64 CERTIFICATE_PASSWORD ASC_KEY_BASE64 ASC_KEY_ID ASC_ISSUER_ID; do
+            if [ -z "${!name:-}" ]; then
+              echo "缺少 secret：${name}（iOS 發布需要完整的 Apple 憑證設定）" >&2
+              exit 1
+            fi
+          done
+
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          security create-keychain -p actions "$keychain"
+          security set-keychain-settings -lut 1800 "$keychain"
+          security unlock-keychain -p actions "$keychain"
+          printf '%s' "$CERTIFICATE_BASE64" | base64 -d > "$RUNNER_TEMP/certificate.p12"
+          security import "$RUNNER_TEMP/certificate.p12" -k "$keychain" -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k actions "$keychain"
+          # 保留 runner 既有 keychain，並把臨時 keychain 加入搜尋清單。
+          existing_keychains=()
+          while IFS= read -r keychain_path; do
+            if [ -n "$keychain_path" ]; then
+              existing_keychains+=("$keychain_path")
+            fi
+          done < <(security list-keychains -d user | tr -d '"')
+          security list-keychains -d user -s "$keychain" "${existing_keychains[@]}"
+
+          printf '%s' "$ASC_KEY_BASE64" | base64 -d > "$RUNNER_TEMP/asc-key.p8"
+          {
+            echo "ASC_KEY_PATH=$RUNNER_TEMP/asc-key.p8"
+          } >> "$GITHUB_ENV"
+      - name: Archive 並匯出 IPA
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          TEAM_ID: ${{ secrets.IOS_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          version='${{ needs.version.outputs.version }}'
+          code='${{ needs.version.outputs.code }}'
+
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key><string>ad-hoc</string>
+            <key>teamID</key><string>${TEAM_ID}</string>
+            <key>signingStyle</key><string>automatic</string>
+            <key>uploadSymbols</key><false/>
+          </dict>
+          </plist>
+          PLIST
+
+          xcodebuild \
+            -project mobile/ios/App/App.xcodeproj \
+            -scheme App \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/Toss.xcarchive" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$ASC_KEY_PATH" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            MARKETING_VERSION="$version" \
+            CURRENT_PROJECT_VERSION="$code" \
+            archive
+
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/Toss.xcarchive" \
+            -exportPath "$RUNNER_TEMP/export" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$ASC_KEY_PATH" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+
+          mkdir -p dist
+          cp "$RUNNER_TEMP/export/"*.ipa "dist/toss-${version}.ipa"
+          ls -l dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ios
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    name: 建立 Release
+    needs: [version, android, ios]
+    if: always() && needs.version.result == 'success' && needs.android.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: 產生說明並發布
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag='${{ needs.version.outputs.tag }}'
+          version='${{ needs.version.outputs.version }}'
+
+          {
+            echo "## Toss 行動端安裝包 $version"
+            echo
+            echo "- 標籤：\`$tag\`"
+            echo "- 提交：\`${GITHUB_SHA:0:12}\`"
+            echo
+            echo "### 下載"
+            echo
+            for file in dist/*; do
+              size=$(du -h "$file" | cut -f1 | tr -d ' ')
+              echo "- \`$(basename "$file")\`（${size}）"
+            done
+            echo
+            echo "Android：下載 APK 後在裝置上允許「安裝未知來源應用程式」再安裝。"
+            if [ -f "dist/toss-${version}-debug.apk" ]; then
+              echo
+              echo "> 本次未設定 Android release 簽名金鑰，附上的是 debug 金鑰簽名的測試包。"
+            fi
+            if ls dist/*.ipa > /dev/null 2>&1; then
+              echo
+              echo "iOS：IPA 使用 ad-hoc 描述檔，只有描述檔內註冊的裝置可以安裝。"
+            fi
+          } > "$RUNNER_TEMP/notes.md"
+
+          if gh release view "$tag" > /dev/null 2>&1; then
+            gh release upload "$tag" dist/* --clobber
+            gh release edit "$tag" --title "Toss $version" --notes-file "$RUNNER_TEMP/notes.md"
+          else
+            gh release create "$tag" dist/* --title "Toss $version" --notes-file "$RUNNER_TEMP/notes.md"
+          fi

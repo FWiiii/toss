@@ -1,5 +1,10 @@
 apply plugin: 'com.android.application'
 
+// 发布签名只在提供环境变量时启用，仓库不保存密钥：
+// ANDROID_KEYSTORE_PATH / ANDROID_KEYSTORE_PASSWORD / ANDROID_KEY_ALIAS / ANDROID_KEY_PASSWORD
+def releaseKeystorePath = System.getenv("ANDROID_KEYSTORE_PATH")
+def hasReleaseSigning = releaseKeystorePath != null && !releaseKeystorePath.isEmpty() && file(releaseKeystorePath).exists()
+
 android {
     namespace = "app.toss.mobile"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -7,8 +12,9 @@ android {
         applicationId "app.toss.mobile"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        // 版本号由发布流程以 -PversionName/-PversionCode 传入（标签 v1.2.3 → 10203），本机不带参数时保持原默认值。
+        versionCode project.hasProperty('versionCode') ? project.property('versionCode').toInteger() : 1
+        versionName project.hasProperty('versionName') ? project.property('versionName') : "1.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -16,10 +22,24 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        // 未提供密钥时保持无签名配置，release 构建产出未签名 APK 供本地调试。
+        if (hasReleaseSigning) {
+            release {
+                storeFile file(releaseKeystorePath)
+                storePassword System.getenv("ANDROID_KEYSTORE_PASSWORD")
+                keyAlias System.getenv("ANDROID_KEY_ALIAS")
+                keyPassword System.getenv("ANDROID_KEY_PASSWORD")
+            }
+        }
+    }
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            if (hasReleaseSigning) {
+                signingConfig signingConfigs.release
+            }
         }
     }
 }
