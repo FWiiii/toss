@@ -10,7 +10,7 @@ test('incoming share is buffered until a consumer registers', async () => {
   } = await import('../lib/incoming-share.ts')
 
   const received = []
-  deliverIncomingShare({ items: [], text: 'from cold start' })
+  deliverIncomingShare({ items: [], text: 'from cold start', failed: [] })
 
   unregisterIncomingShareConsumer()
   registerIncomingShareConsumer(payload => received.push(payload))
@@ -26,7 +26,7 @@ test('empty incoming share payloads are ignored', async () => {
   unregisterIncomingShareConsumer()
   registerIncomingShareConsumer(payload => received.push(payload))
 
-  deliverIncomingShare({ items: [], text: '   ' })
+  deliverIncomingShare({ items: [], text: '   ', failed: [] })
   assert.equal(received.length, 0)
 })
 
@@ -42,8 +42,8 @@ test('multiple shares before a consumer registers are merged without loss', asyn
   })
 
   unregisterIncomingShareConsumer()
-  deliverIncomingShare({ items: [file('a.txt')], text: 'first' })
-  deliverIncomingShare({ items: [file('b.txt')], text: 'second' })
+  deliverIncomingShare({ items: [file('a.txt')], text: 'first', failed: [] })
+  deliverIncomingShare({ items: [file('b.txt')], text: 'second', failed: [] })
 
   const received = []
   registerIncomingShareConsumer(payload => received.push(payload))
@@ -60,7 +60,34 @@ test('delivery goes straight to the consumer once registered', async () => {
   unregisterIncomingShareConsumer()
   registerIncomingShareConsumer(payload => received.push(payload))
 
-  deliverIncomingShare({ items: [], text: 'live' })
+  deliverIncomingShare({ items: [], text: 'live', failed: [] })
   assert.equal(received.length, 1)
   assert.equal(received[0].text, 'live')
+})
+
+test('a share whose items all failed is still delivered so the user is told', async () => {
+  const { deliverIncomingShare, registerIncomingShareConsumer, unregisterIncomingShareConsumer } = await import('../lib/incoming-share.ts')
+
+  const received = []
+  unregisterIncomingShareConsumer()
+  registerIncomingShareConsumer(payload => received.push(payload))
+
+  deliverIncomingShare({ items: [], text: '', failed: ['10546'] })
+  assert.equal(received.length, 1)
+  assert.deepEqual(received[0].failed, ['10546'])
+})
+
+test('failed items from separate shares are merged without loss', async () => {
+  const { deliverIncomingShare, registerIncomingShareConsumer, unregisterIncomingShareConsumer } = await import('../lib/incoming-share.ts')
+
+  unregisterIncomingShareConsumer()
+  deliverIncomingShare({ items: [], text: 'kept', failed: ['a.jpg'] })
+  deliverIncomingShare({ items: [], text: '', failed: ['b.jpg'] })
+
+  const received = []
+  registerIncomingShareConsumer(payload => received.push(payload))
+
+  assert.equal(received.length, 1)
+  assert.equal(received[0].text, 'kept')
+  assert.deepEqual(received[0].failed, ['a.jpg', 'b.jpg'])
 })

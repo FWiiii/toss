@@ -326,6 +326,10 @@ public class ShareReceiverPlugin extends Plugin {
         JSONArray items = entry.optJSONArray("items");
         payload.put("items", items == null ? new JSArray() : items);
         payload.put("text", entry.optString("text", ""));
+        JSONArray failed = entry.optJSONArray("failed");
+        if (failed != null && failed.length() > 0) {
+            payload.put("failed", failed);
+        }
         return payload;
     }
 
@@ -362,25 +366,38 @@ public class ShareReceiverPlugin extends Plugin {
             text.append(sharedText);
         }
 
+        List<String> failed = new ArrayList<>();
         for (Uri uri : collectStreamUris(intent)) {
             try {
                 JSObject item = copyIntoInbox(resolver, uri, intent.getType());
                 if (item != null) {
                     items.put(item);
                 }
-            } catch (IOException ex) {
+            } catch (IOException | RuntimeException ex) {
+                // 单个 URI 读取失败（例如授权已失效）不得中断同一批其余内容。
                 Log.w(TAG, "Failed to import shared content " + uri, ex);
+                failed.add(describeSource(uri));
             }
         }
 
-        if (items.length() == 0 && text.length() == 0) {
+        // 全部失败时也要投递，交给 JS 提示用户，而不是静默丢弃。
+        if (items.length() == 0 && text.length() == 0 && failed.isEmpty()) {
             return null;
         }
 
         JSObject payload = new JSObject();
         payload.put("items", items);
         payload.put("text", text.toString());
+        if (!failed.isEmpty()) {
+            payload.put("failed", new JSArray(failed));
+        }
         return payload;
+    }
+
+    /** 失败项的可读名称，用于向用户说明哪一项没读到。 */
+    private static String describeSource(Uri source) {
+        String segment = source.getLastPathSegment();
+        return segment == null || segment.trim().isEmpty() ? source.toString() : segment;
     }
 
     private static List<Uri> collectStreamUris(Intent intent) {
@@ -426,7 +443,7 @@ public class ShareReceiverPlugin extends Plugin {
                     output.write(buffer, 0, read);
                 }
             }
-        } catch (IOException ex) {
+        } catch (IOException | RuntimeException ex) {
             // 半成品不留在收件目录里。
             destination.delete();
             throw ex;
@@ -554,6 +571,13 @@ public class ShareReceiverPlugin extends Plugin {
 
         merged.put("items", items);
         merged.put("text", text);
+
+        JSArray failed = new JSArray();
+        appendAll(failed, existing.optJSONArray("failed"));
+        appendAll(failed, incoming.optJSONArray("failed"));
+        if (failed.length() > 0) {
+            merged.put("failed", failed);
+        }
         return merged;
     }
 
@@ -589,6 +613,10 @@ public class ShareReceiverPlugin extends Plugin {
             JSONArray items = payload.optJSONArray("items");
             entry.put("items", items == null ? new JSArray() : items);
             entry.put("text", payload.optString("text", ""));
+            JSONArray failed = payload.optJSONArray("failed");
+            if (failed != null && failed.length() > 0) {
+                entry.put("failed", failed);
+            }
             entry.put("fingerprints", new JSArray(new ArrayList<>(fingerprints)));
             try (OutputStream output = new FileOutputStream(file)) {
                 output.write(entry.toString().getBytes(StandardCharsets.UTF_8));

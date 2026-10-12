@@ -9,9 +9,9 @@ import { deliverIncomingShare } from './incoming-share'
 export interface ShareReceiverPlugin {
   addListener: (
     eventName: 'incomingShare',
-    listener: (payload: { items: IncomingShareItem[], text?: string }) => void,
+    listener: (payload: { items: IncomingShareItem[], text?: string, failed?: string[] }) => void,
   ) => Promise<{ remove: () => Promise<void> }>
-  getPendingShare: () => Promise<{ items: IncomingShareItem[], text?: string } | null>
+  getPendingShare: () => Promise<{ items: IncomingShareItem[], text?: string, failed?: string[] } | null>
 }
 
 export const ShareReceiver = registerPlugin<ShareReceiverPlugin>('ShareReceiver')
@@ -39,9 +39,10 @@ export async function subscribeIncomingShares(): Promise<() => void> {
   }
 }
 
-function normalizePayload(payload: { items: IncomingShareItem[], text?: string }): IncomingSharePayload {
+function normalizePayload(payload: { items: IncomingShareItem[], text?: string, failed?: string[] }): IncomingSharePayload {
   return {
     items: Array.isArray(payload.items) ? payload.items : [],
     text: payload.text ?? '',
+    failed: Array.isArray(payload.failed) ? payload.failed : [],
   }
 }

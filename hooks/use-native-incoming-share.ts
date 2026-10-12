@@ -35,6 +35,9 @@ export function useNativeIncomingShare(enabled: boolean): TransferShareTarget {
         if (payload.text) {
           setText(prev => (prev ? `${prev}\n${payload.text}` : payload.text))
         }
+        setError(payload.failed.length > 0
+          ? `有 ${payload.failed.length} 个分享项无法读取：${payload.failed.join('、')}`
+          : null)
       }
       catch (cause) {
         setError(`无法读取分享内容：${cause instanceof Error ? cause.message : String(cause)}`)

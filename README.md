@@ -100,7 +100,7 @@ Android 需要 Android Studio 2025.2.1+、JDK 21、SDK Platform 36、对应构�
 
 原生扫码（`@capacitor/barcode-scanner` 3.1.3）：App 内扫码走系统相机，不申请 WebView 摄像头权限，也不再调用 `getUserMedia`；取消返回后仍可手动输入或上传二维码图片。网站继续使用浏览器相机。
 
-系统分享接收（Android `ACTION_SEND`、iOS Share Extension）：分享进来的内容先复制到 App 私有暂存 `toss-inbox/`，再进入待发队列，不会自动出现在用户可见目录。iOS 扩展依赖 App Group 与真实开发者团队描述文件，必须在 Xcode 中确认签名与 App Group 后才能真机验证。
+系统分享接收（Android `ACTION_SEND`、iOS Share Extension）：分享进来的内容先复制到 App 私有暂存 `toss-inbox/`，再进入待发队列，不会自动出现在用户可见目录。**单个分享项读取失败（例如授权已失效）不会中断同一批其余内容**：失败项不会落盘，其余文件与文本照常入队，并在活动记录中提示哪些项目没能导入。iOS 扩展依赖 App Group 与真实开发者团队描述文件，必须在 Xcode 中确认签名与 App Group 后才能真机验证。
 
 存储清理：App 启动时清理中断传输残留的 `*.part` 分片与超过 24 小时的分享暂存；**不删除已完成接收的文件**，因为那是用户尚未导出的内容。用户可见的删除与容量管理属后续步骤。
 

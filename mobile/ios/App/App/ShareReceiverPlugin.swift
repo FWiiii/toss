@@ -31,6 +31,8 @@ public class ShareReceiverPlugin: CAPPlugin, CAPBridgedPlugin {
     private static let maxFileNameLength = 128
     private static let fallbackFileName = "received-file"
     private static let fallbackMimeType = "application/octet-stream"
+    /// 清单里缺少可用文件名时，用于向用户说明该分享项没能导入。
+    private static let unnamedItemLabel = "未命名项目"
 
     private let importQueue = DispatchQueue(label: "app.toss.mobile.share-receiver")
     private let stateLock = NSLock()
@@ -116,8 +118,10 @@ public class ShareReceiverPlugin: CAPPlugin, CAPBridgedPlugin {
         let existing = pending ?? readPendingFile()
         let existingItems = existing?["items"] as? [[String: Any]] ?? []
         let existingText = existing?["text"] as? String ?? ""
+        let existingFailed = existing?["failed"] as? [String] ?? []
         let incomingItems = payload["items"] as? [[String: Any]] ?? []
         let incomingText = payload["text"] as? String ?? ""
+        let incomingFailed = payload["failed"] as? [String] ?? []
 
         let text: String
         if existingText.isEmpty || incomingText.isEmpty {
@@ -126,7 +130,13 @@ public class ShareReceiverPlugin: CAPPlugin, CAPBridgedPlugin {
             text = existingText + "\n" + incomingText
         }
 
-        pending = ["items": existingItems + incomingItems, "text": text]
+        var merged: [String: Any] = ["items": existingItems + incomingItems, "text": text]
+        let failed = existingFailed + incomingFailed
+        if !failed.isEmpty {
+            merged["failed"] = failed
+        }
+
+        pending = merged
         if let pending {
             writePendingFile(pending)
         }
@@ -259,14 +269,19 @@ public class ShareReceiverPlugin: CAPPlugin, CAPBridgedPlugin {
         let text = (raw["text"] as? String) ?? ""
         let descriptors = (raw["items"] as? [[String: Any]]) ?? []
         var items: [[String: Any]] = []
+        var failed: [String] = []
 
         for descriptor in descriptors {
-            guard let sourceName = descriptor["name"] as? String, !sourceName.isEmpty else {
+            let sourceName = (descriptor["name"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard !sourceName.isEmpty else {
+                failed.append(Self.unnamedItemLabel)
                 continue
             }
             let mimeType = (descriptor["mimeType"] as? String)?.nilIfEmpty ?? Self.fallbackMimeType
             let source = entry.appendingPathComponent(sourceName)
             guard FileManager.default.fileExists(atPath: source.path) else {
+                // 清单与文件不一致：不静默丢弃，交给 JS 提示用户。
+                failed.append(sourceName)
                 continue
             }
 
@@ -281,14 +296,21 @@ public class ShareReceiverPlugin: CAPPlugin, CAPBridgedPlugin {
                     "size": size
                 ])
             } catch {
+                // 单个分享项失败不得中断同一批其余内容。
+                failed.append(sourceName)
                 CAPLog.print("⚡️ ShareReceiver: 导入失败 \(sourceName): \(error)")
             }
         }
 
-        if items.isEmpty && text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        // 只有失败项的分享也要投递，否则用户不知道内容没进来。
+        if items.isEmpty && failed.isEmpty && text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return nil
         }
-        return ["items": items, "text": text]
+        var payload: [String: Any] = ["items": items, "text": text]
+        if !failed.isEmpty {
+            payload["failed"] = failed
+        }
+        return payload
     }
 
     private func copyIntoInbox(from source: URL, preferredName: String) throws -> URL {

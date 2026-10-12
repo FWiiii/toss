@@ -36,7 +36,7 @@ export function MobileApp() {
       <TransferProvider>
         <AppShell logoSrc={logoSrc}>
           <p className="px-4 pb-6 text-center text-xs text-muted-foreground" role="note">
-            前景传输验证 · 请保持 App 在前台。收到的文件先暂存在 App 私有目录，点下载图标可保存到「文件」App；持久收件箱与系统分享接收尚未接入。
+            前景传输验证 · 请保持 App 在前台。收到的文件先暂存在 App 私有目录，点下载图标可保存到「文件」App；重启后仍可再次打开的持久收件箱尚未接入。
           </p>
         </AppShell>
       </TransferProvider>

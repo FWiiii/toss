@@ -11,6 +11,8 @@ export interface IncomingShareItem extends NativeTransferFile {
 export interface IncomingSharePayload {
   items: IncomingShareItem[]
   text: string
+  /** 读取失败的分享项名称，用于向用户说明哪些内容没能导入。 */
+  failed: string[]
 }
 
 export type IncomingShareConsumer = (payload: IncomingSharePayload) => void
@@ -38,7 +40,7 @@ export function unregisterIncomingShareConsumer() {
  * 原生侧收到系统分享后调用。UI 尚未挂载时先缓存，避免冷启动丢失内容。
  */
 export function deliverIncomingShare(payload: IncomingSharePayload) {
-  if (payload.items.length === 0 && !payload.text.trim()) {
+  if (payload.items.length === 0 && !payload.text.trim() && payload.failed.length === 0) {
     return
   }
 
@@ -53,6 +55,7 @@ export function deliverIncomingShare(payload: IncomingSharePayload) {
         text: pending.text
           ? `${pending.text}\n${payload.text}`.trim()
           : payload.text,
+        failed: [...pending.failed, ...payload.failed],
       }
     : payload
 }
