@@ -114,6 +114,18 @@ Android 需要 Android Studio 2025.2.1+、JDK 21、SDK Platform 36、对应构�
 
 真机验证：在两平台 IDE 重新运行同步后的 App，用同一信令配置的网站创建／加入房间。先双向发送文字，再选择 100 MiB 与 1 GiB 文件并由接收端确认；记录设备、系统、网络、耗时、内存、取消／失败状态，并对接收内容校验 SHA-256，同时确认设备上的实际落盘文件。Android↔Web、iOS↔Web、Android↔iOS 仍需逐项实测；不能用模拟器启动或 API 存在代替。
 
+#### 行动端发布（GitHub Release）
+
+推送 `v<major>.<minor>.<patch>` 标签（例如 `git tag v1.2.3 && git push origin v1.2.3`）会触发 `.github/workflows/mobile-release.yml`，编译安装包并附到该标签的 Release；也可在 Actions 页面手动触发并填写版本号。流程先跑类型检查与行为测试，通过后才编译。
+
+- 版本映射：标签 `v1.2.3` → Android `versionName=1.2.3`、`versionCode=10203`（major×10000 + minor×100 + patch）；iOS 同一组数字写入 `MARKETING_VERSION`／`CURRENT_PROJECT_VERSION`。
+- Android 产物：release APK 与 AAB；未配置签名金钥时改出 debug APK（debug 金钥签名，可直接安装测试）。
+- iOS 产物：ad-hoc IPA，只有描述档内注册的装置可安装。**iOS 流程需要真实 Apple 凭据，目前只有本机模拟器构建验证，尚未在 CI 实测。**
+- 仓库 secrets（`Settings → Secrets and variables → Actions`）：
+  - Android：`ANDROID_KEYSTORE_BASE64`（`base64 -i release.jks | pbcopy`）、`ANDROID_KEYSTORE_PASSWORD`、`ANDROID_KEY_ALIAS`、`ANDROID_KEY_PASSWORD`。
+  - iOS：`IOS_TEAM_ID`、`IOS_CERTIFICATE_BASE64`（导出为 .p12）、`IOS_CERTIFICATE_PASSWORD`、`ASC_KEY_ID`、`ASC_ISSUER_ID`、`ASC_KEY_BASE64`（App Store Connect API 金钥 .p8）。分享扩充需要 App Group 与对应描述档。
+- 本机等价的 Android release 构建：`pnpm mobile:build && npx cap sync android && cd mobile/android && ./gradlew assembleRelease bundleRelease -PversionName=1.2.3 -PversionCode=10203`；签名由 `ANDROID_KEYSTORE_PATH`、`ANDROID_KEYSTORE_PASSWORD`、`ANDROID_KEY_ALIAS`、`ANDROID_KEY_PASSWORD` 环境变量启用，密钥不写入仓库。
+
 完整后续范围见 [Capacitor 行动 App 计划书](docs/product/capacitor-mobile-app-plan.md)。
 
 ## 📖 使用方法
