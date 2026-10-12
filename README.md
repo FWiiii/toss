@@ -275,7 +275,7 @@ Android 需要 Android Studio 2025.2.1+、JDK 21、SDK Platform 36、对应构�
 
 ## 📄 许可证
 
-本项目以 MIT 许可证发布（仓库当前未附带 `LICENSE` 文件）。
+本项目以 [MIT License](LICENSE) 发布。
 
 ---
 
