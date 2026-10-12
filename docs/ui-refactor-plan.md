@@ -109,8 +109,9 @@ lib/transfer-context.tsx          # 仅类型适配
 lib/utils.ts                      # 新增 cn、格式化工具
 
 ### 删除/弃用文件
-components/ui/empty-state.tsx     -> 合并到 Card/EmptyState 组件
-styles/globals.css                -> 合并到 app/globals.css
+> 状态复核（2026-10-13）：以下为计划项，落地情况逐条标注。
+components/ui/empty-state.tsx     -> 合并到 Card/EmptyState 组件（未执行：该文件仍是 `transfer-panel` / `room-panel` 使用的组件）
+styles/globals.css                -> 合并到 app/globals.css（已完成：文件已删除，样式集中在 `app/globals.css`）
 
 ---
 
